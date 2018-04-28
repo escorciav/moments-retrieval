@@ -27,11 +27,16 @@ class MCN(nn.Module):
         self.lang_encoder = nn.Linear(1000, embedding_size)
 
     def forward(self, padded_query, query_length, visual_pos,
-                visual_neg_intra, visual_neg_inter):
+                visual_neg_intra=None, visual_neg_inter=None):
+        v_embedding_neg_intra = None
+        v_embedding_neg_inter = None
         B = len(padded_query)
+
         v_embedding_pos = self.img_encoder(visual_pos)
-        v_embedding_neg_intra = self.img_encoder(visual_neg_intra)
-        v_embedding_neg_inter = self.img_encoder(visual_neg_inter)
+        if visual_neg_intra is not None:
+            v_embedding_neg_intra = self.img_encoder(visual_neg_intra)
+        if visual_neg_inter is not None:
+            v_embedding_neg_inter = self.img_encoder(visual_neg_inter)
 
         packed_query = pack_padded_sequence(
             padded_query, query_length, batch_first=True)
@@ -56,6 +61,8 @@ if __name__ == '__main__':
     y = [torch.rand(i, LD, requires_grad=True) for i in z]
     y_padded = pad_sequence(y, True)
     a, b, c, d = net(y_padded, z, x, x, x)
+    a, b, *c = net(y_padded, z, x)
+    b.backward(b.clone())
     # Unsuccesful attempt tp check backward
     # b.backward(10000*b.clone())
     # print(z)

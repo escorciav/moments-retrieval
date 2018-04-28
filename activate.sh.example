@@ -1,0 +1,6 @@
+proj_env_name=scientific
+if ! hash conda 2>/dev/null; then
+  echo Impossible to setup environment. Bye!
+  return
+fi
+conda activate $proj_env_name

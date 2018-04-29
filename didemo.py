@@ -5,6 +5,7 @@ import re
 
 import h5py
 import numpy as np
+import torch
 from torch.utils.data import Dataset
 from torch.utils.data.dataloader import default_collate
 
@@ -13,6 +14,7 @@ from glove import RecurrentEmbedding
 POSSIBLE_SEGMENTS = [(0, 0), (1, 1), (2, 2), (3, 3), (4, 4), (5, 5)]
 for i in itertools.combinations(range(len(POSSIBLE_SEGMENTS)), 2):
     POSSIBLE_SEGMENTS.append(i)
+POSSIBLE_SEGMENTS_SET = set(POSSIBLE_SEGMENTS)
 
 
 def word_tokenize(s):
@@ -49,6 +51,10 @@ class Didemo(Dataset):
         self.eval = False
         if test:
             self.eval = True
+    
+    @property
+    def segments(self):
+        return POSSIBLE_SEGMENTS
 
     def _setup_list(self, filename):
         "Read JSON file with all the moments"
@@ -63,7 +69,10 @@ class Didemo(Dataset):
             d['language_input'] = sentences_to_words([d['description']])
 
     def _load_features(self, rgb=None, flow=None):
-        "Read all features (coarse chunks) in memory"
+        """Read all features (coarse chunks) in memory
+        TODO:
+            Edit to only load features of videos in metadata
+        """
         self.rgb_file = rgb
         self.rgb_features = None
         with h5py.File(rgb, 'r') as f:
@@ -96,7 +105,7 @@ class Didemo(Dataset):
         """
         if not isinstance(p_time, tuple):
             p_time = tuple(p_time)
-        possible_n = list(set(POSSIBLE_SEGMENTS) - {p_time})
+        possible_n = list(POSSIBLE_SEGMENTS_SET - {p_time})
         random.shuffle(possible_n)
         n_time = possible_n[0]
         return self._compute_visual_feature(video_id, n_time)
@@ -127,9 +136,9 @@ class Didemo(Dataset):
         len_query = len(query)
         if self.eval:
             pos_visual_feature = np.concatenate(
-                [self._compute_visual_feature(video_id, t)
-                 for t in POSSIBLE_SEGMENTS])
-            n_segments = len(POSSIBLE_SEGMENTS)
+                [self._compute_visual_feature(video_id, t)[np.newaxis, :]
+                 for t in self.segments], axis=0)
+            n_segments = len(self.segments)
             len_query = [len_query] * n_segments
             sentence_feature = np.tile(sentence_feature, (n_segments, 1, 1))
             neg_intra_visual_feature = None
@@ -155,6 +164,20 @@ class Didemo(Dataset):
             tensors_minus_length[-1].requires_grad_()
         a_s, p_s, niv_s, nid_s = tensors_minus_length
         return a_s, al_s, p_s, niv_s, nid_s
+
+    def collate_test_data(self, batch):
+        # Note: we could do batching but taking care of the length of the
+        # sentence was a mess.
+        assert len(batch) == 1
+        tensors = []
+        for i, v in enumerate(batch[0]):
+            if isinstance(v, np.ndarray):
+                tensors.append(torch.from_numpy(v))
+            elif i == 1:
+                tensors.append(torch.tensor(v))
+            else:
+                tensors.append(None)
+        return tensors
 
 
 class LanguageRepresentationMCN(object):
@@ -220,3 +243,13 @@ if __name__ == '__main__':
     for i in dataset[0]:
         if isinstance(i, np.ndarray):
             print(i.shape)
+
+    dataset.eval = True
+    values = dataset[0]
+    for i, v in enumerate(values):
+        if isinstance(v, np.ndarray):
+            print(i, v.shape)
+        elif isinstance(v, list):
+            print(i, len(v))
+        if i > 2:
+            assert v is None

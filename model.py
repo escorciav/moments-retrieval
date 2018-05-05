@@ -144,6 +144,48 @@ class MEE(nn.Module):
         return scores
 
 
+class TripletMEE(nn.Module):
+    """MEE model with triplets
+    TODO:
+        Improve abstraction
+    """
+
+    def __init__(self, text_embedding, visual_embedding, word_size=300,
+                 lstm_layers=1, max_length=50):
+        super(TripletMEE, self).__init__()
+        # Setup Text Encoder
+        self.max_length = max_length
+        self.sentence_encoder = nn.LSTM(
+            word_size, text_embedding, lstm_layers, batch_first=True)
+        # self.lang_encoder = nn.Linear(1000, embedding_size)
+        # Setup MEE
+        self.mee = MEE(text_embedding, visual_embedding)
+
+    def forward(self, padded_query, query_length, visual_pos,
+                visual_neg_intra=None, visual_neg_inter=None):
+        similarity_neg_intra = None
+        similarity_neg_inter = None
+        B = len(padded_query)
+
+        # Encode sentence
+        packed_query = pack_padded_sequence(
+            padded_query, query_length, batch_first=True)
+        packed_output, _ = self.sentence_encoder(packed_query)
+        output, _ = pad_packed_sequence(packed_output, batch_first=True,
+                                        total_length=self.max_length)
+        text_vector = output[range(B), query_length, :]
+
+        # MEE
+        similarity_pos = self.mee(text_vector, visual_pos)
+        if visual_neg_intra is not None:
+            similarity_neg_intra = self.mee(text_vector, visual_neg_intra)
+        if visual_neg_inter is not None:
+            similarity_neg_inter = self.mee(text_vector, visual_neg_inter)
+
+        return (similarity_pos, similarity_neg_intra,
+                similarity_neg_inter)
+
+
 if __name__ == '__main__':
     import torch, random
     from torch.nn.utils.rnn import pad_sequence
@@ -192,3 +234,22 @@ if __name__ == '__main__':
     # Checking backward (edit forward to expose those variable again)
     # print(net.scores_m.requires_grad, net.scores_m.grad_fn)
     # print([(i.requires_grad, i.grad_fn) for i in net.scores_lst])
+
+    # TripletMEE
+    B = 3
+    xd, yd1, yd2 = 15, (10, 20), (14, 14)
+    yshape = {'1': yd1, '2': yd2}
+    extra = {'word_size': 5, 'lstm_layers':1, 'max_length':11}
+    net = TripletMEE(xd, yshape, **extra)
+    l = [random.randint(2, extra['max_length']) for i in range(B)]
+    l.sort(reverse=True)
+    x = [torch.rand(i, extra['word_size'], requires_grad=True) for i in l]
+    x_padded = pad_sequence(x, True)
+    y = {i: torch.rand(B, v[0], requires_grad=True)
+         for i, v in yshape.items()}
+    yn = {i: torch.rand(B, v[0], requires_grad=True)
+          for i, v in yshape.items()}
+    z = net(x_padded, l, y, yn)
+    z_ = z[0] + z[1]
+    z_.backward(z_.clone())
+    assert z[-1] is None

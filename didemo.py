@@ -39,10 +39,10 @@ class Didemo(Dataset):
         make sorting in collate optional
     """
 
-    def __init__(self, json_file, rgb_file=None, flow_file=None,
-                 loc=True, max_words=50, test=False):
+    def __init__(self, json_file, cues=None, loc=True, max_words=50,
+                 test=False):
         self._setup_list(json_file)
-        self._load_features(rgb=rgb_file, flow=flow_file)
+        self._load_features(cues)
         self.visual_interface = VisualRepresentationMCN()
         self.lang_interface = LanguageRepresentationMCN(max_words)
         self.tef_interface = None
@@ -51,7 +51,7 @@ class Didemo(Dataset):
         self.eval = False
         if test:
             self.eval = True
-    
+
     @property
     def segments(self):
         return POSSIBLE_SEGMENTS
@@ -68,35 +68,42 @@ class Didemo(Dataset):
         for d in self.metadata:
             d['language_input'] = sentences_to_words([d['description']])
 
-    def _load_features(self, rgb=None, flow=None):
+    def _load_features(self, cues):
         """Read all features (coarse chunks) in memory
+
         TODO:
             Edit to only load features of videos in metadata
         """
-        self.rgb_file = rgb
-        self.rgb_features = None
-        with h5py.File(rgb, 'r') as f:
-            self.rgb_features = {i: v[:] for i, v in f.items()}
-
-        self.flow_file = flow
-        self.flow_features = None
-        with h5py.File(rgb, 'r') as f:
-            self.flow_features = {i: v[:] for i, v in f.items()}
+        self.cues = cues
+        self.features = {}
+        for key, params in cues.items():
+            with h5py.File(params['file'], 'r') as f:
+                self.features[key] = {i: v[:] for i, v in f.items()}
 
     def _compute_visual_feature(self, video_id, time=None):
-        "Pool visual feature and append TEF"
-        video_feature = None
-        if self.rgb_file:
-            video_rgb = self.rgb_features[video_id]
-            video_feature = self.visual_interface(*time, video_rgb)
-        if self.flow_file:
-            assert video_feature is None
-            video_flow = self.rgb_features[video_id]
-            video_feature = self.visual_interface(*time, video_flow)
-        if self.tef_interface:
-            video_feature = np.concatenate(
-                [video_feature, self.tef_interface(time)])
-        return video_feature.astype(np.float32)
+        "Pool visual features and append TEF for a given segment"
+        feature_collection_video_t = {}
+        for key, feat_db in self.features.items():
+            feature_video = feat_db[video_id]
+            feature_video_t = self.visual_interface(*time, feature_video)
+            if self.tef_interface:
+                feature_video_t = np.concatenate(
+                    [feature_video_t, self.tef_interface(time)])
+            feature_collection_video_t[key] = feature_video_t.astype(
+                np.float32)
+        return feature_collection_video_t
+
+    def _compute_visual_feature_eval(self, video_id):
+        "Pool visual features and append TEF for all segments in video"
+        all_t = [self._compute_visual_feature(video_id, t)
+                 for t in self.segments]
+        # List of dicts to dict of list
+        all_t_dict = dict(zip(all_t[0],
+                              zip(*[d.values() for d in all_t])))
+        for k, v in all_t_dict.items():
+            n = len(v)
+            all_t_dict[k] = np.concatenate(v).reshape((n, -1))
+        return all_t_dict
 
     def _negative_intra_sampling(self, video_id, p_time):
         """Sample visual feature inside the video
@@ -135,9 +142,7 @@ class Didemo(Dataset):
         sentence_feature = self.lang_interface(query)
         len_query = len(query)
         if self.eval:
-            pos_visual_feature = np.concatenate(
-                [self._compute_visual_feature(video_id, t)[np.newaxis, :]
-                 for t in self.segments], axis=0)
+            pos_visual_feature = self._compute_visual_feature_eval(video_id)
             n_segments = len(self.segments)
             len_query = [len_query] * n_segments
             sentence_feature = np.tile(sentence_feature, (n_segments, 1, 1))
@@ -229,27 +234,44 @@ class TemporalEndpointFeature(object):
     def __call__(self, start_end):
         return np.array(start_end, dtype=self.dtype) / 6
 
+
 if __name__ == '__main__':
     import time
     print('simple test')
     data = 'data/raw/train_data.json'
     rgb = 'data/raw/average_fc7.h5'
     flow = 'data/raw/average_global_flow.h5'
+    cues = {'rgb': {'file': rgb}, 'flow': {'file': flow}}
     t_start = time.time()
-    dataset = Didemo(data, rgb)
+    dataset = Didemo(data, cues)
     print(f'Time loading {data}: ', time.time() - t_start)
     print(len(dataset))
     print(dataset.metadata[0])
-    for i in dataset[0]:
-        if isinstance(i, np.ndarray):
-            print(i.shape)
+    for i, v in enumerate(dataset[0]):
+        if i== 0:
+            assert isinstance(v, np.ndarray)
+            print(i, v.shape)
+        elif i == 1:
+            print(i, v)
+        elif i > 1:
+            assert isinstance(v, dict)
+            for k, v in v.items():
+                print(k, v.shape)
 
     dataset.eval = True
     values = dataset[0]
     for i, v in enumerate(values):
-        if isinstance(v, np.ndarray):
+        if i== 0:
+            assert isinstance(v, np.ndarray)
             print(i, v.shape)
-        elif isinstance(v, list):
+        elif i == 1:
+            assert isinstance(v, list)
             print(i, len(v))
-        if i > 2:
+        elif i == 2:
+            assert isinstance(v, dict)
+            for k, v in v.items():
+                print(k, v.shape)
+        elif i > 2:
             assert v is None
+        else:
+            raise ValueError

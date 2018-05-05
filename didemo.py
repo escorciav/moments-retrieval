@@ -163,12 +163,12 @@ class Didemo(Dataset):
         all_tensors = default_collate(batch)
         # Sort due to LSTM dealing with variable length
         al_s, idx = all_tensors[1].sort(descending=True)
-        tensors_minus_length = []
-        for i in all_tensors[0:1] + all_tensors[2:]:
-            tensors_minus_length.append(i[idx, ...])
-            tensors_minus_length[-1].requires_grad_()
-        a_s, p_s, niv_s, nid_s = tensors_minus_length
-        return a_s, al_s, p_s, niv_s, nid_s
+        a_s = all_tensors[0][idx, ...]
+        a_s.requires_grad_()
+        dicts_of_tensors = (
+            {k: v[idx, ...].requires_grad_() for k, v in i.items()}
+            for i in all_tensors[2:])
+        return (a_s, al_s) + tuple(dicts_of_tensors)
 
     def collate_test_data(self, batch):
         # Note: we could do batching but taking care of the length of the
@@ -180,6 +180,10 @@ class Didemo(Dataset):
                 tensors.append(torch.from_numpy(v))
             elif i == 1:
                 tensors.append(torch.tensor(v))
+            elif i == 2:
+                assert isinstance(v, dict)
+                tensors.append({k: torch.from_numpy(t_np)
+                                for k, t_np in v.items()})
             else:
                 tensors.append(None)
         return tensors

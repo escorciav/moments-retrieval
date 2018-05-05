@@ -10,12 +10,12 @@ from torch.utils.data import DataLoader
 
 from didemo import Didemo
 from model import MCN
-from loss import IntraInterRanking
+from loss import IntraInterTripletMarginLoss
 from evaluation import video_evaluation
-from utils import Multimeter
+from utils import Multimeter, ship_to
 
 RAW_PATH = Path('data/raw')
-MODALITY = ['rgb', 'flow']
+MODALITY = ['rgb', 'flow', 'all']
 EVAL_BATCH_SIZE = 1
 
 logging.basicConfig(format='%(asctime)s:%(levelname)s:%(message)s',
@@ -44,12 +44,12 @@ parser.add_argument('--n_cpu', type=int, default=1,
 parser.add_argument('--feat', default='rgb', choices=MODALITY,
                     help='kind of modality')
 # TODO: enable
+parser.add_argument('--model_name', type=str, default='test',
+                    help='Model name')
 # parser.add_argument('--text_cluster_size', type=int, default=32,
 #                             help='Text cluster size')
-parser.add_argument('--model_name', type=str, default='test',
-                            help='Model name')
-parser.add_argument('--seed', type=int, default=1,
-                            help='Initial Random Seed')
+# parser.add_argument('--seed', type=int, default=1,
+#                     help='Initial Random Seed')
 
 parser.add_argument('--momentum', type=float, default=0.9,
                     help='Nesterov Momentum for SGD')
@@ -61,13 +61,14 @@ parser.add_argument('--rec-layers', type=int, default=1,
 args = parser.parse_args()
 
 # Testing different learning rate
-LR = [1e-1, 1e-2, 1e-3, 1e-4]
-random.shuffle(LR)
-args.lr = LR[0]
+# LR = [1e-1, 1e-2, 1e-3]
+# random.shuffle(LR)
+# args.lr = LR[0]
 
 args.device = 'cpu'
 if args.gpu_id >= 0 and torch.cuda.is_available():
     args.device = torch.device(f'cuda:{args.gpu_id}')
+logging.info('Launching training')
 logging.info(args)
 
 rgb_feat_path = RAW_PATH / 'average_fc7.h5'
@@ -76,9 +77,12 @@ train_list_path = RAW_PATH / 'train_data.json'
 val_list_path = RAW_PATH / 'val_data.json'
 
 if args.feat == 'rgb':
-    flow_feat_path = None
+    cues = {'rgb': {'file': rgb_feat_path}}
+elif args.feat == 'flow':
+    cues = {'flow': {'file': flow_feat_path}}
 else:
-    rgb_feat_path = None
+    cues = {'rgb': {'file': rgb_feat_path},
+            'flow': {'file': flow_feat_path}}
 
 # Predefining random initial seeds
 # torch.manual_seed(args.seed)
@@ -86,11 +90,9 @@ else:
 # random.seed(args.seed)
 
 logging.info('Pre-loading features... This may take a couple of minutes.')
-train_dataset = Didemo(train_list_path, rgb_file=rgb_feat_path,
-                       flow_file=flow_feat_path)
+train_dataset = Didemo(train_list_path, cues=cues)
                        # loc=True, max_words=50)
-val_dataset = Didemo(val_list_path, rgb_file=rgb_feat_path,
-                     flow_file=flow_feat_path, test=True)
+val_dataset = Didemo(val_list_path, cues=cues, test=True)
 
 # Setup data loaders
 logging.info('Setting-up loaders')
@@ -105,10 +107,11 @@ val_dataloader = DataLoader(val_dataset, batch_size=EVAL_BATCH_SIZE,
 logging.info('Setting-up model')
 feat_0 = train_dataset[0]
 text_dim = feat_0[0].shape[1]
-video_modality_dim = feat_0[2].shape[0]
+video_modality_dim = feat_0[2][args.feat].shape[0]
 max_length = feat_0[0].shape[0]
-net = MCN(visual_size=video_modality_dim, lang_size=text_dim,
-          max_length=max_length, rec_layers=args.rec_layers)
+mcn_setup = dict(visual_size=video_modality_dim, lang_size=text_dim,
+                 max_length=max_length, rec_layers=args.rec_layers)
+net = MCN(**mcn_setup)
 net.train()
 if args.gpu_id >= 0:
     logging.info('Transferring model to GPU')
@@ -116,7 +119,7 @@ if args.gpu_id >= 0:
 
 # Criterion
 logging.info('Setting-up criterion')
-ranking_loss = IntraInterRanking(margin=args.margin)
+ranking_loss = IntraInterTripletMarginLoss(margin=args.margin)
 if args.gpu_id >= 0:
     logging.info('Transferring criterion to GPU')
     ranking_loss.to(args.device)
@@ -134,7 +137,7 @@ for epoch in range(args.epochs):
     for it, minibatch in enumerate(train_dataloader):
         if args.gpu_id >= 0:
             minibatch_ = minibatch
-            minibatch = [i.to(args.device) for i in minibatch]
+            minibatch = ship_to(minibatch, args.device)
 
         embeddings = net(*minibatch)
         loss, _, _ = ranking_loss(*embeddings)
@@ -156,8 +159,7 @@ for epoch in range(args.epochs):
     for it, minibatch in enumerate(val_dataloader):
         if args.gpu_id >= 0:
             minibatch_ = minibatch
-            minibatch = [i.to(args.device) if i is not None else None
-                         for i in minibatch]
+            minibatch = ship_to(minibatch, args.device)
 
         l_embedding, v_embedding, *_ = net(*minibatch)
         distance = (l_embedding - v_embedding).pow(2).sum(dim=1)

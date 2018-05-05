@@ -1,3 +1,16 @@
+def ship_to(x, device):
+    # TODO: clean like default_collate :S
+    y = []
+    for i in x:
+        if i is None:
+            y.append(None)
+        elif isinstance(i, dict):
+            y.append({k: v.to(device) for k, v in i.items()})
+        else:
+            y.append(i.to(device))
+    return y
+
+
 class AverageMeter(object):
     """Computes and stores the average and current value"""
 

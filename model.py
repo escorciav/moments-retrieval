@@ -30,6 +30,8 @@ class MCN(nn.Module):
 
     def forward(self, padded_query, query_length, visual_pos,
                 visual_neg_intra=None, visual_neg_inter=None):
+        visual_pos, visual_neg_intra, visual_neg_inter = self._unpack_visual(
+            visual_pos, visual_neg_intra, visual_neg_inter)
         v_embedding_neg_intra = None
         v_embedding_neg_inter = None
         B = len(padded_query)
@@ -51,6 +53,17 @@ class MCN(nn.Module):
         return (l_embedding, v_embedding_pos, v_embedding_neg_intra,
                 v_embedding_neg_inter)
 
+    def _unpack_visual(self, *args):
+        "Get visual feature inside a dict"
+        argout = ()
+        for i in args:
+            if isinstance(i, dict):
+                assert len(i) == 1
+                j = next(iter(i))
+                argout += (i[j],)
+            else:
+                argout += (i,)
+        return argout
 
 class ContextGating(nn.Module):
     """GLU transformation to the incoming data

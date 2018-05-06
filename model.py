@@ -53,6 +53,12 @@ class MCN(nn.Module):
         return (l_embedding, v_embedding_pos, v_embedding_neg_intra,
                 v_embedding_neg_inter)
 
+    def predict(self, *args):
+        "Compute distance between visual and sentence"
+        l_embedding, v_embedding, *_ = self.forward(*args)
+        distance = (l_embedding - v_embedding).pow(2).sum(dim=1)
+        return distance, False
+
     def _unpack_visual(self, *args):
         "Get visual feature inside a dict"
         argout = ()
@@ -197,6 +203,11 @@ class TripletMEE(nn.Module):
 
         return (similarity_pos, similarity_neg_intra,
                 similarity_neg_inter)
+
+    def predict(self, *args):
+        "Compute similarity between visual and sentence"
+        similarity, *_ = self.forward(*args)
+        return similarity, True
 
 
 if __name__ == '__main__':

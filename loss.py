@@ -28,8 +28,8 @@ class IntraInterMarginLoss(nn.Module):
         self.margin = margin
 
     def forward(self, p, n_intra, n_inter):
-        intra_loss = F.relu(self.margin - (p - n_intra))
-        inter_loss = F.relu(self.margin - (p - n_inter))
+        intra_loss = F.relu(self.margin - (p - n_intra)).mean()
+        inter_loss = F.relu(self.margin - (p - n_inter)).mean()
         loss = intra_loss + self.alpha * inter_loss
         return loss, intra_loss, inter_loss
 

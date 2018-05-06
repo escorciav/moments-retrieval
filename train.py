@@ -1,4 +1,5 @@
 import argparse
+import json
 import logging
 import random
 from pathlib import Path
@@ -9,17 +10,17 @@ import torch.optim as optim
 from torch.utils.data import DataLoader
 
 from didemo import Didemo
-from model import MCN
-from loss import IntraInterTripletMarginLoss
+from model import MCN, TripletMEE
+from loss import IntraInterTripletMarginLoss, IntraInterMarginLoss
 from evaluation import video_evaluation
 from utils import Multimeter, ship_to
 
 RAW_PATH = Path('data/raw')
 MODALITY = ['rgb', 'flow', 'all']
+ARCHITECTURES = ['mcn', 'tmee']
+OPTIMIZER = ['sgd', 'adam']
 EVAL_BATCH_SIZE = 1
-
-logging.basicConfig(format='%(asctime)s:%(levelname)s:%(message)s',
-                    level=logging.DEBUG)
+PATIENCE_LIMIT = 5
 
 parser = argparse.ArgumentParser(description='DiDeMo')
 
@@ -38,19 +39,25 @@ parser.add_argument('--n_display', type=int, default=60,
 
 parser.add_argument('--gpu-id', type=int, default=-1,
                     help='Use of GPU')
-parser.add_argument('--n_cpu', type=int, default=1,
+parser.add_argument('--n_cpu', type=int, default=4,
                     help='Number of CPU')
 
 parser.add_argument('--feat', default='rgb', choices=MODALITY,
                     help='kind of modality')
+parser.add_argument('--arch', default='mcn', choices=ARCHITECTURES,
+                    help='kind of modality')
+
+# TODO: make it a directory
+parser.add_argument('--logfile', default='',
+                    help='Logging file')
 # TODO: enable
-parser.add_argument('--model_name', type=str, default='test',
-                    help='Model name')
 # parser.add_argument('--text_cluster_size', type=int, default=32,
 #                             help='Text cluster size')
 # parser.add_argument('--seed', type=int, default=1,
 #                     help='Initial Random Seed')
 
+parser.add_argument('--optimizer', type=str, default='sgd', choices=OPTIMIZER,
+                    help='optimizer')
 parser.add_argument('--momentum', type=float, default=0.9,
                     help='Nesterov Momentum for SGD')
 
@@ -60,14 +67,34 @@ parser.add_argument('--rec-layers', type=int, default=1,
 
 args = parser.parse_args()
 
-# Testing different learning rate
-# LR = [1e-1, 1e-2, 1e-3]
-# random.shuffle(LR)
-# args.lr = LR[0]
+log_prm = dict(format='%(asctime)s:%(levelname)s:%(message)s',
+               level=logging.DEBUG)
+if len(args.logfile) > 1:
+    log_prm['filename'] = args.logfile + '.log'
+    log_prm['filemode'] = 'w'
+logging.basicConfig(**log_prm)
 
-args.device = 'cpu'
+if args.arch == 'mcn':
+    args.optimizer = 'sgd'
+else:
+    random.shuffle(OPTIMIZER)
+    args.optimizer = OPTIMIZER[0]
+
+# Testing different learning rate
+if args.optimizer == 'sgd':
+    LR = [1e-1, 1e-2, 1e-3, 1e-4]
+    LRD = [0.1, 0.5, 0.75]
+else:
+    LR = [1e-2, 5e-4, 1e-4, 5e-5]
+    LRD = [0.9, 0.95]
+random.shuffle(LR)
+random.shuffle(LRD)
+args.lr = LR[0]
+args.lr_decay = LRD[0]
+
+device = 'cpu'
 if args.gpu_id >= 0 and torch.cuda.is_available():
-    args.device = torch.device(f'cuda:{args.gpu_id}')
+    device = torch.device(f'cuda:{args.gpu_id}')
 logging.info('Launching training')
 logging.info(args)
 
@@ -103,32 +130,51 @@ val_dataloader = DataLoader(val_dataset, batch_size=EVAL_BATCH_SIZE,
                             shuffle=False, num_workers=args.n_cpu,
                             collate_fn=val_dataset.collate_test_data)
 
-# Model
-logging.info('Setting-up model')
-feat_0 = train_dataset[0]
-text_dim = feat_0[0].shape[1]
-video_modality_dim = feat_0[2][args.feat].shape[0]
-max_length = feat_0[0].shape[0]
-mcn_setup = dict(visual_size=video_modality_dim, lang_size=text_dim,
-                 max_length=max_length, rec_layers=args.rec_layers)
-net = MCN(**mcn_setup)
+# Model and Criterion
+logging.info('Setting-up model and criterion')
+if args.arch == 'tmee':
+    logging.info('Model: TripletMEE')
+    feat_0 = train_dataset[0]
+    text_embedding = 1000
+    crossmodal_embedding = 100
+    visual_embedding = {k: (v.shape[0], crossmodal_embedding)
+                        for k, v in feat_0[2].items()}
+    assert visual_embedding.keys() == cues.keys()
+    text_dim = feat_0[0].shape[1]
+    max_length = feat_0[0].shape[0]
+    extra = dict(word_size=text_dim, lstm_layers=args.rec_layers,
+                 max_length=max_length)
+    net = TripletMEE(text_embedding, visual_embedding, **extra)
+
+    ranking_loss = IntraInterMarginLoss(margin=args.margin)
+else:
+    logging.info('Model: MCN')
+    feat_0 = train_dataset[0]
+    text_dim = feat_0[0].shape[1]
+    video_modality_dim = feat_0[2][args.feat].shape[0]
+    max_length = feat_0[0].shape[0]
+    mcn_setup = dict(visual_size=video_modality_dim, lang_size=text_dim,
+                    max_length=max_length, rec_layers=args.rec_layers)
+    net = MCN(**mcn_setup)
+
+    ranking_loss = IntraInterTripletMarginLoss(margin=args.margin)
+
 net.train()
 if args.gpu_id >= 0:
-    logging.info('Transferring model to GPU')
-    net.to(args.device)
-
-# Criterion
-logging.info('Setting-up criterion')
-ranking_loss = IntraInterTripletMarginLoss(margin=args.margin)
-if args.gpu_id >= 0:
-    logging.info('Transferring criterion to GPU')
-    ranking_loss.to(args.device)
+    logging.info('Transferring model and criterion to GPU')
+    net.to(device)
+    ranking_loss.to(device)
 
 # Optimizer
-logging.info('Setting-up optimizer')
-optimizer = optim.SGD(net.parameters(), lr=args.lr, momentum=args.momentum)
+logging.info(f'Setting-up optimizer: {args.optimizer}')
+if args.optimizer == 'adam':
+    optimizer = optim.Adam(net.parameters(), lr=args.lr)
+elif args.optimizer == 'sgd':
+    optimizer = optim.SGD(net.parameters(), lr=args.lr, momentum=args.momentum)
 
 logging.info('Starting optimization...')
+best_r1 = 0.0
+patience = 0
 for epoch in range(args.epochs):
     running_loss = 0.0
     logging.info(f'Epoch: {epoch + 1}')
@@ -137,7 +183,7 @@ for epoch in range(args.epochs):
     for it, minibatch in enumerate(train_dataloader):
         if args.gpu_id >= 0:
             minibatch_ = minibatch
-            minibatch = ship_to(minibatch, args.device)
+            minibatch = ship_to(minibatch, device)
 
         embeddings = net(*minibatch)
         loss, _, _ = ranking_loss(*embeddings)
@@ -159,20 +205,36 @@ for epoch in range(args.epochs):
     for it, minibatch in enumerate(val_dataloader):
         if args.gpu_id >= 0:
             minibatch_ = minibatch
-            minibatch = ship_to(minibatch, args.device)
-
-        l_embedding, v_embedding, *_ = net(*minibatch)
-        distance = (l_embedding - v_embedding).pow(2).sum(dim=1)
+            minibatch = ship_to(minibatch, device)
+        results, descending = net.predict(*minibatch)
         # TODO: port evaluation to GPU
-        _, idx = distance.sort(descending=False)
+        _, idx = results.sort(descending=descending)
         idx_h = idx.to('cpu')
         predictions = [val_dataset.segments[i] for i in idx_h]
         gt = val_dataset.metadata[it]['times']
         performance = video_evaluation(gt, predictions)
         meters.update(performance)
     logging.info(f'{meters.report()}')
+
+    r1_i = meters.meters[1].avg
+    if r1_i > best_r1:
+        patience = 0
+        best_r1 = r1_i
+        logging.info(f'Hit jackpot r@1: {best_r1:.4f}')
+    else:
+        patience += 1
     net.train()
 
     # TODO: wrap it into a function
     for param_group in optimizer.param_groups:
         param_group['lr'] *= args.lr_decay
+
+    if patience == PATIENCE_LIMIT:
+        break
+
+logging.info(f'Best r@1: {best_r1:.4f}')
+args.best_r1 = best_r1
+if len(args.logfile) > 1:
+    result_file = args.logfile + '.json'
+    with open(result_file, 'w') as f:
+        json.dump(vars(args), f, indent=2)

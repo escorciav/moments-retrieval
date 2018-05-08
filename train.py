@@ -45,7 +45,7 @@ parser.add_argument('--n_cpu', type=int, default=4,
 parser.add_argument('--feat', default='rgb', choices=MODALITY,
                     help='kind of modality')
 parser.add_argument('--arch', default='mcn', choices=ARCHITECTURES,
-                    help='kind of modality')
+                    help='Type of architecture')
 
 # TODO: make it a directory
 parser.add_argument('--logfile', default='',
@@ -62,7 +62,7 @@ parser.add_argument('--momentum', type=float, default=0.9,
                     help='Nesterov Momentum for SGD')
 
 # Added for debugging
-parser.add_argument('--rec-layers', type=int, default=1,
+parser.add_argument('--rnn-layers', type=int, default=1,
                     help='LSTM layers')
 
 args = parser.parse_args()
@@ -76,6 +76,9 @@ logging.basicConfig(**log_prm)
 
 if args.arch == 'mcn':
     args.optimizer = 'sgd'
+    rnn_layers = [1, 3]
+    random.shuffle(rnn_layers)
+    args.rnn_layers = rnn_layers[0]
 else:
     random.shuffle(OPTIMIZER)
     args.optimizer = OPTIMIZER[0]
@@ -142,7 +145,7 @@ if args.arch == 'tmee':
     assert visual_embedding.keys() == cues.keys()
     text_dim = feat_0[0].shape[1]
     max_length = feat_0[0].shape[0]
-    extra = dict(word_size=text_dim, lstm_layers=args.rec_layers,
+    extra = dict(word_size=text_dim, lstm_layers=args.rnn_layers,
                  max_length=max_length)
     net = TripletMEE(text_embedding, visual_embedding, **extra)
 
@@ -154,7 +157,7 @@ else:
     video_modality_dim = feat_0[2][args.feat].shape[0]
     max_length = feat_0[0].shape[0]
     mcn_setup = dict(visual_size=video_modality_dim, lang_size=text_dim,
-                    max_length=max_length, rec_layers=args.rec_layers)
+                    max_length=max_length, rec_layers=args.rnn_layers)
     net = MCN(**mcn_setup)
 
     ranking_loss = IntraInterTripletMarginLoss(margin=args.margin)

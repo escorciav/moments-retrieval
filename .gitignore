@@ -2,9 +2,6 @@
 *.vscode
 activate*.sh
 
-# data
-data/interim/debug
-
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]

@@ -13,3 +13,8 @@ average_global_flow.h5
 test_data.json
 train_data.json
 val_data.json
+
+# Video lists
+videos_test.txt
+videos_train.txt
+videos_val.txt

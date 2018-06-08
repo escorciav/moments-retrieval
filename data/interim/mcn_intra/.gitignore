@@ -1,0 +1,8 @@
+queries_val_flow.hdf5
+queries_val_rgb.hdf5
+queries_test_flow.hdf5
+queries_test_rgb.hdf5
+corpus_val_flow.hdf5
+corpus_val_rgb.hdf5
+corpus_test_flow.hdf5
+corpus_test_rgb.hdf5

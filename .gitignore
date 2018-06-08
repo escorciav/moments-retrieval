@@ -2,6 +2,11 @@
 *.vscode
 activate*.sh
 
+# adobe setup
+adobe
+log/consumed
+log/docker*
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]

@@ -17,6 +17,11 @@ train_data.json
 val_data.json
 
 # Video lists
-data/raw/videos_test.txt
-data/raw/videos_train.txt
-data/raw/videos_val.txt
+videos_test.txt
+videos_train.txt
+videos_val.txt
+
+# Annotations with weak-agreement criteria
+test_data_wwa.json
+train_data_wwa.json
+val_data_wwa.json

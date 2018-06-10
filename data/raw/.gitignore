@@ -18,3 +18,8 @@ val_data.json
 videos_test.txt
 videos_train.txt
 videos_val.txt
+
+# Annotations with weak-agreement criteria
+test_data_wwa.json
+train_data_wwa.json
+val_data_wwa.json

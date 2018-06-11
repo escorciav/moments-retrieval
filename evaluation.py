@@ -35,8 +35,9 @@ class RetrievalEvaluation():
     # _judge.reset()
 
     def __init__(self, corpus_h5, groundtruth_json,
-                 k=(1,), iou_threshold=0.75):
-        self.corpus = Corpus(corpus_h5)
+                 k=(1,), iou_threshold=0.75,
+                 nms_threshold=1.0, topk=None):
+        self.corpus = Corpus(corpus_h5, nms_threshold=nms_threshold, topk=topk)
         videos = self.corpus.videos.tolist()
         segments = list(map(tuple, self.corpus.segments.tolist()))
         self._precompute_iou()
@@ -47,7 +48,7 @@ class RetrievalEvaluation():
         self.reset()
         self._k = np.array(self.k)
 
-    def eval(self):
+    def eval(self, full=False):
         recall_k = [sum(i) / len(i) for i in self.hit_k]
         recall_k_iou = [sum(i) / len(i) for i in self.hit_k_iou]
         miou = sum(self.miou) / len(self.miou)
@@ -55,7 +56,9 @@ class RetrievalEvaluation():
         self.avg_rank = np.array(self.avg_rank)
         recall_k_didemo = [np.sum(self.avg_rank <= k) / len(self.avg_rank)
                            for k in self.k]
-        return recall_k, recall_k_iou, recall_k_didemo, miou, mrank
+        if full:
+            return recall_k, recall_k_iou, recall_k_didemo, miou, mrank
+        return recall_k, mrank
 
     def eval_single_query(self, query, query_id):
         # todo encode language vector
@@ -150,9 +153,9 @@ if __name__ == '__main__':
             _query_id = int(_sample_key)
             _query_vector = h5ds[:]
             _judge.eval_single_vector(_query_vector, _query_id)
-        _performace = _judge.eval()
+        _performace = _judge.eval(full=True)
         print('R@{0:}={2:};\nR@{0:},{1:}={3:};\nR@{0:},didemo={4:};\n'
-            'mIOU={5:.4f};\nmRank={6:.2f};'
-            .format(_judge.k, _judge.iou_threshold,
-                    *_performace))
+              'mIOU={5:.4f};\nmRank={6:.2f};'
+              .format(_judge.k, _judge.iou_threshold,
+                      *_performace))
         print('Elapsed time:', time.time() - start)

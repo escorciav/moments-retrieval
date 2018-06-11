@@ -5,6 +5,9 @@ from collections import OrderedDict
 import h5py
 import numpy as np
 
+from np_segments_ops import non_maxima_suppresion
+
+TIME_UNIT = 5
 POSSIBLE_SEGMENTS = [(0,0), (1,1), (2,2), (3,3), (4,4), (5,5)]
 for i in itertools.combinations(range(6), 2):
     POSSIBLE_SEGMENTS.append(i)
@@ -16,14 +19,20 @@ class Corpus(object):
     TODO
         batch indexing
     """
+    segments = np.array(POSSIBLE_SEGMENTS)
+    segments_time = TIME_UNIT * np.array(POSSIBLE_SEGMENTS)
+    segments_time[:, 1] += TIME_UNIT
 
-    def __init__(self, filename, videos=None, segments=POSSIBLE_SEGMENTS):
-        self.segments = np.array(segments)
+    def __init__(self, filename, videos=None,
+                 nms_threshold=1.0, topk=None):
+        self.nms_threshold = nms_threshold
+        self.topk = topk
         self._create_repo(filename, videos)
         self._create_feature_matrix()
 
     def index(self, x):
         distance = self.search(x)
+        distance = self.postprocess(distance)
         distance_sorted_idx = np.argsort(distance)
         distance_sorted = distance[distance_sorted_idx]
         video_idx, segment_idx = self.ind_to_repo(distance_sorted_idx)
@@ -36,6 +45,32 @@ class Corpus(object):
         video_index = i // self.T
         segment_index = i % self.T
         return video_index, segment_index
+
+    def nms_per_video(self, distance, copy):
+        "nms accross clips of each video"
+        if copy:
+            distance = distance.copy()
+        max_value = distance.max() + distance.min() / 100
+        ind_possible_segments = np.arange(self.T)
+        for i in range(self.num_videos):
+            video_index = i * self.T
+            d_i = distance[video_index:video_index + self.T]
+            s_i = d_i.max() - d_i
+            ind_pick = non_maxima_suppresion(
+                self.segments_time, s_i, self.nms_threshold)
+            ind_rm = np.setdiff1d(ind_possible_segments, ind_pick)
+            ind_rm_corpus = video_index + ind_rm
+            distance[ind_rm_corpus] = max_value
+        return distance
+
+    def postprocess(self, distance, copy=False):
+        "apply postprocessing functions"
+        # TODO generalize it for similarities
+        if self.nms_threshold < 1.0:
+            distance = self.nms_per_video(distance, copy)
+        if self.topk is not None:
+            distance = self.topk_per_video(distance, copy)
+        return distance
 
     def repo_to_ind(self, video_index, segment_index):
         """return index in the corpus
@@ -54,6 +89,19 @@ class Corpus(object):
         "compute similarity between query and elements in corpus"
         # TODO generalize it for similarities
         distance = ((self.features - x)**2).sum(axis=1)
+        return distance
+
+    def topk_per_video(self, distance, copy):
+        "nms accross clips of each video"
+        if copy:
+            distance = distance.copy()
+        max_value = distance.max() + distance.min() / 100
+        distance__ = distance.reshape((-1, self.T))
+        ind_rm = np.argsort(distance__, axis=1)[:, self.topk:]
+        row_offset = (np.arange(self.num_videos).reshape((-1, 1)) *
+                      self.T)
+        ind_rm = (ind_rm + row_offset).ravel()
+        distance[ind_rm] = max_value
         return distance
 
     def _create_repo(self, filename, videos):

@@ -56,9 +56,43 @@ def iou(segments1, segments2):
     return intersect / union
 
 
+def non_maxima_suppresion(segments, scores, nms_threshold):
+    """non-maxima suppresion over segments
+
+    Args:
+        segments (numpy array): shape [N, 2] holding N segments
+        scores (numpy array): shape [N] holding score of each segment.
+    Returns:
+        a numpy array with shape [M] representing indexes to pick after nms.
+    """
+    t1, t2 = np.split(segments, 2, axis=1)
+    area = t2 - t1
+    idx = np.argsort(scores)
+    ind_pick = []
+    for i in range(len(idx)):
+        if len(idx) == 0:
+            break
+        p = idx[len(idx) - 1]
+        ind_pick.append(p)
+
+        tt1 = np.maximum(t1[p], t1[idx])
+        tt2 = np.minimum(t2[p], t2[idx])
+        wh = np.maximum(0, tt2 - tt1)
+        o = wh / (area[p] + area[idx] - wh)
+
+        ind_rm_i = np.where(o >= nms_threshold)[0]
+        idx = np.delete(idx, ind_rm_i)
+    ind_pick = np.array(ind_pick)
+    return ind_pick
+
+
 if __name__ == '__main__':
-    x = np.empty((4, 2))
-    y = np.empty((3, 2))
+    x = np.random.rand(4, 2)
+    y = np.random.rand(3, 2)
     intersection(x, y)
     length(x)
     iou(x, y)
+    
+    scores = np.random.rand(4)
+    nms_threshold = 0.75
+    non_maxima_suppresion(x, scores, nms_threshold)

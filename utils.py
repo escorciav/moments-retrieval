@@ -1,3 +1,18 @@
+import glob
+import json
+import pandas as pd
+
+
+def jsons_to_dataframe(wilcard):
+    "Read multiple json files and stack them into a DataFrame"
+    data = []
+    for filename in glob.glob(wilcard):
+        with open(filename) as f:
+            data.append(json.load(f))
+    df = pd.DataFrame(data)
+    return df
+
+
 def ship_to(x, device):
     # TODO: clean like default_collate :S
     y = []
@@ -28,7 +43,7 @@ class AverageMeter(object):
         self.sum += val * n
         self.count += n
         self.avg = self.sum / self.count
-        
+
 
 class Multimeter(object):
     "Keep multiple AverageMeter"
@@ -51,6 +66,9 @@ class Multimeter(object):
         for i, v in enumerate(self.metrics):
             msg += f'{v}: {self.meters[i].avg:.4f}\t'
         return msg[:-1]
+
+    def dump(self):
+        return {v: self.meters[i].avg for i, v in enumerate(self.metrics)}
 
 
 if __name__ == '__main__':

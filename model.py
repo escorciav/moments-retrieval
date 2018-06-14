@@ -12,7 +12,7 @@ class MCN(nn.Module):
     """
 
     def __init__(self, visual_size=4096, lang_size=300, embedding_size=100,
-                 dropout=0.3, rec_layers=3, max_length=None):
+                 dropout=0.3, max_length=None):
         super(MCN, self).__init__()
         self.embedding_size = embedding_size
         self.max_length = max_length
@@ -25,8 +25,9 @@ class MCN(nn.Module):
         )
 
         self.sentence_encoder = nn.LSTM(
-            lang_size, 1000, rec_layers, batch_first=True)
+            lang_size, 1000, batch_first=True)
         self.lang_encoder = nn.Linear(1000, embedding_size)
+        # self.init_parameters(None)
 
     def forward(self, padded_query, query_length, visual_pos,
                 visual_neg_intra=None, visual_neg_inter=None):
@@ -52,6 +53,23 @@ class MCN(nn.Module):
         l_embedding = self.lang_encoder(last_output)
         return (l_embedding, v_embedding_pos, v_embedding_neg_intra,
                 v_embedding_neg_inter)
+
+    def init_parameters(self, filename):
+        "Initialize network parameters"
+        if filename is not None and os.path.exists(filename):
+            raise NotImplementedError('WIP')
+
+        for m in self.modules():
+            nn.init.uniform_(m.weight, -0.0799999982119, 0.0799999982119)
+            nn.init.constant_(m.bias, 0)
+
+    def optimization_parameters(self, initial_lr=1e-2):
+        prm_policy = [
+            {'params': self.sentence_encoder.parameters(), 'lr': initial_lr * 10},
+            {'params': self.img_encoder.parameters()},
+            {'params': self.lang_encoder.parameters()},
+        ]
+        return prm_policy
 
     def predict(self, *args):
         "Compute distance between visual and sentence"
@@ -214,7 +232,7 @@ if __name__ == '__main__':
     import torch, random
     from torch.nn.utils.rnn import pad_sequence
     B, LD = 3, 5
-    net = MCN(lang_size=LD, rec_layers=1)
+    net = MCN(lang_size=LD)
     x = torch.rand(B, 4096, requires_grad=True)
     z = [random.randint(2, 6) for i in range(B)]
     z.sort(reverse=True)

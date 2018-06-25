@@ -165,7 +165,7 @@ def main(args):
     val_loader = DataLoader(val_dataset, batch_size=EVAL_BATCH_SIZE,
                             shuffle=False, num_workers=args.n_cpu,
                             collate_fn=val_dataset.collate_test_data)
-    test_loader = DataLoader(val_dataset, batch_size=EVAL_BATCH_SIZE,
+    test_loader = DataLoader(test_dataset, batch_size=EVAL_BATCH_SIZE,
                              shuffle=False, num_workers=args.n_cpu,
                              collate_fn=val_dataset.collate_test_data)
 

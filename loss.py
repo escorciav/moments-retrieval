@@ -6,31 +6,33 @@ from torch.nn.modules import TripletMarginLoss
 class IntraInterTripletMarginLoss(nn.Module):
     "Intra-Inter Triplet Margin Loss"
 
-    def __init__(self, alpha=0.2, margin=0.1):
+    def __init__(self, w_intra=0.5, w_inter=0.2, margin=0.1):
         super(IntraInterTripletMarginLoss, self).__init__()
-        self.alpha = alpha
         self.intra = TripletMarginLoss(margin=margin)
         self.inter = TripletMarginLoss(margin=margin)
+        self.w_intra = w_intra
+        self.w_inter = w_inter
 
     def forward(self, a, p, n_intra, n_inter):
         intra_loss = self.intra(a, p, n_intra)
         inter_loss = self.inter(a, p, n_inter)
-        loss = intra_loss + self.alpha * inter_loss
+        loss = self.w_intra * intra_loss + self.w_inter * inter_loss
         return loss, intra_loss, inter_loss
 
 
 class IntraInterMarginLoss(nn.Module):
     "Intra-Inter Margin Loss"
 
-    def __init__(self, alpha=0.2, margin=0.1):
+    def __init__(self, w_intra=0.5, w_inter=0.2, margin=0.1):
         super(IntraInterMarginLoss, self).__init__()
-        self.alpha = alpha
         self.margin = margin
+        self.w_intra = w_intra
+        self.w_inter = w_inter
 
     def forward(self, p, n_intra, n_inter):
         intra_loss = F.relu(self.margin - (p - n_intra)).mean()
         inter_loss = F.relu(self.margin - (p - n_inter)).mean()
-        loss = intra_loss + self.alpha * inter_loss
+        loss = self.w_intra * intra_loss + self.w_inter * inter_loss
         return loss, intra_loss, inter_loss
 
 

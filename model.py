@@ -27,7 +27,7 @@ class MCN(nn.Module):
         self.sentence_encoder = nn.LSTM(
             lang_size, 1000, batch_first=True)
         self.lang_encoder = nn.Linear(1000, embedding_size)
-        # self.init_parameters(None)
+        self.init_parameters()
 
     def forward(self, padded_query, query_length, visual_pos,
                 visual_neg_intra=None, visual_neg_inter=None):
@@ -54,21 +54,38 @@ class MCN(nn.Module):
         return (l_embedding, v_embedding_pos, v_embedding_neg_intra,
                 v_embedding_neg_inter)
 
-    def init_parameters(self, filename):
+    def init_parameters(self):
         "Initialize network parameters"
-        if filename is not None and os.path.exists(filename):
-            raise NotImplementedError('WIP')
+        # if filename is not None and os.path.exists(filename):
+        #    raise NotImplementedError('WIP')
+        for name, prm in self.named_parameters():
+            if 'bias' in name:
+                prm.data.fill_(0)
+            else:
+                prm.data.uniform_(-0.08, 0.08)
 
-        for m in self.modules():
-            nn.init.uniform_(m.weight, -0.0799999982119, 0.0799999982119)
-            nn.init.constant_(m.bias, 0)
-
-    def optimization_parameters(self, initial_lr=1e-2):
+    def optimization_parameters(self, initial_lr=1e-2, caffe_setup=False):
+        if caffe_setup:
+            return self.optimization_parameters_original(initial_lr)
         prm_policy = [
-            {'params': self.sentence_encoder.parameters(), 'lr': initial_lr * 10},
+            {'params': self.sentence_encoder.parameters(),
+             'lr': initial_lr * 10},
             {'params': self.img_encoder.parameters()},
             {'params': self.lang_encoder.parameters()},
         ]
+        return prm_policy
+
+    def optimization_parameters_original(self, initial_lr):
+        prm_policy = []
+        for name, prm in self.named_parameters():
+            if 'sentence_encoder' in name and 'bias_ih_l' in name:
+                continue
+            elif 'sentence_encoder' in name:
+                prm_policy.append({'params': prm, 'lr': initial_lr * 10})
+            elif 'bias' in name:
+                prm_policy.append({'params': prm, 'lr': initial_lr * 2})
+            else:
+                prm_policy.append({'params': prm})
         return prm_policy
 
     def predict(self, *args):

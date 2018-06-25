@@ -49,7 +49,7 @@ class MCN(nn.Module):
         output, _ = pad_packed_sequence(packed_output, batch_first=True,
                                         total_length=self.max_length)
         # TODO: try max-pooling
-        last_output = output[range(B), query_length, :]
+        last_output = output[range(B), query_length - 1, :]
         l_embedding = self.lang_encoder(last_output)
         return (l_embedding, v_embedding_pos, v_embedding_neg_intra,
                 v_embedding_neg_inter)

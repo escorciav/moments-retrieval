@@ -78,7 +78,7 @@ parser.add_argument('--patience', type=int, default=10,
 # Logging
 parser.add_argument('--logfile', default='',
                     help='Logging file')
-parser.add_argument('--n-display', type=int, default=60,
+parser.add_argument('--n-display', type=int, default=30,
                     help='Information display frequence')
 
 # Reproducibility
@@ -89,6 +89,7 @@ args = parser.parse_args()
 
 # hyper-parameter search different learning rate
 # TODO: move to yaml
+FEAT = ['rgb', 'flow']
 PATIENCE = [-1, 12, 24]
 MARGIN = [0.1, 0.2, 0.5]
 LW_INTER_INTRA = [(0.2, 0.5), (0.5, 0.5), (0.1, 0.5)]
@@ -129,6 +130,8 @@ random.shuffle(LW_INTER_INTRA)
 args.w_inter, args.w_intra = LW_INTER_INTRA[0]
 random.shuffle(CAFFE_SETUP)
 args.caffe_setup = CAFFE_SETUP[0]
+random.shuffle(FEAT)
+args.feat = FEAT[0]
 
 def main(args):
     setup_rng(args)
@@ -150,9 +153,9 @@ def main(args):
                 'flow': {'file': flow_feat_path}}
 
     logging.info('Pre-loading features... This may take a couple of minutes.')
-    train_dataset = Didemo(train_list_path, cues=cues)
-    val_dataset = Didemo(val_list_path, cues=cues, test=True)
-    test_dataset = Didemo(test_list_path, cues=cues, test=True)
+    train_dataset = Didemo(TRAIN_LIST_PATH, cues=cues)
+    val_dataset = Didemo(VAL_LIST_PATH, cues=cues, test=True)
+    test_dataset = Didemo(TEST_LIST_PATH, cues=cues, test=True)
 
     # Setup data loaders
     logging.info('Setting-up loaders')
@@ -321,7 +324,7 @@ def setup_model(args, dataset):
         video_modality_dim = feat_0[2][args.feat].shape[0]
         max_length = feat_0[0].shape[0]
         mcn_setup = dict(visual_size=video_modality_dim, lang_size=text_dim,
-                        max_length=max_length)
+                         max_length=max_length)
 
         net = MCN(**mcn_setup)
         opt_parameters = net.optimization_parameters(

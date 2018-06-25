@@ -25,6 +25,12 @@ EVAL_BATCH_SIZE = 1
 METRICS = ['iou', 'r@1', 'r@5']
 TRACK = 'r@1'
 
+RGB_FEAT_PATH = RAW_PATH / 'average_fc7.h5'
+FLOW_FEAT_PATH = RAW_PATH / 'average_global_flow.h5'
+TRAIN_LIST_PATH = RAW_PATH / 'train_data.json'
+VAL_LIST_PATH = RAW_PATH / 'val_data.json'
+TEST_LIST_PATH = RAW_PATH / 'test_data.json'
+
 parser = argparse.ArgumentParser(description='MCN training DiDeMo')
 
 # Features
@@ -83,11 +89,14 @@ args = parser.parse_args()
 
 # hyper-parameter search different learning rate
 # TODO: move to yaml
-PATIENCE = [-1, -1, 12, 24]
+PATIENCE = [-1, 12, 24]
+MARGIN = [0.1, 0.2, 0.5]
+LW_INTER_INTRA = [(0.2, 0.5), (0.5, 0.5), (0.1, 0.5)]
 LRS = [12, 36, 72]
-MOMENTUM = [0.9, 0.95, 0.99]
+MOMENTUM = [0.9, 0.95]
+CAFFE_SETUP = [True, False]
 if args.arch == 'mcn':
-    OPTIMIZER = ['sgd', 'sgd', 'nesterov']
+    OPTIMIZER = ['sgd', 'nesterov']
     random.shuffle(OPTIMIZER)
     args.optimizer = OPTIMIZER[0]
 else:
@@ -99,7 +108,6 @@ if args.optimizer == 'sgd':
 elif args.optimizer == 'nesterov':
     LR = [1e-1, 1e-2, 5e-3]
     LRD = [0.1, 0.5, 0.75]
-    MOMENTUM = [0.9]
 else:
     LR = [1e-2, 5e-4, 1e-4, 5e-5]
     LRD = [0.9, 0.95]
@@ -115,7 +123,12 @@ random.shuffle(PATIENCE)
 args.patience = PATIENCE[0]
 if args.patience == -1:
     args.lr_step = 36
-
+random.shuffle(MARGIN)
+args.margin = MARGIN[0]
+random.shuffle(LW_INTER_INTRA)
+args.w_inter, args.w_intra = LW_INTER_INTRA[0]
+random.shuffle(CAFFE_SETUP)
+args.caffe_setup = CAFFE_SETUP[0]
 
 def main(args):
     setup_rng(args)
@@ -127,18 +140,13 @@ def main(args):
     logging.info('Launching training')
     logging.info(args)
 
-    rgb_feat_path = RAW_PATH / 'average_fc7.h5'
-    flow_feat_path = RAW_PATH / 'average_global_flow.h5'
-    train_list_path = RAW_PATH / 'train_data.json'
-    val_list_path = RAW_PATH / 'val_data.json'
-    test_list_path = RAW_PATH / 'test_data.json'
-
     if args.feat == 'rgb':
-        cues = {'rgb': {'file': rgb_feat_path}}
+        cues = {'rgb': {'file': RGB_FEAT_PATH}}
     elif args.feat == 'flow':
-        cues = {'flow': {'file': flow_feat_path}}
+        cues = {'flow': {'file': FLOW_FEAT_PATH}}
     else:
-        cues = {'rgb': {'file': rgb_feat_path},
+        raise NotImplementedError
+        cues = {'rgb': {'file': RGB_FEAT_PATH},
                 'flow': {'file': flow_feat_path}}
 
     logging.info('Pre-loading features... This may take a couple of minutes.')
@@ -183,6 +191,9 @@ def main(args):
         if patience == args.patience:
             break
     args.epochs = epoch + 1
+    if args.patience == -1:
+        performance_test = validation(args, net, None, test_loader)
+
     logging.info(f'Best val r@1: {best_result:.4f}')
     dumping_arguments(args, performance_val, performance_test)
 
@@ -281,6 +292,7 @@ def setup_model(args, dataset):
     # TODO clean the mess
     logging.info('Setting-up model and criterion')
     if args.arch == 'tmee':
+        raise NotImplementedError
         logging.info('Model: TripletMEE')
 
         # MESS: data specific stuff
@@ -312,7 +324,8 @@ def setup_model(args, dataset):
                         max_length=max_length)
 
         net = MCN(**mcn_setup)
-        opt_parameters = net.optimization_parameters(args.lr)
+        opt_parameters = net.optimization_parameters(
+            args.lr, args.caffe_setup)
         ranking_loss = IntraInterTripletMarginLoss(
             margin=args.margin, w_inter=args.w_inter,
             w_intra=args.w_intra)

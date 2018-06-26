@@ -1,2 +1,4 @@
 */*.out
 */*.err
+bash*.out
+bash*.err

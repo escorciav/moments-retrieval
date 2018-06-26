@@ -2,17 +2,16 @@ import torch
 from torch.optim.optimizer import Optimizer, required
 
 
-class Nesterov(Optimizer):
-    r"""Implements stochastic gradient descent (optionally with momentum).
+
+class SGDCaffe(Optimizer):
+    r"""Implements stochastic gradient descent with momentum alas Caffe.
 
     Args:
-        params (iterable): iterable of parameters to optimize or dicts defining
-            parameter groups
+        params (iterable): iterable of parameters to optimize or dicts
+            defining parameter groups
         lr (float): learning rate
         momentum (float, optional): momentum factor (default: 0)
         weight_decay (float, optional): weight decay (L2 penalty) (default: 0)
-        dampening (float, optional): dampening for momentum (default: 0)
-        nesterov (bool, optional): enables Nesterov momentum (default: False)
     """
 
     def __init__(self, params, lr=required, momentum=required,
@@ -26,10 +25,10 @@ class Nesterov(Optimizer):
                              .format(weight_decay))
 
         defaults = dict(lr=lr, momentum=momentum, weight_decay=weight_decay)
-        super(Nesterov, self).__init__(params, defaults)
+        super(SGDCaffe, self).__init__(params, defaults)
 
     def __setstate__(self, state):
-        super(Nesterov, self).__setstate__(state)
+        super(SGDCaffe, self).__setstate__(state)
 
     def step(self, closure=None):
         """Performs a single optimization step.

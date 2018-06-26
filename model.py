@@ -106,6 +106,7 @@ class MCN(nn.Module):
                 argout += (i,)
         return argout
 
+
 class ContextGating(nn.Module):
     """GLU transformation to the incoming data
 

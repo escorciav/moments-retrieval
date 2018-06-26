@@ -7,20 +7,19 @@ from pathlib import Path
 
 import numpy as np
 import torch
-from optim import Nesterov
+from optim import SGDCaffe
 import torch.optim as optim
 from torch.utils.data import DataLoader
 
 from didemo import Didemo
-from model import MCN, TripletMEE
-from loss import IntraInterTripletMarginLoss, IntraInterMarginLoss
+from model import MCN
+from loss import IntraInterTripletMarginLoss
 from evaluation import video_evaluation
 from utils import Multimeter, ship_to
 
 RAW_PATH = Path('data/raw')
-MODALITY = ['rgb', 'flow', 'all']
-ARCHITECTURES = ['mcn', 'tmee']
-OPTIMIZER = ['sgd', 'adam']
+MODALITY = ['rgb', 'flow']
+OPTIMIZER = ['sgd', 'sgd_caffe']
 EVAL_BATCH_SIZE = 1
 METRICS = ['iou', 'r@1', 'r@5']
 TRACK = 'r@1'
@@ -32,24 +31,18 @@ VAL_LIST_PATH = RAW_PATH / 'val_data.json'
 TEST_LIST_PATH = RAW_PATH / 'test_data.json'
 
 parser = argparse.ArgumentParser(description='MCN training DiDeMo')
-
 # Features
 parser.add_argument('--feat', default='rgb', choices=MODALITY,
                     help='kind of modality')
-parser.add_argument('--arch', default='mcn', choices=ARCHITECTURES,
-                    help='Type of architecture')
-
-# MCN
+# Model
 parser.add_argument('--margin', type=float, default=0.1,
                     help='MaxMargin margin value')
 parser.add_argument('--w-inter', type=float, default=0.2,
                     help='Inter-loss weight')
 parser.add_argument('--w-intra', type=float, default=0.5,
                     help='Intra-loss weight')
-# TODO: enable
-# parser.add_argument('--text_cluster_size', type=int, default=32,
-#                     help='Text cluster size')
-
+parser.add_argument('--original-setup', action='store_true',
+                    help='Enable original optimization policy')
 # Device specific
 parser.add_argument('--batch-size', type=int, default=128,
                     help='batch size')
@@ -57,81 +50,35 @@ parser.add_argument('--gpu-id', type=int, default=-1,
                     help='Use of GPU')
 parser.add_argument('--n-cpu', type=int, default=4,
                     help='Number of CPU')
-
 # Optimization
 parser.add_argument('--lr', type=float, default=0.05,
                     help='initial learning rate')
-parser.add_argument('--epochs', type=int, default=107,
+parser.add_argument('--epochs', type=int, default=108,
                     help='upper epoch limit')
-parser.add_argument('--optimizer', type=str, default='sgd', choices=OPTIMIZER,
+parser.add_argument('--optimizer', type=str, default='sgd_caffe',
+                    choices=OPTIMIZER,
                     help='optimizer')
 parser.add_argument('--momentum', type=float, default=0.9,
-                    help='Nesterov Momentum for SGD')
-parser.add_argument('--lr-decay', type=float, default=0.95,
+                    help='Momentum for SGD')
+parser.add_argument('--lr-decay', type=float, default=0.1,
                     help='Learning rate decay')
 parser.add_argument('--lr-step', type=float, default=30,
                     help='Learning rate epoch to decay')
 parser.add_argument('--clip-grad', type=float, default=10,
                     help='clip gradients')
-parser.add_argument('--patience', type=int, default=10,
+parser.add_argument('--patience', type=int, default=-1,
                     help='stop optimization if not improvements')
 # Logging
 parser.add_argument('--logfile', default='',
                     help='Logging file')
-parser.add_argument('--n-display', type=int, default=30,
+parser.add_argument('--n-display', type=int, default=15,
                     help='Information display frequence')
-
+# TODO: HPS
 # Reproducibility
-parser.add_argument('--seed', type=int, default=-1,
+parser.add_argument('--seed', type=int, default=1701,
                     help='random seed (-1 := random)')
 
 args = parser.parse_args()
-
-# hyper-parameter search different learning rate
-# TODO: move to yaml
-FEAT = ['rgb', 'flow']
-PATIENCE = [-1, 12, 24]
-MARGIN = [0.1, 0.2, 0.5]
-LW_INTER_INTRA = [(0.2, 0.5), (0.5, 0.5), (0.1, 0.5)]
-LRS = [12, 36, 72]
-MOMENTUM = [0.9, 0.95]
-CAFFE_SETUP = [True, False]
-if args.arch == 'mcn':
-    OPTIMIZER = ['sgd', 'nesterov']
-    random.shuffle(OPTIMIZER)
-    args.optimizer = OPTIMIZER[0]
-else:
-    random.shuffle(OPTIMIZER)
-    args.optimizer = OPTIMIZER[0]
-if args.optimizer == 'sgd':
-    LR = [1e-1, 1e-2, 1e-3]
-    LRD = [0.1, 0.5, 0.5, 0.75, 0.75]
-elif args.optimizer == 'nesterov':
-    LR = [1e-1, 1e-2, 5e-3]
-    LRD = [0.1, 0.5, 0.75]
-else:
-    LR = [1e-2, 5e-4, 1e-4, 5e-5]
-    LRD = [0.9, 0.95]
-random.shuffle(LRS)
-args.lr_step = LRS[0]
-random.shuffle(LR)
-args.lr = LR[0]
-random.shuffle(LRD)
-args.lr_decay = LRD[0]
-random.shuffle(MOMENTUM)
-args.patience = MOMENTUM[0]
-random.shuffle(PATIENCE)
-args.patience = PATIENCE[0]
-if args.patience == -1:
-    args.lr_step = 36
-random.shuffle(MARGIN)
-args.margin = MARGIN[0]
-random.shuffle(LW_INTER_INTRA)
-args.w_inter, args.w_intra = LW_INTER_INTRA[0]
-random.shuffle(CAFFE_SETUP)
-args.caffe_setup = CAFFE_SETUP[0]
-random.shuffle(FEAT)
-args.feat = FEAT[0]
 
 def main(args):
     setup_rng(args)
@@ -147,10 +94,6 @@ def main(args):
         cues = {'rgb': {'file': RGB_FEAT_PATH}}
     elif args.feat == 'flow':
         cues = {'flow': {'file': FLOW_FEAT_PATH}}
-    else:
-        raise NotImplementedError
-        cues = {'rgb': {'file': RGB_FEAT_PATH},
-                'flow': {'file': flow_feat_path}}
 
     logging.info('Pre-loading features... This may take a couple of minutes.')
     train_dataset = Didemo(TRAIN_LIST_PATH, cues=cues)
@@ -292,46 +235,21 @@ def setup_logging(args):
 
 
 def setup_model(args, dataset):
-    # TODO clean the mess
-    logging.info('Setting-up model and criterion')
-    if args.arch == 'tmee':
-        raise NotImplementedError
-        logging.info('Model: TripletMEE')
+    logging.info('Model: MCN')
 
-        # MESS: data specific stuff
-        feat_0 = dataset[0]
-        text_embedding = 1000
-        crossmodal_embedding = 100
-        visual_embedding = {k: (v.shape[0], crossmodal_embedding)
-                            for k, v in feat_0[2].items()}
-        assert visual_embedding.keys() == cues.keys()
-        text_dim = feat_0[0].shape[1]
-        max_length = feat_0[0].shape[0]
-        extra = dict(word_size=text_dim, lstm_layers=args.rnn_layers,
+    feat_0 = dataset[0]
+    text_dim = feat_0[0].shape[1]
+    video_modality_dim = feat_0[2][args.feat].shape[0]
+    max_length = feat_0[0].shape[0]
+    mcn_setup = dict(visual_size=video_modality_dim, lang_size=text_dim,
                      max_length=max_length)
 
-        net = TripletMEE(text_embedding, visual_embedding, **extra)
-        opt_parameters = net.parameters()
-        ranking_loss = IntraInterMarginLoss(
-            margin=args.margin, w_inter=args.w_inter,
-            w_intra=args.w_intra)
-    else:
-        logging.info('Model: MCN')
-
-        # MESS: data specific stuff
-        feat_0 = dataset[0]
-        text_dim = feat_0[0].shape[1]
-        video_modality_dim = feat_0[2][args.feat].shape[0]
-        max_length = feat_0[0].shape[0]
-        mcn_setup = dict(visual_size=video_modality_dim, lang_size=text_dim,
-                         max_length=max_length)
-
-        net = MCN(**mcn_setup)
-        opt_parameters = net.optimization_parameters(
-            args.lr, args.caffe_setup)
-        ranking_loss = IntraInterTripletMarginLoss(
-            margin=args.margin, w_inter=args.w_inter,
-            w_intra=args.w_intra)
+    net = MCN(**mcn_setup)
+    opt_parameters = net.optimization_parameters(
+        args.lr, args.original_setup)
+    ranking_loss = IntraInterTripletMarginLoss(
+        margin=args.margin, w_inter=args.w_inter,
+        w_intra=args.w_intra)
 
     net.train()
     if args.gpu_id >= 0:
@@ -346,9 +264,11 @@ def setup_model(args, dataset):
     elif args.optimizer == 'sgd':
         optimizer = optim.SGD(opt_parameters, lr=args.lr,
                               momentum=args.momentum)
-    elif args.optimizer == 'nesterov':
-        optimizer = Nesterov(opt_parameters, lr=args.lr,
+    elif args.optimizer == 'sgd_caffe':
+        optimizer = SGDCaffe(opt_parameters, lr=args.lr,
                              momentum=args.momentum)
+    else:
+        raise ValueError(f'Unknow optimizer {args.optimizer}')
     return net, ranking_loss, optimizer
 
 

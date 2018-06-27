@@ -31,26 +31,11 @@ def sentences_to_words(sentences):
 
 
 class Didemo(Dataset):
-    """DiDeMo dataset
-    TODO:
-        testing data
-        enable multiple visual cues
-        negative mining and batch negative sampling
-        make sorting in collate optional
-    """
+    "Base DiDeMo Dataset"
 
-    def __init__(self, json_file, cues=None, loc=True, max_words=50,
-                 test=False):
+    def __init__(self, json_file, cues=None):
         self._setup_list(json_file)
         self._load_features(cues)
-        self.visual_interface = VisualRepresentationMCN()
-        self.lang_interface = LanguageRepresentationMCN(max_words)
-        self.tef_interface = None
-        if loc:
-            self.tef_interface = TemporalEndpointFeature()
-        self.eval = False
-        if test:
-            self.eval = True
 
     @property
     def segments(self):
@@ -79,6 +64,34 @@ class Didemo(Dataset):
         for key, params in cues.items():
             with h5py.File(params['file'], 'r') as f:
                 self.features[key] = {i: v[:] for i, v in f.items()}
+
+    def __len__(self):
+        return len(self.metadata)
+
+    def __getitem__(self, idx):
+        raise NotImplementedError
+
+
+class DidemoMCN(Didemo):
+    """Data feeder for MCN
+    TODO:
+        testing data
+        enable multiple visual cues
+        negative mining and batch negative sampling
+        make sorting in collate optional
+    """
+
+    def __init__(self, json_file, cues=None, loc=True, max_words=50,
+                 test=False):
+        super(DidemoMCN, self).__init__(json_file, cues)
+        self.visual_interface = VisualRepresentationMCN()
+        self.lang_interface = LanguageRepresentationMCN(max_words)
+        self.tef_interface = None
+        if loc:
+            self.tef_interface = TemporalEndpointFeature()
+        self.eval = False
+        if test:
+            self.eval = True
 
     def _compute_visual_feature(self, video_id, time=None):
         "Pool visual features and append TEF for a given segment"
@@ -127,9 +140,6 @@ class Didemo(Dataset):
             idx = int(random.random()*len(self.metadata))
             other_video = self.metadata[idx]['video']
         return self._compute_visual_feature(other_video, p_time)
-
-    def __len__(self):
-        return len(self.metadata)
 
     def __getitem__(self, idx):
         moment_i = self.metadata[idx]
@@ -247,7 +257,7 @@ if __name__ == '__main__':
     flow = 'data/raw/average_global_flow.h5'
     cues = {'rgb': {'file': rgb}, 'flow': {'file': flow}}
     t_start = time.time()
-    dataset = Didemo(data, cues)
+    dataset = DidemoMCN(data, cues)
     print(f'Time loading {data}: ', time.time() - t_start)
     print(len(dataset))
     print(dataset.metadata[0])

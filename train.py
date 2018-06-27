@@ -11,7 +11,7 @@ from optim import SGDCaffe
 import torch.optim as optim
 from torch.utils.data import DataLoader
 
-from didemo import Didemo
+from didemo import DidemoMCN
 from model import MCN
 from loss import IntraInterTripletMarginLoss
 from evaluation import video_evaluation
@@ -48,8 +48,8 @@ parser.add_argument('--batch-size', type=int, default=128,
                     help='batch size')
 parser.add_argument('--gpu-id', type=int, default=-1,
                     help='Use of GPU')
-parser.add_argument('--n-cpu', type=int, default=4,
-                    help='Number of CPU')
+parser.add_argument('--num-workers', type=int, default=6,
+                    help='Number of processes')
 # Optimization
 parser.add_argument('--lr', type=float, default=0.05,
                     help='initial learning rate')
@@ -68,6 +68,10 @@ parser.add_argument('--clip-grad', type=float, default=10,
                     help='clip gradients')
 parser.add_argument('--patience', type=int, default=-1,
                     help='stop optimization if not improvements')
+group_shuffle = parser.add_mutually_exclusive_group()
+group_shuffle.add_argument('--shuffle', action='store_true')
+group_shuffle.add_argument('--no-shuffle', action='store_false',
+                           dest='shuffle')
 # Logging
 parser.add_argument('--logfile', default='',
                     help='Logging file')
@@ -96,20 +100,21 @@ def main(args):
         cues = {'flow': {'file': FLOW_FEAT_PATH}}
 
     logging.info('Pre-loading features... This may take a couple of minutes.')
-    train_dataset = Didemo(TRAIN_LIST_PATH, cues=cues)
-    val_dataset = Didemo(VAL_LIST_PATH, cues=cues, test=True)
-    test_dataset = Didemo(TEST_LIST_PATH, cues=cues, test=True)
+    train_dataset = DidemoMCN(TRAIN_LIST_PATH, cues=cues)
+    val_dataset = DidemoMCN(VAL_LIST_PATH, cues=cues, test=True)
+    test_dataset = DidemoMCN(TEST_LIST_PATH, cues=cues, test=True)
 
     # Setup data loaders
     logging.info('Setting-up loaders')
     train_loader = DataLoader(train_dataset, batch_size=args.batch_size,
-                              shuffle=True, num_workers=args.n_cpu,
+                              shuffle=args.shuffle,
+                              num_workers=args.num_workers,
                               collate_fn=train_dataset.collate_data)
     val_loader = DataLoader(val_dataset, batch_size=EVAL_BATCH_SIZE,
-                            shuffle=False, num_workers=args.n_cpu,
+                            shuffle=False, num_workers=args.num_workers,
                             collate_fn=val_dataset.collate_test_data)
     test_loader = DataLoader(test_dataset, batch_size=EVAL_BATCH_SIZE,
-                             shuffle=False, num_workers=args.n_cpu,
+                             shuffle=False, num_workers=args.num_workers,
                              collate_fn=val_dataset.collate_test_data)
 
     net, ranking_loss, optimizer = setup_model(args, train_dataset)

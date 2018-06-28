@@ -199,6 +199,55 @@ class DidemoMCN(Didemo):
         return tensors
 
 
+class DidemoSMCM(DidemoMCN):
+    "Data feeder for SMCM"
+
+    def __init__(self, json_file, cues=None, loc=True, max_words=50,
+                 test=False):
+        super(DidemoSMCM, self).__init__(json_file, cues)
+        self.visual_interface = VisualRepresentationSMCN()
+        self.lang_interface = LanguageRepresentationMCN(max_words)
+        self.tef_interface = None
+        if loc:
+            self.tef_interface = TemporalEndpointFeature()
+        self.eval = False
+        if test:
+            self.eval = True
+
+    def _compute_visual_feature(self, video_id, time):
+        "Pool visual features and append TEF for a given segment"
+        feature_collection_video_t = {}
+        for key, feat_db in self.features.items():
+            feature_video = feat_db[video_id]
+            feature_video_t, mask = self.visual_interface(
+                *time, feature_video)
+            T = mask.sum()
+            if self.tef_interface:
+                N = len(feature_video_t)
+                tef_feature = np.zeros((N, 2))
+                tef_feature[:T, :] = self.tef_interface(time)
+                feature_video_t = np.concatenate(
+                    [feature_video_t, tef_feature], axis=1)
+            feature_collection_video_t[key] = feature_video_t.astype(
+                np.float32)
+        # whatever masks is fine given that we don't consider time responsive
+        # features yet?
+        # TODO: check if we don't need to cast
+        feature_collection_video_t['mask'] = mask.astype(np.float32)
+        return feature_collection_video_t
+
+    def _compute_visual_feature_eval(self, video_id):
+        "Pool visual features and append TEF for all segments in video"
+        all_t = [self._compute_visual_feature(video_id, t)
+                 for t in self.segments]
+        # List of dicts to dict of list
+        all_t_dict = dict(zip(all_t[0],
+                              zip(*[d.values() for d in all_t])))
+        for k, v in all_t_dict.items():
+            all_t_dict[k] = np.stack(v)
+        return all_t_dict
+
+
 class LanguageRepresentationMCN(object):
     "Get representation of sentence"
 
@@ -239,6 +288,37 @@ class VisualRepresentationMCN(object):
         return full_feature
 
 
+class VisualRepresentationSMCN(object):
+    "Process visual features"
+    # Maximum temporal support, set based on DiDeMo
+    N = 6
+
+    def __call__(self, start, end, features):
+        "Compute visual representation of the clip (global | S-features)"
+        assert features.shape[0] == 6
+        assert end >= start
+        # T := \mathcal{T} but in this case is the cardinality of the set
+        T = end - start + 1
+        feature_dim = features.shape[1]
+        padded_feature = np.zeros((self.N, feature_dim * 2,))
+        # Context feature
+        if np.sum(features[5,:]) > 0:
+            padded_feature[:T, :feature_dim] = normalization1d(0, 6, features)
+        else:
+            padded_feature[:T, :feature_dim] = normalization1d(0, 5, features)
+        # Segment feature
+        segment_features = features[start:end + 1, :]
+        scaling_factor = (
+            np.linalg.norm(segment_features, axis=1, keepdims=True) +
+            0.00001)
+        segment_features = segment_features / scaling_factor
+        padded_feature[:T, feature_dim:feature_dim * 2] = segment_features
+        # Mask
+        mask = np.zeros(self.N, dtype=np.int64)
+        mask[:T] = 1
+        return padded_feature, mask
+
+
 class TemporalEndpointFeature(object):
     "Relative position in the video"
 
@@ -249,9 +329,16 @@ class TemporalEndpointFeature(object):
         return np.array(start_end, dtype=self.dtype) / 6
 
 
+def normalization1d(start, end, features):
+    "1D mean-pooling + normalization for visual features"
+    base_feature = np.mean(features[start:end + 1, :], axis=0)
+    scaling_factor = np.linalg.norm(base_feature) + 0.00001
+    return base_feature / scaling_factor
+
+
 if __name__ == '__main__':
     import time
-    print('simple test')
+    # Unit-test DidemoMCN
     data = 'data/raw/train_data.json'
     rgb = 'data/raw/average_fc7.h5'
     flow = 'data/raw/average_global_flow.h5'
@@ -270,7 +357,7 @@ if __name__ == '__main__':
         elif i > 1:
             assert isinstance(v, dict)
             for k, v in v.items():
-                print(k, v.shape)
+                print(i, k, v.shape)
 
     dataset.eval = True
     values = dataset[0]
@@ -284,7 +371,45 @@ if __name__ == '__main__':
         elif i == 2:
             assert isinstance(v, dict)
             for k, v in v.items():
-                print(k, v.shape)
+                print(i, k, v.shape)
+        elif i > 2:
+            assert v is None
+        else:
+            raise ValueError
+
+    # Unit-test DidemoSMCN
+    t_start = time.time()
+    dataset = DidemoSMCM(data, cues)
+    print(f'Time loading {data}: ', time.time() - t_start)
+    print(len(dataset))
+    print(dataset.metadata[0])
+    for i, v in enumerate(dataset[0]):
+        if i== 0:
+            assert isinstance(v, np.ndarray)
+            print(i, v.shape)
+        elif i == 1:
+            print(i, v)
+        elif i > 1:
+            assert isinstance(v, dict)
+            for k, v in v.items():
+                if isinstance(v, np.ndarray):
+                    print(i, k, v.shape)
+                else:
+                    print(i, k, v)
+
+    dataset.eval = True
+    values = dataset[0]
+    for i, v in enumerate(values):
+        if i== 0:
+            assert isinstance(v, np.ndarray)
+            print(i, v.shape)
+        elif i == 1:
+            assert isinstance(v, list)
+            print(i, len(v))
+        elif i == 2:
+            assert isinstance(v, dict)
+            for k, v in v.items():
+                print(i, k, v.shape)
         elif i > 2:
             assert v is None
         else:

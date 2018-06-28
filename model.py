@@ -267,6 +267,101 @@ class TripletMEE(nn.Module):
         return similarity, True
 
 
+class SMCNNormalization():
+    NULL = 0
+    AVERAGE = 1
+    POW = 2
+    STD = 3
+
+
+class SMCN(MCN):
+    "SMCN model"
+
+    def __init__(self, norm=SMCNNormalization.NULL, *args, **kwargs):
+        super(SMCN, self).__init__(*args, **kwargs)
+        self.norm = norm
+
+    def forward(self, padded_query, query_length, visual_pos,
+                visual_neg_intra=None, visual_neg_inter=None):
+        # v_v_embedded_* are tensors of shape [B, N, D]
+        (v_embedded_pos, v_embedded_neg_intra,
+         v_embedded_neg_inter) = self.encode_visual(
+             visual_pos, visual_neg_intra, visual_neg_inter)
+
+        l_embedded = self.encode_query(padded_query, query_length)
+        # transform l_emdedded into a tensor of shape [B, 1, D]
+        l_embedded = l_embedded.unsqueeze(1)
+
+        # meta-comparison
+        c_pos, c_neg_intra, c_neg_inter = self.compare_emdedded_snippets(
+            v_embedded_pos, v_embedded_neg_intra, v_embedded_neg_inter,
+            l_embedded, visual_pos, visual_neg_intra, visual_neg_inter)
+        return c_pos, c_neg_intra, c_neg_inter
+
+    def encode_visual(self, pos, neg_intra, neg_inter):
+        pos, _, neg_intra, _, neg_inter, _ = self._unpack_visual(
+            pos, neg_intra, neg_inter)
+        embedded_neg_intra, embedded_neg_inter = None, None
+
+        embedded_pos = self.fwd_visual_snippets(pos)
+        if neg_intra is not None:
+            embedded_neg_intra = self.fwd_visual_snippets(neg_intra)
+        if neg_inter is not None:
+            embedded_neg_inter = self.fwd_visual_snippets(neg_inter)
+        return embedded_pos, embedded_neg_intra, embedded_neg_inter
+
+    def fwd_visual_snippets(self, x):
+        B, N, D = x.shape
+        x_ = x.view(-1, D)
+        return self.visual_encoder(x_).view((B, N, -1))
+
+    def pool_compared_snippets(self, x, mask):
+        masked_x = x * mask
+        K = mask.detach().sum(dim=-1)
+        # if self.norm == SMCNNormalization.NULL:
+        #     K = 1
+        # elif self.norm == SMCNNormalization.AVERAGE:
+        #     K = mask.sum(dim=-1)
+        # elif self.norm == SMCNNormalization.POW:
+        #     K = mask.sum(dim=-1)
+        # elif self.norm == SMCNNormalization.POW:
+        #     K = mask.detach().std(dim=-1)
+        return masked_x.sum(dim=-1) / K
+
+    def compare_emdedded_snippets(self, embedded_p, embedded_n_intra,
+                                  embedded_n_inter, embedded_a,
+                                  pos, neg_intra, neg_inter):
+        _, mask_p, _, mask_n_intra, _, mask_n_inter = self._unpack_visual(
+            pos, neg_intra, neg_inter)
+        c_neg_intra, c_neg_inter = None, None
+
+        c_pos = self.pool_compared_snippets(
+            self.compare_emdeddings(embedded_a, embedded_p), mask_p)
+        if embedded_n_intra is not None:
+            c_neg_intra = self.pool_compared_snippets(
+                self.compare_emdeddings(embedded_a, embedded_n_intra),
+                mask_n_intra)
+        if embedded_n_inter is not None:
+            c_neg_inter = self.pool_compared_snippets(
+                self.compare_emdeddings(embedded_a, embedded_n_inter),
+                mask_n_inter)
+        return c_pos, c_neg_intra, c_neg_inter
+
+    def _unpack_visual(self, *args):
+        "Get visual feature inside a dict"
+        argout = ()
+        for i in args:
+            if isinstance(i, dict):
+                assert len(i) == 2
+                # only works in cpython >= 3.6
+                argout += tuple(i.values())
+            elif i is None:
+                argout += (None, None)
+            else:
+                argout += (i,)
+        return argout
+
+
 if __name__ == '__main__':
     import torch, random
     from torch.nn.utils.rnn import pad_sequence

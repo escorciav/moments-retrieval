@@ -12,37 +12,57 @@ class MCN(nn.Module):
     """
 
     def __init__(self, visual_size=4096, lang_size=300, embedding_size=100,
-                 dropout=0.3, max_length=None):
+                 dropout=0.3, max_length=None, visual_hidden=500,
+                 lang_hidden=1000):
         super(MCN, self).__init__()
         self.embedding_size = embedding_size
         self.max_length = max_length
 
-        self.img_encoder = nn.Sequential(
-          nn.Linear(visual_size, 500),
+        self.visual_encoder = nn.Sequential(
+          nn.Linear(visual_size, visual_hidden),
           nn.ReLU(inplace=True),
-          nn.Linear(500, embedding_size),
+          nn.Linear(visual_hidden, embedding_size),
           nn.Dropout(dropout)
         )
 
         self.sentence_encoder = nn.LSTM(
-            lang_size, 1000, batch_first=True)
-        self.lang_encoder = nn.Linear(1000, embedding_size)
+            lang_size, lang_hidden, batch_first=True)
+        self.lang_encoder = nn.Linear(lang_hidden, embedding_size)
         self.init_parameters()
 
     def forward(self, padded_query, query_length, visual_pos,
                 visual_neg_intra=None, visual_neg_inter=None):
-        visual_pos, visual_neg_intra, visual_neg_inter = self._unpack_visual(
-            visual_pos, visual_neg_intra, visual_neg_inter)
-        v_embedding_neg_intra = None
-        v_embedding_neg_inter = None
+        # v_v_embedded_* are tensors of shape [B, D]
+        (v_embedded_pos, v_embedded_neg_intra,
+         v_embedded_neg_inter) = self.encode_visual(
+             visual_pos, visual_neg_intra, visual_neg_inter)
+
+        l_embedded = self.encode_query(padded_query, query_length)
+
+        c_pos = self.compare_emdeddings(l_embedded, v_embedded_pos)
+        c_neg_intra, c_neg_inter = None, None
+        if v_embedded_neg_intra is not None:
+            c_neg_intra = self.compare_emdeddings(
+                l_embedded, v_embedded_neg_intra)
+        if v_embedded_neg_inter is not None:
+            c_neg_inter = self.compare_emdeddings(
+                l_embedded, v_embedded_neg_inter)
+        return c_pos, c_neg_intra, c_neg_inter
+
+    def encode_visual(self, pos, neg_intra, neg_inter):
+        pos, neg_intra, neg_inter = self._unpack_visual(
+            pos, neg_intra, neg_inter)
+        embedded_neg_intra, embedded_neg_inter = None, None
+
+        embedded_pos = self.visual_encoder(pos)
+        if neg_intra is not None:
+            embedded_neg_intra = self.visual_encoder(neg_intra)
+        if neg_inter is not None:
+            embedded_neg_inter = self.visual_encoder(neg_inter)
+        return embedded_pos, embedded_neg_intra, embedded_neg_inter
+
+    def encode_query(self, padded_query, query_length):
         B = len(padded_query)
-
-        v_embedding_pos = self.img_encoder(visual_pos)
-        if visual_neg_intra is not None:
-            v_embedding_neg_intra = self.img_encoder(visual_neg_intra)
-        if visual_neg_inter is not None:
-            v_embedding_neg_inter = self.img_encoder(visual_neg_inter)
-
         packed_query = pack_padded_sequence(
             padded_query, query_length, batch_first=True)
         packed_output, _ = self.sentence_encoder(packed_query)
@@ -50,9 +70,11 @@ class MCN(nn.Module):
                                         total_length=self.max_length)
         # TODO: try max-pooling
         last_output = output[range(B), query_length - 1, :]
-        l_embedding = self.lang_encoder(last_output)
-        return (l_embedding, v_embedding_pos, v_embedding_neg_intra,
-                v_embedding_neg_inter)
+        return self.lang_encoder(last_output)
+
+    def compare_emdeddings(self, anchor, x, dim=-1):
+        # TODO: generalize to other similarities
+        return (anchor - x).pow(2).sum(dim=dim)
 
     def init_parameters(self):
         "Initialize network parameters"
@@ -90,9 +112,8 @@ class MCN(nn.Module):
 
     def predict(self, *args):
         "Compute distance between visual and sentence"
-        l_embedding, v_embedding, *_ = self.forward(*args)
-        distance = (l_embedding - v_embedding).pow(2).sum(dim=1)
-        return distance, False
+        d_pos, *_ = self.forward(*args)
+        return d_pos, False
 
     def _unpack_visual(self, *args):
         "Get visual feature inside a dict"

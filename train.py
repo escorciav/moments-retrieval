@@ -13,7 +13,7 @@ from torch.utils.data import DataLoader
 
 from didemo import DidemoMCN
 from model import MCN
-from loss import IntraInterTripletMarginLoss
+from loss import IntraInterMarginLoss
 from evaluation import video_evaluation
 from utils import Multimeter, ship_to
 
@@ -149,7 +149,7 @@ def main(args):
     dumping_arguments(args, performance_val, performance_test)
 
 
-def train_epoch(args, net, ranking_loss, loader, optimizer, epoch):
+def train_epoch(args, net, criterion, loader, optimizer, epoch):
     time_meters = Multimeter(keys=['Data', 'Batch'])
     running_loss = 0.0
 
@@ -164,8 +164,8 @@ def train_epoch(args, net, ranking_loss, loader, optimizer, epoch):
         data_time = time.time() - end
         end = time.time()
 
-        embeddings = net(*minibatch)
-        loss, _, _ = ranking_loss(*embeddings)
+        compared_embeddings = net(*minibatch)
+        loss, _, _ = criterion(*compared_embeddings)
         optimizer.zero_grad()
         loss.backward()
         if args.clip_grad > 0:
@@ -183,7 +183,7 @@ def train_epoch(args, net, ranking_loss, loader, optimizer, epoch):
             running_loss = 0.0
 
 
-def validation(args, net, ranking_loss, loader):
+def validation(args, net, criterion, loader):
     time_meters = Multimeter(keys=['Batch', 'Eval'])
     meters = Multimeter(keys=METRICS)
     dataset = loader.dataset
@@ -252,7 +252,7 @@ def setup_model(args, dataset):
     net = MCN(**mcn_setup)
     opt_parameters = net.optimization_parameters(
         args.lr, args.original_setup)
-    ranking_loss = IntraInterTripletMarginLoss(
+    ranking_loss = IntraInterMarginLoss(
         margin=args.margin, w_inter=args.w_inter,
         w_intra=args.w_intra)
 

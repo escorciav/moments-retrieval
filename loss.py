@@ -21,7 +21,7 @@ class IntraInterTripletMarginLoss(nn.Module):
 
 
 class IntraInterMarginLoss(nn.Module):
-    "Intra-Inter Margin Loss"
+    "Intra-Inter Margin Loss (distance based)"
 
     def __init__(self, w_intra=0.5, w_inter=0.2, margin=0.1):
         super(IntraInterMarginLoss, self).__init__()
@@ -30,8 +30,8 @@ class IntraInterMarginLoss(nn.Module):
         self.w_inter = w_inter
 
     def forward(self, p, n_intra, n_inter):
-        intra_loss = F.relu(self.margin - (p - n_intra)).mean()
-        inter_loss = F.relu(self.margin - (p - n_inter)).mean()
+        intra_loss = F.relu(self.margin + (p - n_intra)).mean()
+        inter_loss = F.relu(self.margin + (p - n_inter)).mean()
         loss = self.w_intra * intra_loss + self.w_inter * inter_loss
         return loss, intra_loss, inter_loss
 

@@ -203,9 +203,9 @@ class DidemoSMCM(DidemoMCN):
     "Data feeder for SMCM"
 
     def __init__(self, json_file, cues=None, loc=True, max_words=50,
-                 test=False):
+                 test=False, debug=False):
         super(DidemoSMCM, self).__init__(json_file, cues)
-        self.visual_interface = VisualRepresentationSMCN()
+        self.visual_interface = VisualRepresentationSMCN(debug)
         self.lang_interface = LanguageRepresentationMCN(max_words)
         self.tef_interface = None
         if loc:
@@ -293,6 +293,11 @@ class VisualRepresentationSMCN(object):
     # Maximum temporal support, set based on DiDeMo
     N = 6
 
+    def __init__(self, debug=False):
+        self.debug = None
+        if debug:
+            self.debug = VisualRepresentationMCN()
+
     def __call__(self, start, end, features):
         "Compute visual representation of the clip (global | S-features)"
         assert features.shape[0] == 6
@@ -316,6 +321,8 @@ class VisualRepresentationSMCN(object):
         # Mask
         mask = np.zeros(self.N, dtype=np.int64)
         mask[:T] = 1
+        if self.debug is not None:
+            padded_feature[:T, :] = self.debug(start, end, features)
         return padded_feature, mask
 
 

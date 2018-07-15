@@ -1,0 +1,5 @@
+tag_frequency.csv
+# Map tags to images for exploring dataset
+tag_to_images*.json
+# comparing top-5 tags raw vs scrapped
+top5_tags_100.json

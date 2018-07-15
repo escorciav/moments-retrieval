@@ -34,6 +34,8 @@ parser = argparse.ArgumentParser(description='SMCN training DiDeMo')
 # Features
 parser.add_argument('--feat', default='rgb', choices=MODALITY,
                     help='kind of modality')
+parser.add_argument('--rgb-path', type=Path, default=RGB_FEAT_PATH,
+                    help='HDF5-file with RGB features')
 # Model
 parser.add_argument('--margin', type=float, default=0.1,
                     help='MaxMargin margin value')
@@ -90,14 +92,16 @@ def main(args):
     setup_rng(args)
     setup_logging(args)
 
-    args.device = 'cpu'
+    args.device = device_name = 'cpu'
     if args.gpu_id >= 0 and torch.cuda.is_available():
         args.device = torch.device(f'cuda:{args.gpu_id}')
+        device_name = torch.cuda.get_device_name(args.gpu_id)
     logging.info('Launching training')
     logging.info(args)
+    logging.info(f'Device: {device_name}')
 
     if args.feat == 'rgb':
-        cues = {'rgb': {'file': RGB_FEAT_PATH}}
+        cues = {'rgb': {'file': args.rgb_path}}
     elif args.feat == 'flow':
         cues = {'flow': {'file': FLOW_FEAT_PATH}}
 
@@ -194,7 +198,6 @@ def validation(args, net, criterion, loader):
 
     logging.info(f'* Evaluation')
     net.eval()
-    counter = 0
     with torch.no_grad():
         end = time.time()
         for it, minibatch in enumerate(loader):
@@ -208,8 +211,6 @@ def validation(args, net, criterion, loader):
 
             # TODO: port evaluation to GPU
             _, idx = results.sort(descending=descending)
-            if idx[0] == 10:
-                counter += 1
             idx_h = idx.to('cpu')
             predictions = [dataset.segments[i] for i in idx_h]
             gt = dataset.metadata[it]['times']
@@ -218,7 +219,6 @@ def validation(args, net, criterion, loader):
             time_meters.update([batch_time, time.time() - end])
             end = time.time()
     logging.info(f'{time_meters.report()}\t{meters.report()}')
-    logging.debug(f'Pctg of times we picked [0, 6]: {counter/(it + 1)}')
     performance = meters.dump()
     return performance
 
@@ -230,6 +230,7 @@ def dumping_arguments(args, val_performance, test_performance):
     device = args.device
     # Update dict with performance and remove non-serializable stuff
     args.device = None
+    args.rgb_path = str(args.rgb_path)
     args_dict = vars(args)
     args_dict.update({f'val_{k}': v for k, v in val_performance.items()})
     args_dict.update({f'test_{k}': v for k, v in test_performance.items()})

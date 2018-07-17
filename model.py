@@ -92,7 +92,7 @@ class MCN(nn.Module):
         prm_policy = [
             {'params': self.sentence_encoder.parameters(),
              'lr': initial_lr * 10},
-            {'params': self.img_encoder.parameters()},
+            {'params': self.visual_encoder.parameters()},
             {'params': self.lang_encoder.parameters()},
         ]
         return prm_policy
@@ -267,19 +267,11 @@ class TripletMEE(nn.Module):
         return similarity, True
 
 
-class SMCNNormalization():
-    NULL = 0
-    AVERAGE = 1
-    POW = 2
-    STD = 3
-
-
 class SMCN(MCN):
     "SMCN model"
 
-    def __init__(self, norm=SMCNNormalization.NULL, *args, **kwargs):
+    def __init__(self, *args, **kwargs):
         super(SMCN, self).__init__(*args, **kwargs)
-        self.norm = norm
 
     def forward(self, padded_query, query_length, visual_pos,
                 visual_neg_intra=None, visual_neg_inter=None):
@@ -318,14 +310,6 @@ class SMCN(MCN):
     def pool_compared_snippets(self, x, mask):
         masked_x = x * mask
         K = mask.detach().sum(dim=-1)
-        # if self.norm == SMCNNormalization.NULL:
-        #     K = 1
-        # elif self.norm == SMCNNormalization.AVERAGE:
-        #     K = mask.sum(dim=-1)
-        # elif self.norm == SMCNNormalization.POW:
-        #     K = mask.sum(dim=-1)
-        # elif self.norm == SMCNNormalization.POW:
-        #     K = mask.detach().std(dim=-1)
         return masked_x.sum(dim=-1) / K
 
     def compare_emdedded_snippets(self, embedded_p, embedded_n_intra,

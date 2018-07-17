@@ -7,6 +7,7 @@ from pathlib import Path
 
 import numpy as np
 import torch
+import yaml
 from optim import SGDCaffe
 import torch.optim as optim
 from torch.utils.data import DataLoader
@@ -79,7 +80,9 @@ parser.add_argument('--logfile', default='',
                     help='Logging file')
 parser.add_argument('--n-display', type=int, default=15,
                     help='Information display frequence')
-# TODO: HPS
+# Hyper-parameter search
+parser.add_argument('--hps', action='store_true',
+                    help='Enable use of hps.yaml in folder of logfile')
 # Reproducibility
 parser.add_argument('--seed', type=int, default=1701,
                     help='random seed (-1 := random)')
@@ -89,8 +92,9 @@ parser.add_argument('--debug', action='store_true')
 args = parser.parse_args()
 
 def main(args):
-    setup_rng(args)
     setup_logging(args)
+    setup_hyperparameters(args)
+    setup_rng(args)
 
     args.device = device_name = 'cpu'
     if args.gpu_id >= 0 and torch.cuda.is_available():
@@ -237,6 +241,25 @@ def dumping_arguments(args, val_performance, test_performance):
     with open(result_file, 'w') as f:
         json.dump(args_dict, f)
     args.device = device
+
+
+def setup_hyperparameters(args):
+    if not args.hps:
+        return
+    filename = Path(args.logfile).parent / 'hps.yaml'
+    if not filename.exists():
+        logging.error(f'Ignoring HPS. Not found {filename}')
+        return
+    with open(filename, 'r') as fid:
+        config = yaml.load(fid)
+    logging.info('Proceeding to perform random HPS')
+    args_dview = vars(args)
+    for k, v in config.items():
+        if not isinstance(v, list):
+            args_dview[k] = v
+            continue
+        random.shuffle(v)
+        args_dview[k] = v[0]
 
 
 def setup_logging(args):

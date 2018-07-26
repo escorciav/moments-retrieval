@@ -203,9 +203,9 @@ class DidemoSMCM(DidemoMCN):
     "Data feeder for SMCM"
 
     def __init__(self, json_file, cues=None, loc=True, max_words=50,
-                 test=False):
+                 test=False, context=True):
         super(DidemoSMCM, self).__init__(json_file, cues)
-        self.visual_interface = VisualRepresentationSMCN()
+        self.visual_interface = VisualRepresentationSMCN(context=context)
         self.lang_interface = LanguageRepresentationMCN(max_words)
         self.tef_interface = None
         if loc:

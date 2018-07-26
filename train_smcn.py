@@ -37,6 +37,15 @@ parser.add_argument('--feat', default='rgb', choices=MODALITY,
                     help='kind of modality')
 parser.add_argument('--rgb-path', type=Path, default=RGB_FEAT_PATH,
                     help='HDF5-file with RGB features')
+# Model features
+group_context = parser.add_mutually_exclusive_group()
+group_context.add_argument('--loc', action='store_true')
+group_context.add_argument('--no-loc', action='store_false',
+                           dest='loc')
+group_loc = parser.add_mutually_exclusive_group()
+group_loc.add_argument('--context', action='store_true')
+group_loc.add_argument('--no-context', action='store_false',
+                           dest='context')
 # Model
 parser.add_argument('--margin', type=float, default=0.1,
                     help='MaxMargin margin value')
@@ -110,11 +119,12 @@ def main(args):
         cues = {'flow': {'file': FLOW_FEAT_PATH}}
 
     logging.info('Pre-loading features... This may take a couple of minutes.')
-    train_dataset = DidemoSMCM(TRAIN_LIST_PATH, cues=cues, debug=args.debug)
+    train_dataset = DidemoSMCM(TRAIN_LIST_PATH, cues=cues,
+                               context=args.context, loc=args.loc)
     val_dataset = DidemoSMCM(VAL_LIST_PATH, cues=cues, test=True,
-                             debug=args.debug)
+                             context=args.context, loc=args.loc)
     test_dataset = DidemoSMCM(TEST_LIST_PATH, cues=cues, test=True,
-                              debug=args.debug)
+                              context=args.context, loc=args.loc)
 
     # Setup data loaders
     logging.info('Setting-up loaders')

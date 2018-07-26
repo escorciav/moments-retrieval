@@ -248,6 +248,35 @@ class DidemoSMCM(DidemoMCN):
         return all_t_dict
 
 
+class DidemoSMCNHeterogeneous(DidemoSMCM):
+    "Data feeder for SMCM with Heterogenous data"
+
+    def __init__(self, json_file, cues=None, loc=False, max_words=50,
+                 test=False, context=False):
+        super(DidemoSMCNHeterogeneous, self).__init__(json_file, cues)
+        self.visual_interface = VisualRepresentationSMCN(context)
+        self.lang_interface = LanguageRepresentationMCN(max_words)
+        self.tef_interface = None
+        if loc:
+            self.tef_interface = TemporalEndpointFeature()
+        self.eval = False
+        if test:
+            self.eval = True
+
+    def _load_features(self, cues):
+        """Read all features (coarse chunks) in memory
+
+        TODO:
+            Edit to only load features of videos in metadata
+        """
+        raise NotImplementedError('make params a list of files')
+        self.cues = cues
+        self.features = {}
+        for key, params in cues.items():
+            with h5py.File(params['file'], 'r') as f:
+                self.features[key] = {i: v[:] for i, v in f.items()}
+
+
 class LanguageRepresentationMCN(object):
     "Get representation of sentence"
 

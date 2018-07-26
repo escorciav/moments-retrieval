@@ -292,39 +292,46 @@ class VisualRepresentationSMCN(object):
     "Process visual features"
     # Maximum temporal support, set based on DiDeMo
     N = 6
+    EPS = 0.00001
 
-    def __init__(self, debug=False):
-        self.debug = None
-        if debug:
-            self.debug = VisualRepresentationMCN()
+    def __init__(self, context=True):
+        self.context = context
 
     def __call__(self, start, end, features):
         "Compute visual representation of the clip (global | S-features)"
-        assert features.shape[0] == 6
+        # assert features.shape[0] == self.N
         assert end >= start
+        feat_dim, feat_dim_mulptiplier = features.shape[1], 1
+        loc_index_start, loc_index_end = 0, feat_dim
+        if self.context:
+            feat_dim_mulptiplier = 2
+            loc_index_start, loc_index_end = feat_dim, feat_dim * 2
+        full_feat_dim = feat_dim * feat_dim_mulptiplier
         # T := \mathcal{T} but in this case is the cardinality of the set
         T = end - start + 1
-        feature_dim = features.shape[1]
-        padded_feature = np.zeros((self.N, feature_dim * 2,))
-        # Context feature
-        if np.sum(features[5,:]) > 0:
-            padded_feature[:T, :feature_dim] = normalization1d(0, 6, features)
-        else:
-            padded_feature[:T, :feature_dim] = normalization1d(0, 5, features)
-        # Segment feature
-        segment_features = features[start:end + 1, :]
-        scaling_factor = (
-            np.linalg.norm(segment_features, axis=1, keepdims=True) +
-            0.00001)
-        segment_features = segment_features / scaling_factor
-        padded_feature[:T, feature_dim:feature_dim * 2] = segment_features
-        # Mask
+
+        padded_feature = np.zeros((self.N, full_feat_dim))
         mask = np.zeros(self.N, dtype=np.int64)
+
+        if self.context:
+            padded_feature[:T, :feat_dim] = self._global_feature(features)
+        padded_feature[:T, loc_index_start:loc_index_end] = (
+            self._local_feature(start, end, features))
         mask[:T] = 1
-        if self.debug is not None:
-            padded_feature[:T, :] = self.debug(start, end, features)
         return padded_feature, mask
 
+    def _global_feature(self, x):
+        "Compute global representation"
+        if np.sum(x[5,:]) > 0:
+            return normalization1d(0, 6, x)
+        else:
+            return normalization1d(0, 5, x)
+
+    def _local_feature(self, start, end, x):
+        "Compute local representation"
+        x_ = x[start:end + 1, :]
+        scaling_factor = np.linalg.norm(x_, axis=1, keepdims=True) + self.EPS
+        return x_ / scaling_factor
 
 class TemporalEndpointFeature(object):
     "Relative position in the video"

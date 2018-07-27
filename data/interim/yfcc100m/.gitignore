@@ -3,3 +3,12 @@ tag_frequency.csv
 tag_to_images*.json
 # comparing top-5 tags raw vs scrapped
 top5_tags_100.json
+
+# Intermediate data during feature extraction
+resnet_extraction
+resnet152
+
+# Dataset for taining embedding
+0*.csv
+train_data.json
+train_metadata.csv

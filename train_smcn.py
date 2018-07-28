@@ -12,7 +12,7 @@ from optim import SGDCaffe
 import torch.optim as optim
 from torch.utils.data import DataLoader
 
-from didemo import DidemoSMCM
+from didemo import DidemoSMCN
 from model import SMCN
 from loss import IntraInterMarginLoss
 from evaluation import video_evaluation
@@ -119,11 +119,11 @@ def main(args):
         cues = {'flow': {'file': FLOW_FEAT_PATH}}
 
     logging.info('Pre-loading features... This may take a couple of minutes.')
-    train_dataset = DidemoSMCM(TRAIN_LIST_PATH, cues=cues,
+    train_dataset = DidemoSMCN(TRAIN_LIST_PATH, cues=cues,
                                context=args.context, loc=args.loc)
-    val_dataset = DidemoSMCM(VAL_LIST_PATH, cues=cues, test=True,
+    val_dataset = DidemoSMCN(VAL_LIST_PATH, cues=cues, test=True,
                              context=args.context, loc=args.loc)
-    test_dataset = DidemoSMCM(TEST_LIST_PATH, cues=cues, test=True,
+    test_dataset = DidemoSMCN(TEST_LIST_PATH, cues=cues, test=True,
                               context=args.context, loc=args.loc)
 
     # Setup data loaders

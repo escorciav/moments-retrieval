@@ -204,12 +204,12 @@ class DidemoMCN(Didemo):
         return tensors
 
 
-class DidemoSMCM(DidemoMCN):
+class DidemoSMCN(DidemoMCN):
     "Data feeder for SMCM"
 
     def __init__(self, json_file, cues=None, loc=True, max_words=50,
                  test=False, context=True):
-        super(DidemoSMCM, self).__init__(json_file, cues)
+        super(DidemoSMCN, self).__init__(json_file, cues)
         self.visual_interface = VisualRepresentationSMCN(context=context)
         self.lang_interface = LanguageRepresentationMCN(max_words)
         self.tef_interface = None
@@ -258,7 +258,7 @@ class SourceID(IntEnum):
     IMAGE = 1
 
 
-class DidemoSMCNHeterogeneous(DidemoSMCM):
+class DidemoSMCNHeterogeneous(DidemoSMCN):
     "Data feeder for SMCM with Heterogenous data"
 
     def __init__(self, json_file, cues=None, loc=False, max_words=50,
@@ -490,7 +490,7 @@ if __name__ == '__main__':
 
     # Unit-test DidemoSMCN
     t_start = time.time()
-    dataset = DidemoSMCM(data, cues)
+    dataset = DidemoSMCN(data, cues)
     print(f'Time loading {data}: ', time.time() - t_start)
     print(len(dataset))
     print(dataset.metadata[0])

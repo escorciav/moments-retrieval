@@ -1,5 +1,7 @@
 import glob
 import json
+import time
+
 import pandas as pd
 
 
@@ -69,6 +71,19 @@ class Multimeter(object):
 
     def dump(self):
         return {v: self.meters[i].avg for i, v in enumerate(self.metrics)}
+
+
+def timeit(method):
+    """Adapted from Fahim Sakri at Medium
+    TODO: remove form final release
+    """
+    def timed(*args, **kw):
+        ts = time.time()
+        result = method(*args, **kw)
+        te = time.time()
+        print(f'{method.__name__}  {te - ts:.2f} s')
+        return result
+    return timed
 
 
 if __name__ == '__main__':

@@ -2,6 +2,7 @@ import itertools
 import json
 import random
 import re
+from enum import IntEnum, unique
 
 import h5py
 import numpy as np
@@ -10,6 +11,7 @@ from torch.utils.data import Dataset
 from torch.utils.data.dataloader import default_collate
 
 from glove import RecurrentEmbedding
+from utils import timeit
 
 POSSIBLE_SEGMENTS = [(0, 0), (1, 1), (2, 2), (3, 3), (4, 4), (5, 5)]
 for i in itertools.combinations(range(len(POSSIBLE_SEGMENTS)), 2):
@@ -250,12 +252,18 @@ class DidemoSMCM(DidemoMCN):
             all_t_dict[k] = np.stack(v)
         return all_t_dict
 
+@unique
+class SourceID(IntEnum):
+    VIDEO = 0
+    IMAGE = 1
+
 
 class DidemoSMCNHeterogeneous(DidemoSMCM):
     "Data feeder for SMCM with Heterogenous data"
 
     def __init__(self, json_file, cues=None, loc=False, max_words=50,
-                 test=False, context=False):
+                 test=False, context=False, DEBUG=False):
+        self.DEBUG = DEBUG
         super(DidemoSMCNHeterogeneous, self).__init__(json_file, cues)
         self.visual_interface = VisualRepresentationSMCN(context)
         self.lang_interface = LanguageRepresentationMCN(max_words)
@@ -265,19 +273,76 @@ class DidemoSMCNHeterogeneous(DidemoSMCM):
         self.eval = False
         if test:
             self.eval = True
+        # TODO: decorator preserving parent method
+        self._set_source_to_idxs()
 
     def _load_features(self, cues):
-        """Read all features (coarse chunks) in memory
-
-        TODO:
-            Edit to only load features of videos in metadata
-        """
-        raise NotImplementedError('make params a list of files')
+        "Read all features (coarse chunks) in memory"
+        assert all([isinstance(v['file'], list) for _, v in cues.items()])
         self.cues = cues
-        self.features = {}
+        self.features = dict.fromkeys(cues.keys())
+
+        keep = []
         for key, params in cues.items():
-            with h5py.File(params['file'], 'r') as f:
-                self.features[key] = {i: v[:] for i, v in f.items()}
+            self.features[key] = {}
+            repo = [h5py.File(i, 'r') for i in params['file']]
+            for idx, instance in enumerate(self.metadata):
+                h5_id = instance['video']
+                source_id = instance['source']
+
+                if self.DEBUG:
+                    if source_id == SourceID.VIDEO:
+                        if random.random() > 0.15:
+                            continue
+                    else:
+                        if random.random() > 0.01:
+                            continue
+                    keep.append(idx)
+
+                self.features[key].update({h5_id: repo[source_id][h5_id][:]})
+
+        if self.DEBUG:
+            keep = set(keep)
+            self.metadata = [value for i, value in enumerate(self.metadata)
+                             if i in keep]
+            self._set_source_to_idxs()
+
+    def _set_source_to_idxs(self):
+        "Create a dict grouping all indices in metadata with same source-id"
+        self.source = {i: [] for i in list(SourceID)}
+        for ind, instance in enumerate(self.metadata):
+            source_id_i = instance.get('source')
+            if source_id_i is not None:
+                self.source[source_id_i].append(ind)
+
+    def _negative_intra_sampling(self, p_ind, p_time):
+        """Sample visual feature inside the video
+
+        WIP: joint training is disabled
+            We need to skip this sampling for SourceID.IMAGE instances
+            [ ] define what skip means. zero-vector?
+            [ ] zero-vector implies masking instances in loss.
+            [ ] zero-vector also demands to know feat_dim.
+
+        """
+        return None
+
+    def _negative_inter_sampling(self, p_ind, p_time):
+        "Sample visual feature outside the video"
+        source_id = self.metadata[p_ind]['video']
+        source_idx = self.metadata[p_ind]['source']
+        p_label = self.metadata[p_ind]['language_input']
+
+        other_source_id = source_id
+        while other_source_id == source_id:
+            idx_ = int(random.random() * len(self.source[source_idx]))
+            idx = self.source[source_idx][idx_]
+            other_source_id = self.metadata[idx]['video']
+
+            if (source_idx == SourceID.IMAGE and
+                self.metadata[idx]['language_input'][0] == p_label):
+                other_source_id = source_id
+        return self._compute_visual_feature(other_source_id, p_time)
 
 
 class LanguageRepresentationMCN(object):
@@ -460,3 +525,21 @@ if __name__ == '__main__':
             assert v is None
         else:
             raise ValueError
+
+    # Unit-test DidemoSMCNHeterogeneous
+    filename = 'data/interim/didemo_yfcc100m/train_data.json'
+    cues = {'rgb': {'file': ['data/interim/didemo/resnet152/320x240_max.h5',
+                             'data/interim/yfcc100m/resnet152/320x240_001.h5']
+                    }
+            }
+    t_start = time.time()
+    dataset = DidemoSMCNHeterogeneous(json_file=filename, cues=cues)
+    print(f'Time loading {filename}: ', time.time() - t_start)
+    idxs = random.choices(dataset.source[SourceID.IMAGE], k=5)
+    for i in idxs:
+        data = dataset[i]
+        if dataset.metadata[i]['source'] == SourceID.IMAGE:
+            assert data[1] == 1
+            np.testing.assert_array_almost_equal(data[2]['mask'],
+                                                 [1] + [0] * 5)
+            assert data[3] is None

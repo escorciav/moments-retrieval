@@ -118,11 +118,12 @@ class DidemoMCN(Didemo):
             all_t_dict[k] = np.concatenate(v).reshape((n, -1))
         return all_t_dict
 
-    def _negative_intra_sampling(self, video_id, p_time):
+    def _negative_intra_sampling(self, idx, p_time):
         """Sample visual feature inside the video
         TODO:
             negative mining. Weak supervision?
         """
+        video_id = self.metadata[idx]['video']
         if not isinstance(p_time, tuple):
             p_time = tuple(p_time)
         possible_n = list(POSSIBLE_SEGMENTS_SET - {p_time})
@@ -130,11 +131,12 @@ class DidemoMCN(Didemo):
         n_time = possible_n[0]
         return self._compute_visual_feature(video_id, n_time)
 
-    def _negative_inter_sampling(self, video_id, p_time):
+    def _negative_inter_sampling(self, idx, p_time):
         """Sample visual feature outside the video
         TODO:
             test other time intervals
         """
+        video_id = self.metadata[idx]['video']
         other_video = video_id
         while other_video == video_id:
             idx = int(random.random()*len(self.metadata))
@@ -149,6 +151,7 @@ class DidemoMCN(Didemo):
         time = moment_i['times'][annot_i]
         query = moment_i['language_input']
 
+        # TODO: pack next two vars into a dict
         sentence_feature = self.lang_interface(query)
         len_query = len(query)
         if self.eval:
@@ -162,9 +165,9 @@ class DidemoMCN(Didemo):
             pos_visual_feature = self._compute_visual_feature(video_id, time)
             # Sample negatives
             neg_intra_visual_feature = self._negative_intra_sampling(
-                video_id, time)
+                idx, time)
             neg_inter_visual_feature = self._negative_inter_sampling(
-                video_id, time)
+                idx, time)
 
         return (sentence_feature, len_query, pos_visual_feature,
                 neg_intra_visual_feature, neg_inter_visual_feature)

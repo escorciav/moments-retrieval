@@ -10,5 +10,4 @@ resnet152
 
 # Dataset for taining embedding
 0*.csv
-train_data.json
-train_metadata.csv
+train_*/

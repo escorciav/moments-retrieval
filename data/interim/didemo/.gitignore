@@ -4,6 +4,8 @@ resnet_extraction
 resnet152
 vgg_extraction
 vgg16
+inceptionv4_extraction
+inceptionv4
 
 # NOUNs and comparison with other datasets
 # TODO: wildcard and only explicit name for relevant

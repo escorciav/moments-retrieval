@@ -275,6 +275,7 @@ class DidemoSMCNHeterogeneous(DidemoSMCN):
             self.eval = True
         # TODO: decorator preserving parent method
         self._set_source_to_idxs()
+        # TODO: add these to other Didemo* dataset classes
         self._set_feat_dim()
 
     def _load_features(self, cues):
@@ -321,9 +322,9 @@ class DidemoSMCNHeterogeneous(DidemoSMCN):
         if self.eval:
             pass
         instance_feature = self[0]
-        self.feat_dim = {'language_size': instance_feature[0].shape[1]}
+        self.feat_dim = {'language_size': instance_feature[2].shape[1]}
         status = [self.feat_dim.update({f'visual_size_{k}': v.shape[-1]})
-                  for k, v in instance_feature[2].items() if 'mask' not in k]
+                  for k, v in instance_feature[4].items() if 'mask' not in k]
 
     @property
     def language_size(self):
@@ -331,7 +332,12 @@ class DidemoSMCNHeterogeneous(DidemoSMCN):
 
     @property
     def visual_size(self):
-        return {k: v for k, v in self.feat_dim.items() if 'visual_size' in k}
+        return {k[12:]: v for k, v in self.feat_dim.items()
+                if 'visual_size' in k}
+
+    @property
+    def max_words(self):
+        return self.lang_interface.max_words
 
     def _negative_intra_sampling(self, p_ind, p_time):
         "Sample visual feature inside the video"
@@ -363,6 +369,40 @@ class DidemoSMCNHeterogeneous(DidemoSMCN):
                 self.metadata[idx]['language_input'][0] == p_label):
                 other_source_id = source_id
         return self._compute_visual_feature(other_source_id, p_time)
+
+    def __getitem__(self, idx):
+        """TODO: duplicated code. Apply change to DidemoMCN asayc.
+        @escorcia was running an experiment and could not apply the changes
+        """
+        moment_i = self.metadata[idx]
+        video_id = moment_i['video']
+        num_annotators = len(moment_i['times'])
+        annot_i = random.randint(0, num_annotators - 1)
+        time = moment_i['times'][annot_i]
+        query = moment_i['language_input']
+        source_id = moment_i['source']
+
+        # TODO: pack next two vars into a dict
+        sentence_feature = self.lang_interface(query)
+        len_query = len(query)
+        if self.eval:
+            pos_visual_feature = self._compute_visual_feature_eval(video_id)
+            n_segments = len(self.segments)
+            len_query = [len_query] * n_segments
+            sentence_feature = np.tile(sentence_feature, (n_segments, 1, 1))
+            neg_intra_visual_feature = None
+            neg_inter_visual_feature = None
+        else:
+            pos_visual_feature = self._compute_visual_feature(video_id, time)
+            # Sample negatives
+            neg_intra_visual_feature = self._negative_intra_sampling(
+                idx, time)
+            neg_inter_visual_feature = self._negative_inter_sampling(
+                idx, time)
+
+        return (idx, source_id, sentence_feature, len_query,
+                pos_visual_feature, neg_intra_visual_feature,
+                neg_inter_visual_feature)
 
 
 class LanguageRepresentationMCN(object):
@@ -553,13 +593,14 @@ if __name__ == '__main__':
                     }
             }
     t_start = time.time()
-    dataset = DidemoSMCNHeterogeneous(json_file=filename, cues=cues)
+    dataset = DidemoSMCNHeterogeneous(json_file=filename, cues=cues,
+                                      DEBUG=True)
     print(f'Time loading {filename}: ', time.time() - t_start)
     idxs = random.choices(dataset.source[SourceID.IMAGE], k=5)
     for i in idxs:
         data = dataset[i]
-        if dataset.metadata[i]['source'] == SourceID.IMAGE:
-            assert data[1] == 1
-            np.testing.assert_array_almost_equal(data[2]['mask'],
-                                                 [1] + [0] * 5)
-            assert data[3]['rgb'].sum() == 0
+        assert data[0] == i
+        assert data[1] == SourceID.IMAGE
+        np.testing.assert_array_almost_equal(data[4]['mask'],
+                                             [1] + [0] * 5)
+        assert data[5]['rgb'].sum() == 0

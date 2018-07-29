@@ -400,9 +400,46 @@ class DidemoSMCNHeterogeneous(DidemoSMCN):
             neg_inter_visual_feature = self._negative_inter_sampling(
                 idx, time)
 
+        # Return source_id to use it for weighting schemes on the loss funct
+        # idx is unnecesary and can be removed after debugging
         return (idx, source_id, sentence_feature, len_query,
                 pos_visual_feature, neg_intra_visual_feature,
                 neg_inter_visual_feature)
+
+    def collate_data(self, batch):
+        """TODO: duplicated code. Apply change to DidemoMCN asayc.
+        @escorcia was running an experiment and could not apply the changes
+        """
+        idxs, source_ids, *all_tensors = default_collate(batch)
+        # Sort due to LSTM dealing with variable length
+        al_s, idx = all_tensors[1].sort(descending=True)
+        a_s = all_tensors[0][idx, ...]
+        a_s.requires_grad_()
+        dicts_of_tensors = (
+            {k: v[idx, ...].requires_grad_() for k, v in i.items()}
+            for i in all_tensors[2:])
+        return (idxs, source_ids, a_s, al_s) + tuple(dicts_of_tensors)
+
+    def collate_test_data(self, batch):
+        """TODO: duplicated code. Apply change to DidemoMCN asayc.
+        @escorcia was running an experiment and could not apply the changes
+        """
+        # Note: we could do batching but taking care of the length of the
+        # sentence was a mess.
+        assert len(batch) == 1
+        tensors = batch[0][:2]
+        for i, v in enumerate(batch[0][2:]):
+            if isinstance(v, np.ndarray):
+                tensors.append(torch.from_numpy(v))
+            elif i == 1:
+                tensors.append(torch.tensor(v))
+            elif i == 2:
+                assert isinstance(v, dict)
+                tensors.append({k: torch.from_numpy(t_np)
+                                for k, t_np in v.items()})
+            else:
+                tensors.append(None)
+        return tensors
 
 
 class LanguageRepresentationMCN(object):

@@ -275,6 +275,7 @@ class DidemoSMCNHeterogeneous(DidemoSMCN):
             self.eval = True
         # TODO: decorator preserving parent method
         self._set_source_to_idxs()
+        self._set_feat_dim()
 
     def _load_features(self, cues):
         "Read all features (coarse chunks) in memory"
@@ -315,17 +316,36 @@ class DidemoSMCNHeterogeneous(DidemoSMCN):
             if source_id_i is not None:
                 self.source[source_id_i].append(ind)
 
+    def _set_feat_dim(self):
+        "Set visual and language size"
+        if self.eval:
+            pass
+        instance_feature = self[0]
+        self.feat_dim = {'language_size': instance_feature[0].shape[1]}
+        status = [self.feat_dim.update({f'visual_size_{k}': v.shape[-1]})
+                  for k, v in instance_feature[2].items() if 'mask' not in k]
+
+    @property
+    def language_size(self):
+        return self.feat_dim['language_size']
+
+    @property
+    def visual_size(self):
+        return {k: v for k, v in self.feat_dim.items() if 'visual_size' in k}
+
     def _negative_intra_sampling(self, p_ind, p_time):
-        """Sample visual feature inside the video
-
-        WIP: joint training is disabled
-            We need to skip this sampling for SourceID.IMAGE instances
-            [ ] define what skip means. zero-vector?
-            [ ] zero-vector implies masking instances in loss.
-            [ ] zero-vector also demands to know feat_dim.
-
-        """
-        return None
+        "Sample visual feature inside the video"
+        source_id = self.metadata[p_ind]['video']
+        source_idx = self.metadata[p_ind]['source']
+        if source_idx == SourceID.VIDEO:
+            return super(DidemoSMCNHeterogeneous,
+                         self)._negative_intra_sampling(p_ind, p_time)
+        else:
+            feat_dict = self._compute_visual_feature(source_id, p_time)
+            # We do not need to make it zero, but it's convenient for
+            # debugging purposes
+            status = [v.fill(0) for k, v in feat_dict.items() if k != 'mask']
+            return feat_dict
 
     def _negative_inter_sampling(self, p_ind, p_time):
         "Sample visual feature outside the video"
@@ -542,4 +562,4 @@ if __name__ == '__main__':
             assert data[1] == 1
             np.testing.assert_array_almost_equal(data[2]['mask'],
                                                  [1] + [0] * 5)
-            assert data[3] is None
+            assert data[3]['rgb'].sum() == 0

@@ -38,14 +38,10 @@ parser.add_argument('--feat', default='rgb', choices=MODALITY,
 parser.add_argument('--rgb-path', type=Path, default=RGB_FEAT_PATH,
                     help='HDF5-file with RGB features')
 # Model features
-group_context = parser.add_mutually_exclusive_group()
-group_context.add_argument('--loc', action='store_true')
-group_context.add_argument('--no-loc', action='store_false',
-                           dest='loc')
-group_loc = parser.add_mutually_exclusive_group()
-group_loc.add_argument('--context', action='store_true')
-group_loc.add_argument('--no-context', action='store_false',
-                           dest='context')
+parser.add_argument('--no-loc', action='store_false', dest='loc',
+                    help='Remove TEF features')
+parser.add_argument('--no-context', action='store_false', dest='context',
+                    help='Remove global video representation')
 # Model
 parser.add_argument('--margin', type=float, default=0.1,
                     help='MaxMargin margin value')
@@ -80,10 +76,8 @@ parser.add_argument('--clip-grad', type=float, default=10,
                     help='clip gradients')
 parser.add_argument('--patience', type=int, default=-1,
                     help='stop optimization if not improvements')
-group_shuffle = parser.add_mutually_exclusive_group()
-group_shuffle.add_argument('--shuffle', action='store_true')
-group_shuffle.add_argument('--no-shuffle', action='store_false',
-                           dest='shuffle')
+parser.add_argument('--no-shuffle', action='store_false', dest='shuffle',
+                    help='Disable suffle dataset after each epoch')
 # Logging
 parser.add_argument('--logfile', default='',
                     help='Logging file')

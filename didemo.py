@@ -17,6 +17,7 @@ POSSIBLE_SEGMENTS = [(0, 0), (1, 1), (2, 2), (3, 3), (4, 4), (5, 5)]
 for i in itertools.combinations(range(len(POSSIBLE_SEGMENTS)), 2):
     POSSIBLE_SEGMENTS.append(i)
 POSSIBLE_SEGMENTS_SET = set(POSSIBLE_SEGMENTS)
+SAMPLING_SCHEMES = ['skip', 'finetune', 'joint']
 
 
 def word_tokenize(s):
@@ -85,7 +86,8 @@ class DidemoMCN(Didemo):
 
     def __init__(self, json_file, cues=None, loc=True, max_words=50,
                  test=False):
-        super(DidemoMCN, self).__init__(json_file, cues)
+        self._setup_list(json_file)
+        self._load_features(cues)
         self.visual_interface = VisualRepresentationMCN()
         self.lang_interface = LanguageRepresentationMCN(max_words)
         self.tef_interface = None
@@ -152,6 +154,7 @@ class DidemoMCN(Didemo):
         annot_i = random.randint(0, num_annotators - 1)
         time = moment_i['times'][annot_i]
         query = moment_i['language_input']
+        source_id = moment_i.get('source', float('nan'))
 
         # TODO: pack next two vars into a dict
         sentence_feature = self.lang_interface(query)
@@ -171,11 +174,14 @@ class DidemoMCN(Didemo):
             neg_inter_visual_feature = self._negative_inter_sampling(
                 idx, time)
 
-        return (sentence_feature, len_query, pos_visual_feature,
-                neg_intra_visual_feature, neg_inter_visual_feature)
+        # Return source_id to use it for weighting schemes on the loss funct
+        # idx is unnecesary and can be removed after debugging
+        return (idx, source_id, sentence_feature, len_query,
+                pos_visual_feature, neg_intra_visual_feature,
+                neg_inter_visual_feature)
 
     def collate_data(self, batch):
-        all_tensors = default_collate(batch)
+        idxs, source_ids, *all_tensors = default_collate(batch)
         # Sort due to LSTM dealing with variable length
         al_s, idx = all_tensors[1].sort(descending=True)
         a_s = all_tensors[0][idx, ...]
@@ -183,14 +189,14 @@ class DidemoMCN(Didemo):
         dicts_of_tensors = (
             {k: v[idx, ...].requires_grad_() for k, v in i.items()}
             for i in all_tensors[2:])
-        return (a_s, al_s) + tuple(dicts_of_tensors)
+        return (idxs, source_ids, a_s, al_s) + tuple(dicts_of_tensors)
 
     def collate_test_data(self, batch):
         # Note: we could do batching but taking care of the length of the
         # sentence was a mess.
         assert len(batch) == 1
-        tensors = []
-        for i, v in enumerate(batch[0]):
+        tensors = list(batch[0][:2])
+        for i, v in enumerate(batch[0][2:]):
             if isinstance(v, np.ndarray):
                 tensors.append(torch.from_numpy(v))
             elif i == 1:
@@ -209,7 +215,8 @@ class DidemoSMCN(DidemoMCN):
 
     def __init__(self, json_file, cues=None, loc=True, max_words=50,
                  test=False, context=True):
-        super(DidemoSMCN, self).__init__(json_file, cues)
+        self._setup_list(json_file)
+        self._load_features(cues)
         self.visual_interface = VisualRepresentationSMCN(context=context)
         self.lang_interface = LanguageRepresentationMCN(max_words)
         self.tef_interface = None
@@ -252,6 +259,7 @@ class DidemoSMCN(DidemoMCN):
             all_t_dict[k] = np.stack(v)
         return all_t_dict
 
+
 @unique
 class SourceID(IntEnum):
     VIDEO = 0
@@ -261,10 +269,13 @@ class SourceID(IntEnum):
 class DidemoSMCNHeterogeneous(DidemoSMCN):
     "Data feeder for SMCM with Heterogenous data"
 
+    @timeit
     def __init__(self, json_file, cues=None, loc=False, max_words=50,
-                 test=False, context=False, DEBUG=False):
+                 test=False, context=False, sampling_scheme='skip',
+                 sampler_kwargs={'epoch': 0}, DEBUG=False):
         self.DEBUG = DEBUG
-        super(DidemoSMCNHeterogeneous, self).__init__(json_file, cues)
+        self._setup_list(json_file)
+        self._load_features(cues)
         self.visual_interface = VisualRepresentationSMCN(context)
         self.lang_interface = LanguageRepresentationMCN(max_words)
         self.tef_interface = None
@@ -277,6 +288,10 @@ class DidemoSMCNHeterogeneous(DidemoSMCN):
         self._set_source_to_idxs()
         # TODO: add these to other Didemo* dataset classes
         self._set_feat_dim()
+        assert sampling_scheme in SAMPLING_SCHEMES
+        setattr(self, 'sampling_scheme',
+                getattr(self, '_sampling_' + sampling_scheme))
+        self.sampler_kwargs = sampler_kwargs
 
     def _load_features(self, cues):
         "Read all features (coarse chunks) in memory"
@@ -370,76 +385,36 @@ class DidemoSMCNHeterogeneous(DidemoSMCN):
                 other_source_id = source_id
         return self._compute_visual_feature(other_source_id, p_time)
 
-    def __getitem__(self, idx):
-        """TODO: duplicated code. Apply change to DidemoMCN asayc.
-        @escorcia was running an experiment and could not apply the changes
+    def update_sampler(self, epoch, sampler):
+        """Update way in which instances are sampled from this Dataset
+
+        TODO: TLDR, I don't get paid by designing great abstractions.
+            It sounds that we are mixing Dataset, Sampler and training loop
+            logic here :S; but no one cares as long as it works.
         """
-        moment_i = self.metadata[idx]
-        video_id = moment_i['video']
-        num_annotators = len(moment_i['times'])
-        annot_i = random.randint(0, num_annotators - 1)
-        time = moment_i['times'][annot_i]
-        query = moment_i['language_input']
-        source_id = moment_i['source']
+        self.sampling_scheme(epoch, sampler)
 
-        # TODO: pack next two vars into a dict
-        sentence_feature = self.lang_interface(query)
-        len_query = len(query)
-        if self.eval:
-            pos_visual_feature = self._compute_visual_feature_eval(video_id)
-            n_segments = len(self.segments)
-            len_query = [len_query] * n_segments
-            sentence_feature = np.tile(sentence_feature, (n_segments, 1, 1))
-            neg_intra_visual_feature = None
-            neg_inter_visual_feature = None
-        else:
-            pos_visual_feature = self._compute_visual_feature(video_id, time)
-            # Sample negatives
-            neg_intra_visual_feature = self._negative_intra_sampling(
-                idx, time)
-            neg_inter_visual_feature = self._negative_inter_sampling(
-                idx, time)
+    def _sampling_finetune(self, epoch, sampler):
+        "Start with SourceID.IMAGE and switch to SourceID.VIDEO later"
+        # Aja! I realized that this should be on the training loop logic
+        # a.k.a Engine in TNT. I don't have such thing, thus this is a hack :)
+        if epoch == 0:
+            sampler.set_indices(self.source[SourceID.IMAGE])
+            return None
+        elif epoch != self.sampler_kwargs['epoch']:
+            return None
+        sampler.set_indices(self.source[SourceID.VIDEO])
 
-        # Return source_id to use it for weighting schemes on the loss funct
-        # idx is unnecesary and can be removed after debugging
-        return (idx, source_id, sentence_feature, len_query,
-                pos_visual_feature, neg_intra_visual_feature,
-                neg_inter_visual_feature)
+    def _sampling_joint(self, epoch, sampler):
+        "Minibatches with SourceID.IMAGE and SourceID.VIDEO"
+        ind_videos = self.source[SourceID.VIDEO]
+        # TODO: this ratio can be a hyper-parameters
+        cap = min(len(ind_videos), len(self.source[SourceID.IMAGE]))
+        ind_images = random.sample(self.source[SourceID.IMAGE], k=cap)
+        sampler.set_indices(ind_videos + ind_images)
 
-    def collate_data(self, batch):
-        """TODO: duplicated code. Apply change to DidemoMCN asayc.
-        @escorcia was running an experiment and could not apply the changes
-        """
-        idxs, source_ids, *all_tensors = default_collate(batch)
-        # Sort due to LSTM dealing with variable length
-        al_s, idx = all_tensors[1].sort(descending=True)
-        a_s = all_tensors[0][idx, ...]
-        a_s.requires_grad_()
-        dicts_of_tensors = (
-            {k: v[idx, ...].requires_grad_() for k, v in i.items()}
-            for i in all_tensors[2:])
-        return (idxs, source_ids, a_s, al_s) + tuple(dicts_of_tensors)
-
-    def collate_test_data(self, batch):
-        """TODO: duplicated code. Apply change to DidemoMCN asayc.
-        @escorcia was running an experiment and could not apply the changes
-        """
-        # Note: we could do batching but taking care of the length of the
-        # sentence was a mess.
-        assert len(batch) == 1
-        tensors = batch[0][:2]
-        for i, v in enumerate(batch[0][2:]):
-            if isinstance(v, np.ndarray):
-                tensors.append(torch.from_numpy(v))
-            elif i == 1:
-                tensors.append(torch.tensor(v))
-            elif i == 2:
-                assert isinstance(v, dict)
-                tensors.append({k: torch.from_numpy(t_np)
-                                for k, t_np in v.items()})
-            else:
-                tensors.append(None)
-        return tensors
+    def _sampling_skip(self, *args):
+        pass
 
 
 class LanguageRepresentationMCN(object):

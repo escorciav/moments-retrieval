@@ -1,8 +1,11 @@
 import glob
 import json
+import random
 import time
 
 import pandas as pd
+import torch
+from torch.utils.data.sampler import Sampler
 
 
 def jsons_to_dataframe(wilcard):
@@ -19,12 +22,12 @@ def ship_to(x, device):
     # TODO: clean like default_collate :S
     y = []
     for i in x:
-        if i is None:
-            y.append(None)
-        elif isinstance(i, dict):
+        if isinstance(i, dict):
             y.append({k: v.to(device) for k, v in i.items()})
-        else:
+        elif isinstance(i, torch.Tensor):
             y.append(i.to(device))
+        else:
+            y.append(i)
     return y
 
 
@@ -71,6 +74,25 @@ class Multimeter(object):
 
     def dump(self):
         return {v: self.meters[i].avg for i, v in enumerate(self.metrics)}
+
+
+class MutableSampler(Sampler):
+
+    def __init__(self, indices=None, num_instances=None):
+        assert indices is not None or num_instances is not None
+        if num_instances:
+            indices = list(range(num_instances))
+        self.indices = indices
+
+    def __len__(self):
+        return len(self.indices)
+
+    def __iter__(self):
+        random.shuffle(self.indices)
+        return iter(self.indices)
+
+    def set_indices(self, new_indices):
+        self.indices = new_indices
 
 
 def timeit(method):

@@ -180,7 +180,7 @@ def train_epoch(args, net, criterion, loader, optimizer, epoch):
         data_time = time.time() - end
         end = time.time()
 
-        compared_embeddings = net(*minibatch)
+        compared_embeddings = net(*minibatch[2:])
         loss, _, _ = criterion(*compared_embeddings)
         optimizer.zero_grad()
         loss.backward()
@@ -212,7 +212,7 @@ def validation(args, net, criterion, loader):
             if args.gpu_id >= 0:
                 minibatch_ = minibatch
                 minibatch = ship_to(minibatch, args.device)
-            results, descending = net.predict(*minibatch)
+            results, descending = net.predict(*minibatch[2:])
             # measure elapsed time
             batch_time = time.time() - end
             end = time.time()

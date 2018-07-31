@@ -1,0 +1,14 @@
+# Reference for epoch dependent hyper-prm
+epochs: 108
+seed: 1701
+momentum: 0.95
+w_inter: 0.2
+w_intra: 0.5
+original_setup: true
+sampling_scheme: joint
+# search space
+patience: [-1, 12, 36]
+lr: [0.05, 0.01, 0.005]
+lr_decay: [0.1, 0.5]
+lr_step: [6, 12, 30]
+margin: [0.1, 0.2, 0.5]

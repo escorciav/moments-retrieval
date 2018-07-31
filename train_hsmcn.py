@@ -12,11 +12,12 @@ from optim import SGDCaffe
 import torch.optim as optim
 from torch.utils.data import DataLoader
 
+import didemo
 from didemo import DidemoSMCNHeterogeneous, DidemoSMCN
 from model import SMCN
 from loss import IntraInterMarginLoss
 from evaluation import video_evaluation
-from utils import Multimeter, ship_to
+from utils import Multimeter, MutableSampler, ship_to
 
 DIDEMO_RAW_PATH = Path('data/raw')
 TRAIN_PATH = Path('data/interim/didemo_yfcc100m/')
@@ -57,6 +58,14 @@ parser.add_argument('--sw-intra', type=float, default=[1.0, 0.0], nargs=2,
                     help='Source-weight on Intra-loss')
 parser.add_argument('--original-setup', action='store_true',
                     help='Enable original optimization policy')
+# Sampling multiple data sources (video and images)
+parser.add_argument('--sampling-scheme', default='skip',
+                    choices=didemo.SAMPLING_SCHEMES,
+                    help='Sampling scheme to mix video and image data')
+# TODO: I should not do that as other researchers also should write clean and
+# easy to read and run code. touche ;P
+parser.add_argument('--sampler-kwargs', default=dict(epoch=10), type=eval,
+                    help='key-value pair to conrol sampling scheme')
 # Device specific
 parser.add_argument('--batch-size', type=int, default=128,
                     help='batch size')
@@ -82,8 +91,6 @@ parser.add_argument('--clip-grad', type=float, default=10,
                     help='clip gradients')
 parser.add_argument('--patience', type=int, default=-1,
                     help='stop optimization if not improvements')
-parser.add_argument('--no-shuffle', action='store_false', dest='shuffle',
-                    help='Disable suffle dataset after each epoch')
 # Logging
 parser.add_argument('--logfile', default='',
                     help='Logging file')
@@ -119,7 +126,8 @@ def main(args):
     logging.info('Pre-loading features... This may take a couple of minutes.')
     train_dataset = DidemoSMCNHeterogeneous(
         args.train_list, cues=cues, context=args.context, loc=args.loc,
-        DEBUG=args.debug)
+        sampling_scheme=args.sampling_scheme,
+        sampler_kwargs=args.sampler_kwargs, DEBUG=args.debug)
     val_dataset = DidemoSMCN(VAL_LIST_PATH, cues=cues_val_test, test=True,
                              context=args.context, loc=args.loc)
     test_dataset = DidemoSMCN(TEST_LIST_PATH, cues=cues_val_test, test=True,
@@ -127,11 +135,11 @@ def main(args):
 
     # Setup data loaders
     logging.info('Setting-up loaders')
+    sampler = MutableSampler(num_instances=len(train_dataset))
     train_loader = DataLoader(train_dataset, batch_size=args.batch_size,
-                              shuffle=args.shuffle,
                               num_workers=args.num_workers,
                               collate_fn=train_dataset.collate_data,
-                              pin_memory=True)
+                              sampler=sampler, pin_memory=True)
     val_loader = DataLoader(val_dataset, batch_size=EVAL_BATCH_SIZE,
                             shuffle=False, num_workers=args.num_workers,
                             collate_fn=val_dataset.collate_test_data,
@@ -146,12 +154,19 @@ def main(args):
         optimizer, args.lr_step, args.lr_decay)
 
     logging.info('Starting optimization...')
+    # on training start
+    # TODO update next line when resuming from checkpoint
+    train_dataset.update_sampler(0, sampler)
     best_result = 0.0
     performance_test = {i: best_result for i in METRICS}
     patience = 0
     for epoch in range(args.epochs):
+        # on epoch begin
         lr_schedule.step()
+
         train_epoch(args, net, ranking_loss, train_loader, optimizer, epoch)
+
+        # on epoch end
         performance_val = validation(args, net, None, val_loader)
         val_result = performance_val[TRACK]
 
@@ -165,6 +180,7 @@ def main(args):
 
         if patience == args.patience:
             break
+        train_dataset.update_sampler(epoch + 1, sampler)
     args.epochs = epoch + 1
     if args.patience == -1:
         performance_test = validation(args, net, None, test_loader)
@@ -222,7 +238,7 @@ def validation(args, net, criterion, loader):
             if args.gpu_id >= 0:
                 minibatch_ = minibatch
                 minibatch = ship_to(minibatch, args.device)
-            results, descending = net.predict(*minibatch)
+            results, descending = net.predict(*minibatch[2:])
             # measure elapsed time
             batch_time = time.time() - end
             end = time.time()

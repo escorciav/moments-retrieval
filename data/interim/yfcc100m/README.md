@@ -22,4 +22,4 @@
 
 - Use images from 001.csv
 
-- Use all tags as description
+- Use top-10 tags as description

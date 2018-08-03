@@ -10,6 +10,12 @@
 
 - filter images that were not available
 
+## 002
+
+- similar to 001
+
+- only focus on <=100 nearest neighbors of video descriptors
+
 # train_[:2d]
 
 ## 01

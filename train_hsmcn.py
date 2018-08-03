@@ -47,7 +47,16 @@ parser.add_argument('--no-loc', action='store_false', dest='loc',
                     help='Remove TEF features')
 parser.add_argument('--no-context', action='store_false', dest='context',
                     help='Remove global video representation')
-# Model
+# Model-specific hyper-parameters
+parser.add_argument('--visual-hidden', type=int, default=500,
+                    help='Hidden unit in MLP visual stream')
+parser.add_argument('--dropout', type=float, default=0.3,
+                    help='Dropout rate in visual stream')
+parser.add_argument('--embedding-size', type=int, default=100,
+                    help='Dimensionaity of cross-modal embedding')
+parser.add_argument('--lang-hidden', type=int, default=1000,
+                    help='Dimensionaity of cross-modal embedding')
+# Model-specific optimizer
 parser.add_argument('--margin', type=float, default=0.1,
                     help='MaxMargin margin value')
 parser.add_argument('--w-inter', type=float, default=0.2,
@@ -307,7 +316,11 @@ def setup_model(args, dataset):
     logging.info('Model: SMCN')
     mcn_setup = dict(visual_size=dataset.visual_size[args.feat],
                      lang_size=dataset.language_size,
-                     max_length=dataset.max_words)
+                     max_length=dataset.max_words,
+                     embedding_size=args.embedding_size,
+                     dropout=args.dropout,
+                     visual_hidden=args.visual_hidden,
+                     lang_hidden=args.lang_hidden)
     net = SMCN(**mcn_setup)
     opt_parameters = net.optimization_parameters(
         args.lr, args.original_setup)

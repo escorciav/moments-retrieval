@@ -277,14 +277,9 @@ def setup_logging(args):
 
 def setup_model(args, dataset):
     logging.info('Model: SMCN')
-
-    feat_0 = dataset[0]
-    text_dim = feat_0[0].shape[1]
-    video_modality_dim = feat_0[2][args.feat].shape[-1]
-    max_length = feat_0[0].shape[0]
-    mcn_setup = dict(visual_size=video_modality_dim, lang_size=text_dim,
-                     max_length=max_length)
-
+    mcn_setup = dict(visual_size=dataset.visual_size[args.feat],
+                     lang_size=dataset.language_size,
+                     max_length=dataset.max_words)
     net = SMCN(**mcn_setup)
     opt_parameters = net.optimization_parameters(
         args.lr, args.original_setup)

@@ -96,6 +96,7 @@ class DidemoMCN(Didemo):
         self.eval = False
         if test:
             self.eval = True
+        self._set_feat_dim()
 
     def _compute_visual_feature(self, video_id, time=None):
         "Pool visual features and append TEF for a given segment"
@@ -209,6 +210,28 @@ class DidemoMCN(Didemo):
                 tensors.append(None)
         return tensors
 
+    def _set_feat_dim(self):
+        "Set visual and language size"
+        if self.eval:
+            pass
+        instance_feature = self[0]
+        self.feat_dim = {'language_size': instance_feature[2].shape[1]}
+        status = [self.feat_dim.update({f'visual_size_{k}': v.shape[-1]})
+                  for k, v in instance_feature[4].items() if 'mask' not in k]
+
+    @property
+    def language_size(self):
+        return self.feat_dim['language_size']
+
+    @property
+    def visual_size(self):
+        return {k[12:]: v for k, v in self.feat_dim.items()
+                if 'visual_size' in k}
+
+    @property
+    def max_words(self):
+        return self.lang_interface.max_words
+
 
 class DidemoSMCN(DidemoMCN):
     "Data feeder for SMCM"
@@ -225,6 +248,7 @@ class DidemoSMCN(DidemoMCN):
         self.eval = False
         if test:
             self.eval = True
+        self._set_feat_dim()
 
     def _compute_visual_feature(self, video_id, time):
         "Pool visual features and append TEF for a given segment"
@@ -331,28 +355,6 @@ class DidemoSMCNHeterogeneous(DidemoSMCN):
             source_id_i = instance.get('source')
             if source_id_i is not None:
                 self.source[source_id_i].append(ind)
-
-    def _set_feat_dim(self):
-        "Set visual and language size"
-        if self.eval:
-            pass
-        instance_feature = self[0]
-        self.feat_dim = {'language_size': instance_feature[2].shape[1]}
-        status = [self.feat_dim.update({f'visual_size_{k}': v.shape[-1]})
-                  for k, v in instance_feature[4].items() if 'mask' not in k]
-
-    @property
-    def language_size(self):
-        return self.feat_dim['language_size']
-
-    @property
-    def visual_size(self):
-        return {k[12:]: v for k, v in self.feat_dim.items()
-                if 'visual_size' in k}
-
-    @property
-    def max_words(self):
-        return self.lang_interface.max_words
 
     def _negative_intra_sampling(self, p_ind, p_time):
         "Sample visual feature inside the video"

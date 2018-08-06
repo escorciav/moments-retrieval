@@ -91,6 +91,7 @@ parser.add_argument('--seed', type=int, default=1701,
                     help='random seed (-1 := random)')
 # Debug
 parser.add_argument('--debug', action='store_true')
+parser.add_argument('--per-sample', action='store_true')
 
 args = parser.parse_args()
 
@@ -141,6 +142,7 @@ def main(args):
     best_result = 0.0
     performance_test = {i: best_result for i in METRICS}
     patience = 0
+    performance_per_sample = []
     for epoch in range(args.epochs):
         lr_schedule.step()
         train_epoch(args, net, ranking_loss, train_loader, optimizer, epoch)
@@ -152,6 +154,9 @@ def main(args):
             best_result = val_result
             logging.info(f'Hit jackpot {TRACK}: {best_result:.4f}')
             performance_test = validation(args, net, None, test_loader)
+            if args.per_sample:
+                performance_per_sample = validation(
+                    args, net, None, val_loader, per_sample=True)
         else:
             patience += 1
 
@@ -160,9 +165,13 @@ def main(args):
     args.epochs = epoch + 1
     if args.patience == -1:
         performance_test = validation(args, net, None, test_loader)
+        if args.per_sample:
+            performance_per_sample = validation(
+                args, net, None, val_loader, per_sample=True)
 
     logging.info(f'Best val r@1: {best_result:.4f}')
-    dumping_arguments(args, performance_val, performance_test)
+    dumping_arguments(args, performance_val, performance_test,
+                      performance_per_sample)
 
 
 def train_epoch(args, net, criterion, loader, optimizer, epoch):
@@ -199,10 +208,11 @@ def train_epoch(args, net, criterion, loader, optimizer, epoch):
             running_loss = 0.0
 
 
-def validation(args, net, criterion, loader):
+def validation(args, net, criterion, loader, per_sample=False):
     time_meters = Multimeter(keys=['Batch', 'Eval'])
     meters = Multimeter(keys=METRICS)
     dataset = loader.dataset
+    results_per_sample = []
 
     logging.info(f'* Evaluation')
     net.eval()
@@ -226,12 +236,19 @@ def validation(args, net, criterion, loader):
             meters.update(performance_i)
             time_meters.update([batch_time, time.time() - end])
             end = time.time()
+            if per_sample:
+                annotation_id = dataset.metadata[it]['annotation_id']
+                results_per_sample.append([annotation_id] + performance_i)
     logging.info(f'{time_meters.report()}\t{meters.report()}')
+
+    if per_sample:
+        return results_per_sample
     performance = meters.dump()
     return performance
 
 
-def dumping_arguments(args, val_performance, test_performance):
+def dumping_arguments(args, val_performance, test_performance,
+                      performance_per_sample):
     if len(args.logfile) == 0:
         return
     result_file = args.logfile + '.json'
@@ -244,6 +261,11 @@ def dumping_arguments(args, val_performance, test_performance):
     args_dict.update({f'test_{k}': v for k, v in test_performance.items()})
     with open(result_file, 'w') as f:
         json.dump(args_dict, f)
+    if args.per_sample:
+        with open(args.logfile + '.csv', 'x') as fid:
+            fid.write('{},{},{},{}\n'.format('annotation_id', *METRICS))
+            status = [fid.write('{},{},{},{}\n'.format(*i))
+                      for i in performance_per_sample]
     args.device = device
 
 

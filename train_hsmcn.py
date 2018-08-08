@@ -189,6 +189,12 @@ def main(args):
             if args.per_sample:
                 performance_per_sample = validation(
                     args, net, None, val_loader, per_sample=True)
+            save_checkpoint(args, {
+                'epoch': epoch + 1,
+                'state_dict': net.state_dict(),
+                'best_result': best_result,
+                'optimizer' : optimizer.state_dict(),
+                })
         else:
             patience += 1
 
@@ -201,6 +207,12 @@ def main(args):
         if args.per_sample:
             performance_per_sample = validation(
                 args, net, None, val_loader, per_sample=True)
+        save_checkpoint(args, {
+            'epoch': epoch + 1,
+            'state_dict': net.state_dict(),
+            'best_result': best_result,
+            'optimizer' : optimizer.state_dict(),
+            })
 
     logging.info(f'Best val r@1: {best_result:.4f}')
     dumping_arguments(args, performance_val, performance_test,
@@ -304,6 +316,10 @@ def dumping_arguments(args, val_performance, test_performance,
             status = [fid.write('{},{},{},{}\n'.format(*i))
                       for i in performance_per_sample]
     args.device = device
+
+
+def save_checkpoint(args, state):
+    torch.save(state, args.logfile + '_checkpoint.pth.tar')
 
 
 def setup_hyperparameters(args):

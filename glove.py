@@ -1,5 +1,7 @@
 import numpy as np
 
+from utils import timeit
+
 GLOVE_DIM = 300
 GLOVE_FILE = 'data/raw/glove.6B.%dd.txt' % GLOVE_DIM
 VOCAB_FILE = 'data/raw/vocab_glove_complete.txt'
@@ -9,7 +11,7 @@ class GloveEmbedding(object):
     "Creates glove embedding object"
 
     def __init__(self, glove_file=GLOVE_FILE, glove_dim=GLOVE_DIM):
-        glove_txt = open(glove_file).readlines()
+        glove_txt = open(glove_file, encoding='utf-8').readlines()
         glove_txt = [g.strip() for g in glove_txt]
         glove_vector = [g.split(' ') for g in glove_txt]
         glove_words = [g[0] for g in glove_vector]
@@ -27,12 +29,13 @@ class GloveEmbedding(object):
 class RecurrentEmbedding(object):
     "TODO"
 
+    @timeit
     def __init__(self, glove_file=GLOVE_FILE, glove_dim=GLOVE_DIM,
                  vocab_file=VOCAB_FILE):
         self.glove_file = glove_file
         self.embedding = GloveEmbedding(self.glove_file, glove_dim)
 
-        vocab = open(vocab_file).readlines()
+        vocab = open(vocab_file, encoding='utf-8').readlines()
         vocab = [v.strip() for v in vocab]
         if '<unk>' in vocab:
             # don't have an <unk> vector.  Alternatively, could map to random

@@ -419,6 +419,57 @@ class DidemoSMCNHeterogeneous(DidemoSMCN):
         pass
 
 
+@unique
+class RetrievalMode(IntEnum):
+    MOMENT_TO_PHRASE = 0
+    PHRASE_TO_MOMENT = 1
+
+
+class DidemoSMCNRetrieval(DidemoSMCN):
+
+    def __init__(self, json_file, cues=None, loc=True, max_words=50,
+                 test=False, context=True,
+                 mode=RetrievalMode.MOMENT_TO_PHRASE):
+        self._setup_list(json_file)
+        self._load_features(cues)
+        self.visual_interface = VisualRepresentationSMCN(context=context)
+        self.lang_interface = LanguageRepresentationMCN(max_words)
+        self.tef_interface = None
+        if loc:
+            self.tef_interface = TemporalEndpointFeature()
+        self.eval = False
+        self.mode = mode
+        # self._set_feat_dim()
+
+    def __getitem__(self, idx):
+        if self.mode == RetrievalMode.MOMENT_TO_PHRASE:
+            return self._get_moment(idx)
+        elif self.mode == RetrievalMode.PHRASE_TO_MOMENT:
+            return self._get_phrase(idx)
+        else:
+            raise
+
+    def _get_moment(self, idx):
+        moment_i = self.metadata[idx]
+        video_id = moment_i['video']
+        num_annotators = len(moment_i['times'])
+        # TODO: make it flexible, but deterministic
+        annot_i = 0
+        time = moment_i['times'][annot_i]
+        source_id = moment_i.get('source', float('nan'))
+        pos_visual_feature = self._compute_visual_feature(video_id, time)
+        return idx, source_id, pos_visual_feature
+
+    def _get_phrase(self, idx):
+        moment_i = self.metadata[idx]
+        query = moment_i['language_input']
+        source_id = moment_i.get('source', float('nan'))
+        # TODO: pack next two vars into a dict
+        sentence_feature = self.lang_interface(query)
+        len_query = len(query)
+        return idx, source_id, sentence_feature, len_query
+
+
 class LanguageRepresentationMCN(object):
     "Get representation of sentence"
 

@@ -2,4 +2,8 @@
 *.log
 *.csv
 *.tar
+*.h5
 log
+
+# Exception
+*.BAK

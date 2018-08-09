@@ -456,18 +456,16 @@ class DidemoSMCNRetrieval(DidemoSMCN):
         # TODO: make it flexible, but deterministic
         annot_i = 0
         time = moment_i['times'][annot_i]
-        source_id = moment_i.get('source', float('nan'))
         pos_visual_feature = self._compute_visual_feature(video_id, time)
-        return idx, source_id, pos_visual_feature
+        return idx, pos_visual_feature
 
     def _get_phrase(self, idx):
         moment_i = self.metadata[idx]
         query = moment_i['language_input']
-        source_id = moment_i.get('source', float('nan'))
         # TODO: pack next two vars into a dict
         sentence_feature = self.lang_interface(query)
         len_query = len(query)
-        return idx, source_id, sentence_feature, len_query
+        return idx, sentence_feature, len_query
 
 
 class LanguageRepresentationMCN(object):

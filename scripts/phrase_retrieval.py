@@ -1,7 +1,7 @@
 import argparse
-import json
 from pathlib import Path
 
+import h5py
 import numpy as np
 import torch
 from tqdm import tqdm
@@ -61,39 +61,33 @@ def main():
     torch.set_grad_enabled(False)
     model = load_model(args.model_pth)
     val_dataset = DidemoSMCNRetrieval(VAL_LIST_PATH, **args.dataset_prm)
-    descriptions_rank = {}
     # Ensure mode to iterate over moments
     val_dataset.mode = RetrievalMode.MOMENT_TO_PHRASE
+    N = len(val_dataset)
+    prediction_matrix = torch.empty(N, N)
     for moment_i_data in tqdm(val_dataset):
         # get visual representation of a moment
         moment_i_ind = moment_i_data[0]
-        moment_i_visual_rep = torchify_and_collate(moment_i_data[2])
-        score_wrt_all_sentences = []
+        moment_i_visual_rep = torchify_and_collate(moment_i_data[1])
 
         # Switch mode to iterate over phrases
         val_dataset.mode = RetrievalMode.PHRASE_TO_MOMENT
         for moment_j_data in val_dataset:
             # get text representation of sentence
-            sentence_j_rep = torchify_and_collate(moment_j_data[2])
-            sentence_j_length = torchify_and_collate(moment_j_data[3])
+            moment_j_ind = moment_j_data[0]
+            sentence_j_rep = torchify_and_collate(moment_j_data[1])
+            sentence_j_length = torchify_and_collate(moment_j_data[2])
             score_j, is_similarity = model.predict(
                 sentence_j_rep, sentence_j_length, moment_i_visual_rep)
-            score_wrt_all_sentences.append(score_j)
-
-        score_wrt_all_sentences = torch.cat(score_wrt_all_sentences)
-        if not is_similarity:
-            _, ranked_ind = score_wrt_all_sentences.sort()
-            descriptions_rank[moment_i_ind] = (
-                ranked_ind.eq(moment_i_ind).nonzero()[0, 0].item())
-        else:
-            NotImplementedError('WIP :P')
+            prediction_matrix[moment_i_ind, moment_j_ind] = score_j
 
         val_dataset.mode = RetrievalMode.MOMENT_TO_PHRASE
 
     output_file = str(args.model_pth).replace(
-        '_checkpoint.pth.tar', '_retrieval.json')
-    with open(output_file, 'x') as fid:
-        json.dump(descriptions_rank, fid)
+        '_checkpoint.pth.tar', '_phrase_retrieval.h5')
+    with h5py.File(output_file, 'x') as fid:
+        fid['prediction_matrix'] = prediction_matrix.numpy()
+        fid['similarity'] = is_similarity
 
 
 if __name__ == '__main__':

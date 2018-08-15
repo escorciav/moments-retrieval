@@ -103,7 +103,7 @@ parser.add_argument('--patience', type=int, default=-1,
 # Logging
 parser.add_argument('--logfile', default='',
                     help='Logging file')
-parser.add_argument('--n-display', type=int, default=15,
+parser.add_argument('--n-display', type=float, default=0.1,
                     help='Information display frequence')
 # Hyper-parameter search
 parser.add_argument('--hps', action='store_true',
@@ -173,6 +173,8 @@ def main(args):
     performance_per_sample = []
     for epoch in range(args.epochs):
         # on epoch begin
+        args.n_display = int(args.n_display * len(sampler) /
+                             train_loader.batch_size)
         lr_schedule.step()
 
         train_epoch(args, net, ranking_loss, train_loader, optimizer, epoch)

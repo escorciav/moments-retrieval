@@ -1,6 +1,6 @@
 *.json
 *.log
 *.csv
-*.tar
 *.h5
+*.tar
 log

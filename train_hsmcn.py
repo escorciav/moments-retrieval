@@ -65,6 +65,8 @@ parser.add_argument('--w-intra', type=float, default=0.5,
                     help='Intra-loss weight')
 parser.add_argument('--sw-intra', type=float, default=[1.0, 0.0], nargs=2,
                     help='Source-weight on Intra-loss')
+parser.add_argument('--sw-inter', type=float, default=[1.0, 1.0], nargs='+',
+                    help='Source-weight on Inter-loss')
 parser.add_argument('--original-setup', action='store_true',
                     help='Enable original optimization policy')
 # Sampling multiple data sources (video and images)
@@ -239,7 +241,9 @@ def train_epoch(args, net, criterion, loader, optimizer, epoch):
 
         compared_embeddings = net(*minibatch[2:])
         iw_intra = args.sw_intra[source_ids]
-        loss, _, _ = criterion(*compared_embeddings, iw_intra=iw_intra)
+        iw_inter = args.sw_inter[source_ids]
+        loss, _, _ = criterion(*compared_embeddings, iw_intra=iw_intra,
+                               iw_inter=iw_inter)
         optimizer.zero_grad()
         loss.backward()
         if args.clip_grad > 0:
@@ -307,6 +311,7 @@ def dumping_arguments(args, val_performance, test_performance,
     args.rgb_path = [str(i) for i in args.rgb_path]
     args.train_list = str(args.train_list)
     args.sw_intra = args.sw_intra.tolist()
+    args.sw_inter = args.sw_inter.tolist()
     args_dict = vars(args)
     args_dict.update({f'val_{k}': v for k, v in val_performance.items()})
     args_dict.update({f'test_{k}': v for k, v in test_performance.items()})
@@ -368,6 +373,13 @@ def setup_model(args, dataset):
         margin=args.margin, w_inter=args.w_inter,
         w_intra=args.w_intra)
     args.sw_intra = torch.tensor(args.sw_intra)
+    # TODO (hard-coded): make it general
+    if len(args.sw_inter) > 2:
+        raise NotImplementedError('WIP: only for two sources, more '
+                                  'is straighforward but dangerous.')
+    elif len(args.sw_inter) == 1:
+        args.sw_inter.append(1 - args.sw_inter[0])
+    args.sw_inter = torch.tensor(args.sw_inter)
 
     net.train()
     if args.gpu_id >= 0:
@@ -375,6 +387,7 @@ def setup_model(args, dataset):
         net.to(args.device)
         ranking_loss.to(args.device)
         args.sw_intra = args.sw_intra.to(args.device)
+        args.sw_inter = args.sw_inter.to(args.device)
 
     # Optimizer
     logging.info(f'Setting-up optimizer: {args.optimizer}')

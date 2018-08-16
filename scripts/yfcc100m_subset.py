@@ -104,8 +104,10 @@ lemmatizer = Lemmatizer(LEMMA_INDEX, LEMMA_EXC, LEMMA_RULES)
 import glob
 import pandas as pd
 import sys
-# Those CSV-files are too big and we need these two lines
+from tqdm import tqdm
+# Those CSV-files are too big and we need this add-on
 csv.field_size_limit(sys.maxsize)
+
 tag2image = {}
 images = []
 image_tags_topk_flickr = []
@@ -113,7 +115,7 @@ image_tags_flickr = []
 image_tags_topk = []
 image_tags = []
 image_urls = []
-for filename in glob.glob('/mnt/ilcompf2d1/data/yfcc100m/yfcc100m_dataset-*'):
+for filename in tqdm(glob.glob('/mnt/ilcompf2d1/data/yfcc100m/yfcc100m_dataset-*')):
     with open(filename, newline='') as csvfile:
         file_index = filename.split('-')[1]
         reader = csv.reader(csvfile, delimiter='\t', quoting=csv.QUOTE_NONE)

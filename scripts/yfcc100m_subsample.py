@@ -5,9 +5,10 @@ import tarfile
 from pathlib import Path
 import pandas as pd
 from PIL import Image
+from tqdm import tqdm
 
 FILENAME = Path('../data/interim/yfcc100m/intersect_didemo/under-and-not'
-                '-nouns-leq-150_topk-1.csv')
+                '-nouns-leq-10000_topk-1.csv')
 OUTPUT_DIR = Path('/mnt/ssd/tmp/yfcc100m')
 ROOT_DIR = Path('/mnt/ilcompf2d1/data/yfcc100m/image')
 SAMPLES_PER_TAG = 1000
@@ -35,7 +36,7 @@ total_images = len(df)
 progress = 0
 skipped = 0
 df_gbep = df.groupby('adobe_cil_entry')
-for entry, grouped in df_gbep:
+for entry, grouped in tqdm(df_gbep):
     tar_file = ROOT_DIR / (entry + '.tar')
     reader = tarfile.open(tar_file)
     members = set(reader.getnames())

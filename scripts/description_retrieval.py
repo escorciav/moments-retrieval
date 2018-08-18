@@ -1,3 +1,4 @@
+"Retrieve descriptions over corpus for all moments in the dataset"
 import argparse
 from pathlib import Path
 
@@ -62,7 +63,7 @@ def main():
     model = load_model(args.model_pth)
     val_dataset = DidemoSMCNRetrieval(VAL_LIST_PATH, **args.dataset_prm)
     # Ensure mode to iterate over moments
-    val_dataset.mode = RetrievalMode.MOMENT_TO_PHRASE
+    val_dataset.mode = RetrievalMode.MOMENT_TO_DESCRIPTION
     N = len(val_dataset)
     prediction_matrix = torch.empty(N, N)
     for moment_i_data in tqdm(val_dataset):
@@ -70,8 +71,8 @@ def main():
         moment_i_ind = moment_i_data[0]
         moment_i_visual_rep = torchify_and_collate(moment_i_data[1])
 
-        # Switch mode to iterate over phrases
-        val_dataset.mode = RetrievalMode.PHRASE_TO_MOMENT
+        # Switch mode to iterate over descriptions
+        val_dataset.mode = RetrievalMode.DESCRIPTION_TO_MOMENT
         for moment_j_data in val_dataset:
             # get text representation of sentence
             moment_j_ind = moment_j_data[0]
@@ -81,10 +82,10 @@ def main():
                 sentence_j_rep, sentence_j_length, moment_i_visual_rep)
             prediction_matrix[moment_i_ind, moment_j_ind] = score_j
 
-        val_dataset.mode = RetrievalMode.MOMENT_TO_PHRASE
+        val_dataset.mode = RetrievalMode.MOMENT_TO_DESCRIPTION
 
     output_file = str(args.model_pth).replace(
-        '_checkpoint.pth.tar', '_phrase_retrieval.h5')
+        '_checkpoint.pth.tar', '_description_retrieval.h5')
     with h5py.File(output_file, 'x') as fid:
         fid['prediction_matrix'] = prediction_matrix.numpy()
         fid['similarity'] = is_similarity

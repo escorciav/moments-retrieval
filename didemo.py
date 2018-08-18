@@ -37,8 +37,7 @@ class Didemo(Dataset):
     "Base DiDeMo Dataset"
 
     def __init__(self, json_file, cues=None):
-        self._setup_list(json_file)
-        self._load_features(cues)
+        pass
 
     @property
     def segments(self):
@@ -63,10 +62,20 @@ class Didemo(Dataset):
             Edit to only load features of videos in metadata
         """
         self.cues = cues
-        self.features = {}
+        self.features = dict.fromkeys(cues.keys())
         for key, params in cues.items():
             with h5py.File(params['file'], 'r') as f:
-                self.features[key] = {i: v[:] for i, v in f.items()}
+                self.features[key] = {i['video']: f[i['video']][:]
+                                      for i in self.metadata}
+
+    def _set_metadata_per_video(self):
+        _tmp = {}
+        for moment in self.metadata:
+            if moment['video'] not in _tmp:
+                _tmp[moment['video']] = [moment]
+                continue
+            _tmp[moment['video']].append(moment)
+        self.metada_per_video = [(k, v) for k, v in _tmp.items()]
 
     def __len__(self):
         return len(self.metadata)
@@ -421,16 +430,18 @@ class DidemoSMCNHeterogeneous(DidemoSMCN):
 
 @unique
 class RetrievalMode(IntEnum):
-    MOMENT_TO_PHRASE = 0
-    PHRASE_TO_MOMENT = 1
+    MOMENT_TO_DESCRIPTION = 0
+    DESCRIPTION_TO_MOMENT = 1
+    VIDEO_TO_DESCRIPTION = 2
 
 
 class DidemoSMCNRetrieval(DidemoSMCN):
 
     def __init__(self, json_file, cues=None, loc=True, max_words=50,
                  test=False, context=True,
-                 mode=RetrievalMode.MOMENT_TO_PHRASE):
+                 mode=RetrievalMode.MOMENT_TO_DESCRIPTION):
         self._setup_list(json_file)
+        self._set_metadata_per_video()
         self._load_features(cues)
         self.visual_interface = VisualRepresentationSMCN(context=context)
         self.lang_interface = LanguageRepresentationMCN(max_words)
@@ -442,10 +453,12 @@ class DidemoSMCNRetrieval(DidemoSMCN):
         # self._set_feat_dim()
 
     def __getitem__(self, idx):
-        if self.mode == RetrievalMode.MOMENT_TO_PHRASE:
+        if self.mode == RetrievalMode.MOMENT_TO_DESCRIPTION:
             return self._get_moment(idx)
-        elif self.mode == RetrievalMode.PHRASE_TO_MOMENT:
+        elif self.mode == RetrievalMode.DESCRIPTION_TO_MOMENT:
             return self._get_phrase(idx)
+        elif self.mode == RetrievalMode.VIDEO_TO_DESCRIPTION:
+            return self._get_video(idx)
         else:
             raise
 
@@ -467,6 +480,15 @@ class DidemoSMCNRetrieval(DidemoSMCN):
         len_query = len(query)
         return idx, sentence_feature, len_query
 
+    def _get_video(self, idx):
+        video_id, _ = self.metada_per_video[idx]
+        visual_feature = self._compute_visual_feature_eval(video_id)
+        return idx, visual_feature
+
+    def __len__(self):
+        if self.mode == RetrievalMode.VIDEO_TO_DESCRIPTION:
+            return len(self.metada_per_video)
+        return super().__len__()
 
 class LanguageRepresentationMCN(object):
     "Get representation of sentence"
@@ -667,3 +689,10 @@ if __name__ == '__main__':
         np.testing.assert_array_almost_equal(data[4]['mask'],
                                              [1] + [0] * 5)
         assert data[5]['rgb'].sum() == 0
+
+    # Unit-test Didemo
+    VAL_LIST_PATH = 'data/raw/val_data_wwa.json'
+    RGB_FEAT_PATH = 'data/interim/didemo/resnet152/320x240_max.h5'
+    args = dict(test=False, context=False, loc=False,
+                cues=dict(rgb=dict(file=RGB_FEAT_PATH)))
+    val_dataset = DidemoSMCNRetrieval(VAL_LIST_PATH, **args)

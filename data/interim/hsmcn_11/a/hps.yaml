@@ -6,7 +6,7 @@ original_setup: true
 sampling_scheme: joint
 n_display: 0.1
 w_intra: 0.0
-w_inter: 1.0
+w_inter: [0.2, 0.5]
 # search space
 patience: [-1, 12, 36]
 lr: [0.05, 0.01]

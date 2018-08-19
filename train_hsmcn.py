@@ -173,9 +173,10 @@ def main(args):
     performance_test = {i: best_result for i in METRICS}
     patience = 0
     performance_per_sample = []
+    n_display_float = args.n_display
     for epoch in range(args.epochs):
         # on epoch begin
-        args.n_display = int(args.n_display * len(sampler) /
+        args.n_display = int(n_display_float * len(sampler) /
                              train_loader.batch_size)
         lr_schedule.step()
 

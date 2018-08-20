@@ -23,10 +23,17 @@ parser.add_argument('--no-cuda', action='store_false', dest='cuda',
 args = parser.parse_args()
 args.dataset_prm = dict(context=False, loc=False,
                         cues=dict(rgb=dict(file=RGB_FEAT_PATH)))
-# TODO (postponed): add stuff to change model hyper-parameters
 args.smcn_prm = dict(visual_size=2048, lang_size=300, embedding_size=100,
                      dropout=0.3, max_length=50, visual_hidden=500,
                      lang_hidden=1000)
+# TODO (postponed): add stuff to change model hyper-parameters. We need to
+# design this to make it ease to load and update the config files.
+# In the meantime, uncomment these lines for SMCN - ResNet+Local+Global+TEF
+# args.dataset_prm = dict(context=True, loc=True,
+#                         cues=dict(rgb=dict(file=RGB_FEAT_PATH)))
+# args.smcn_prm = dict(visual_size=4098, lang_size=300, embedding_size=100,
+#                      dropout=0.3, max_length=50, visual_hidden=500,
+#                      lang_hidden=1000)
 
 
 def load_model(filename=None):

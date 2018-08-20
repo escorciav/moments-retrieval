@@ -1,7 +1,4 @@
-"""DiDeMo evaluation
-TODO:
-    Add copyright
-"""
+"DiDeMo evaluation"
 import numpy as np
 
 from corpus import Corpus

@@ -29,7 +29,6 @@ class GloveEmbedding(object):
 class RecurrentEmbedding(object):
     "TODO"
 
-    @timeit
     def __init__(self, glove_file=GLOVE_FILE, glove_dim=GLOVE_DIM,
                  vocab_file=VOCAB_FILE):
         self.glove_file = glove_file

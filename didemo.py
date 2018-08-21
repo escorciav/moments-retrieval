@@ -490,6 +490,7 @@ class DidemoSMCNRetrieval(DidemoSMCN):
             return len(self.metada_per_video)
         return super().__len__()
 
+
 class LanguageRepresentationMCN(object):
     "Get representation of sentence"
 

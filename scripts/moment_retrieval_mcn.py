@@ -1,4 +1,9 @@
-"Retrieval over corpus for all descriptions in the dataset"
+"""Compute Distance matrix for Corpus Video Moment Retrieval in DiDeMo val
+
+In practice, only works for MCN models trained with pytorch. You could
+get inspired for other use cases :)
+
+"""
 import argparse
 import hashlib
 from pathlib import Path
@@ -8,8 +13,9 @@ import numpy as np
 import torch
 from tqdm import tqdm
 
-from model import SMCN
-from didemo import DidemoSMCNRetrieval, RetrievalMode
+from model import MCN
+from didemo import (DidemoMCN, RetrievalMode, VisualRepresentationMCN,
+                    LanguageRepresentationMCN, TemporalEndpointFeature)
 
 RGB_FEAT_PATH = 'data/interim/didemo/resnet152/320x240_max.h5'
 VAL_LIST_PATH = 'data/raw/val_data_wwa.json'
@@ -21,28 +27,67 @@ parser.add_argument('--model-pth', type=Path, help='pth-tar file')
 parser.add_argument('--no-cuda', action='store_false', dest='cuda',
                     help='disable GPU')
 args = parser.parse_args()
-args.dataset_prm = dict(context=False, loc=False,
-                        cues=dict(rgb=dict(file=RGB_FEAT_PATH)))
-args.smcn_prm = dict(visual_size=2048, lang_size=300, embedding_size=100,
+args.dataset_prm = dict(loc=True, cues=dict(rgb=dict(file=RGB_FEAT_PATH)))
+args.smcn_prm = dict(visual_size=4098, lang_size=300, embedding_size=100,
                      dropout=0.3, max_length=50, visual_hidden=500,
                      lang_hidden=1000)
-# TODO (postponed): add stuff to change model hyper-parameters. We need to
-# design this to make it ease to load and update the config files.
-# In the meantime, uncomment these lines for SMCN - ResNet+Local+Global+TEF
-# args.dataset_prm['context'] = True
-# args.dataset_prm['loc'] = True
-# args.smcn_prm = dict(visual_size=4098, lang_size=300, embedding_size=100,
-#                      dropout=0.3, max_length=50, visual_hidden=500,
-#                      lang_hidden=1000)
-# Uncomment these lines for SMCN - ResNet+Local+Global
-# args.dataset_prm['context'] = True
-# args.smcn_prm = dict(visual_size=4096, lang_size=300, embedding_size=100,
-#                      dropout=0.3, max_length=50, visual_hidden=500,
-#                      lang_hidden=1000)
+
+
+class DidemoMCNRetrieval(DidemoMCN):
+    def __init__(self, json_file, cues=None, loc=True, max_words=50,
+                 test=False, mode=RetrievalMode.MOMENT_TO_DESCRIPTION):
+        self._setup_list(json_file)
+        self._set_metadata_per_video()
+        self._load_features(cues)
+        self.visual_interface = VisualRepresentationMCN()
+        self.lang_interface = LanguageRepresentationMCN(max_words)
+        self.tef_interface = None
+        if loc:
+            self.tef_interface = TemporalEndpointFeature()
+        self.eval = False
+        self.mode = mode
+
+    def __getitem__(self, idx):
+        if self.mode == RetrievalMode.MOMENT_TO_DESCRIPTION:
+            return self._get_moment(idx)
+        elif self.mode == RetrievalMode.DESCRIPTION_TO_MOMENT:
+            return self._get_phrase(idx)
+        elif self.mode == RetrievalMode.VIDEO_TO_DESCRIPTION:
+            return self._get_video(idx)
+        else:
+            raise
+
+    def _get_moment(self, idx):
+        moment_i = self.metadata[idx]
+        video_id = moment_i['video']
+        num_annotators = len(moment_i['times'])
+        # TODO: make it flexible, but deterministic
+        annot_i = 0
+        time = moment_i['times'][annot_i]
+        pos_visual_feature = self._compute_visual_feature(video_id, time)
+        return idx, pos_visual_feature
+
+    def _get_phrase(self, idx):
+        moment_i = self.metadata[idx]
+        query = moment_i['language_input']
+        # TODO: pack next two vars into a dict
+        sentence_feature = self.lang_interface(query)
+        len_query = len(query)
+        return idx, sentence_feature, len_query
+
+    def _get_video(self, idx):
+        video_id, _ = self.metada_per_video[idx]
+        visual_feature = self._compute_visual_feature_eval(video_id)
+        return idx, visual_feature
+
+    def __len__(self):
+        if self.mode == RetrievalMode.VIDEO_TO_DESCRIPTION:
+            return len(self.metada_per_video)
+        return super().__len__()
 
 
 def load_model(filename=None):
-    model = SMCN(**args.smcn_prm)
+    model = MCN(**args.smcn_prm)
     model.eval()
     if args.cuda:
         model.cuda()
@@ -74,7 +119,7 @@ def torchify_and_collate(data, unsqueeze=False):
 def main():
     torch.set_grad_enabled(False)
     model = load_model(args.model_pth)
-    val_dataset = DidemoSMCNRetrieval(VAL_LIST_PATH, **args.dataset_prm)
+    val_dataset = DidemoMCNRetrieval(VAL_LIST_PATH, **args.dataset_prm)
     # Setup prediction matrix
     val_dataset.mode = RetrievalMode.VIDEO_TO_DESCRIPTION
     # TODO (extension): future work once we are set with DiDeMo
@@ -97,7 +142,6 @@ def main():
             # get text representation of sentence
             video_j_ind = video_j_data[0]
             video_j_visual_rep = torchify_and_collate(video_j_data[1])
-            assert N_s == video_j_visual_rep['mask'].shape[0]
             # TODO (debug): double check that predict works here
             # 1st check, apparently we are good to go. let's try out!
             score_ij, is_similarity = model.predict(

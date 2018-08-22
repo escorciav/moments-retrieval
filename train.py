@@ -34,6 +34,13 @@ parser = argparse.ArgumentParser(description='MCN training DiDeMo')
 # Features
 parser.add_argument('--feat', default='rgb', choices=MODALITY,
                     help='kind of modality')
+parser.add_argument('--rgb-path', type=Path, default=RGB_FEAT_PATH,
+                    help='HDF5-file with RGB features')
+# Model features
+parser.add_argument('--no-loc', action='store_false', dest='loc',
+                    help='Remove TEF features')
+parser.add_argument('--no-context', action='store_false', dest='context',
+                    help='Remove global video representation')
 # Model
 parser.add_argument('--margin', type=float, default=0.1,
                     help='MaxMargin margin value')
@@ -79,25 +86,33 @@ parser.add_argument('--n-display', type=int, default=15,
 # Reproducibility
 parser.add_argument('--seed', type=int, default=1701,
                     help='random seed (-1 := random)')
+# Debug
+parser.add_argument('--per-sample', action='store_true')
 
 args = parser.parse_args()
 
 def main(args):
-    setup_rng(args)
     setup_logging(args)
+    setup_rng(args)
 
-    args.device = 'cpu'
+    args.device = device_name = 'cpu'
     if args.gpu_id >= 0 and torch.cuda.is_available():
         args.device = torch.device(f'cuda:{args.gpu_id}')
+        device_name = torch.cuda.get_device_name(args.gpu_id)
     logging.info('Launching training')
     logging.info(args)
+    logging.info(f'Device: {device_name}')
 
     if args.feat == 'rgb':
-        cues = {'rgb': {'file': RGB_FEAT_PATH}}
+        cues = {'rgb': {'file': args.rgb_path}}
     elif args.feat == 'flow':
         cues = {'flow': {'file': FLOW_FEAT_PATH}}
 
     logging.info('Pre-loading features... This may take a couple of minutes.')
+    if not args.loc:
+        logging.warning('WIP: a PR is welcome to make it effective')
+    if not args.context:
+        logging.warning('WIP: a PR is welcome to make it effective')
     train_dataset = DidemoMCN(TRAIN_LIST_PATH, cues=cues)
     val_dataset = DidemoMCN(VAL_LIST_PATH, cues=cues, test=True)
     test_dataset = DidemoMCN(TEST_LIST_PATH, cues=cues, test=True)
@@ -123,6 +138,7 @@ def main(args):
     best_result = 0.0
     performance_test = {i: best_result for i in METRICS}
     patience = 0
+    performance_per_sample = []
     for epoch in range(args.epochs):
         lr_schedule.step()
         train_epoch(args, net, ranking_loss, train_loader, optimizer, epoch)
@@ -134,6 +150,15 @@ def main(args):
             best_result = val_result
             logging.info(f'Hit jackpot {TRACK}: {best_result:.4f}')
             performance_test = validation(args, net, None, test_loader)
+            if args.per_sample:
+                performance_per_sample = validation(
+                    args, net, None, val_loader, per_sample=True)
+            save_checkpoint(args, {
+                'epoch': epoch + 1,
+                'state_dict': net.state_dict(),
+                'best_result': best_result,
+                'optimizer' : optimizer.state_dict(),
+                })
         else:
             patience += 1
 
@@ -142,9 +167,19 @@ def main(args):
     args.epochs = epoch + 1
     if args.patience == -1:
         performance_test = validation(args, net, None, test_loader)
+        if args.per_sample:
+            performance_per_sample = validation(
+                args, net, None, val_loader, per_sample=True)
+        save_checkpoint(args, {
+            'epoch': epoch + 1,
+            'state_dict': net.state_dict(),
+            'best_result': best_result,
+            'optimizer' : optimizer.state_dict(),
+            })
 
     logging.info(f'Best val r@1: {best_result:.4f}')
-    dumping_arguments(args, performance_val, performance_test)
+    dumping_arguments(args, performance_val, performance_test,
+                      performance_per_sample)
 
 
 def train_epoch(args, net, criterion, loader, optimizer, epoch):
@@ -181,10 +216,11 @@ def train_epoch(args, net, criterion, loader, optimizer, epoch):
             running_loss = 0.0
 
 
-def validation(args, net, criterion, loader):
+def validation(args, net, criterion, loader, per_sample=False):
     time_meters = Multimeter(keys=['Batch', 'Eval'])
     meters = Multimeter(keys=METRICS)
     dataset = loader.dataset
+    results_per_sample = []
 
     logging.info(f'* Evaluation')
     net.eval()
@@ -208,24 +244,41 @@ def validation(args, net, criterion, loader):
             meters.update(performance_i)
             time_meters.update([batch_time, time.time() - end])
             end = time.time()
+            if per_sample:
+                annotation_id = dataset.metadata[it]['annotation_id']
+                results_per_sample.append([annotation_id] + performance_i)
     logging.info(f'{time_meters.report()}\t{meters.report()}')
+
+    if per_sample:
+        return results_per_sample
     performance = meters.dump()
     return performance
 
 
-def dumping_arguments(args, val_performance, test_performance):
+def dumping_arguments(args, val_performance, test_performance,
+                      performance_per_sample):
     if len(args.logfile) == 0:
         return
     result_file = args.logfile + '.json'
     device = args.device
     # Update dict with performance and remove non-serializable stuff
     args.device = None
+    args.rgb_path = str(args.rgb_path)
     args_dict = vars(args)
     args_dict.update({f'val_{k}': v for k, v in val_performance.items()})
     args_dict.update({f'test_{k}': v for k, v in test_performance.items()})
     with open(result_file, 'w') as f:
         json.dump(args_dict, f)
+    if args.per_sample:
+        with open(args.logfile + '.csv', 'x') as fid:
+            fid.write('{},{},{},{}\n'.format('annotation_id', *METRICS))
+            status = [fid.write('{},{},{},{}\n'.format(*i))
+                      for i in performance_per_sample]
     args.device = device
+
+
+def save_checkpoint(args, state):
+    torch.save(state, args.logfile + '_checkpoint.pth.tar')
 
 
 def setup_logging(args):
@@ -239,14 +292,9 @@ def setup_logging(args):
 
 def setup_model(args, dataset):
     logging.info('Model: MCN')
-
-    feat_0 = dataset[0]
-    text_dim = feat_0[0].shape[1]
-    video_modality_dim = feat_0[2][args.feat].shape[0]
-    max_length = feat_0[0].shape[0]
-    mcn_setup = dict(visual_size=video_modality_dim, lang_size=text_dim,
-                     max_length=max_length)
-
+    mcn_setup = dict(visual_size=dataset.visual_size[args.feat],
+                     lang_size=dataset.language_size,
+                     max_length=dataset.max_words)
     net = MCN(**mcn_setup)
     opt_parameters = net.optimization_parameters(
         args.lr, args.original_setup)

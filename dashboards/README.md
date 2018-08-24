@@ -8,11 +8,16 @@ For simplicity, we use the same development environment of the main project. Tha
 
 ## Workflow
 
-To launch a server just execute __from the dashboard folder__
+To launch a server just execute the following commands __from the dashboard folder__
 
-`bash [X].sh`
+```bash
+source setup.sh
+source [X]
+```
 
-e.g. if you wanna launch the moment retrieval demo `bash moment_retrieval_demo.sh`.
+e.g. if you wanna launch the moment retrieval demo replace `[X]` by `moment_retrieval_demo.sh`.
+
+> Make sure that you edit the `setup.sh` file accordingly if you have an exotic config.
 
 By default, the ports are:
 

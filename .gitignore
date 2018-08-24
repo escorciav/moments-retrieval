@@ -2,13 +2,13 @@
 *.vscode
 activate*.sh
 
+# pseudo-test
+test_output*
+
 # adobe setup
 adobe
 log/consumed
 log/docker*
-
-#dashboard
-dashboard/
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

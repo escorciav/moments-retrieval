@@ -20,6 +20,8 @@ parser = argparse.ArgumentParser(
 parser.add_argument('--model-pth', type=Path, help='pth-tar file')
 parser.add_argument('--no-cuda', action='store_false', dest='cuda',
                     help='disable GPU')
+parser.add_argument('--debug', type=int, default=-1,
+                    help='break for-loop')
 args = parser.parse_args()
 args.dataset_prm = dict(context=False, loc=False,
                         cues=dict(rgb=dict(file=RGB_FEAT_PATH)))
@@ -116,6 +118,9 @@ def main():
         val_dataset.mode = RetrievalMode.DESCRIPTION_TO_MOMENT
         annotation_id = val_dataset.metadata[moment_i_ind]['annotation_id']
         moments_order.append((moment_i_ind, annotation_id))
+        if moment_i_ind == args.debug:
+            print('Premature exit')
+            break
 
     output_file = str(args.model_pth).replace(
         '_checkpoint.pth.tar', '_moment_retrieval.h5')

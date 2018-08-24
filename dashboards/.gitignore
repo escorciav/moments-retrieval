@@ -1,0 +1,11 @@
+.vscode
+
+__pycache__/
+
+# data
+static/*
+
+# prototypes that did not mature :)
+tinder.*
+server.*
+templates/*

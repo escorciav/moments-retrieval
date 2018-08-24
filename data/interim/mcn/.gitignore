@@ -7,3 +7,4 @@ corpus_val_rgb.hdf5
 corpus_test_flow.hdf5
 corpus_test_rgb.hdf5
 _corpus_val_rgb_matrix.hdf5
+*-weights.hdf5

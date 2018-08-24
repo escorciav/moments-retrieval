@@ -1,10 +1,23 @@
 """Select a subset of labels from YFCC100M dataset that aligns with DiDeMo
 
-Note there are more constants defined in the code
+Notes:
+    - topk is exposed, but it's partially useless (as we conceived it)
+      because the orignal tags from YFCC100M are alphabetized.
 """
-TOPK = 1
-UNDERREPRESENTED_THRESHOLD = 300
+import csv
+import glob
+import json
+import sys
 
+import fire
+import numpy as np
+import pandas as pd
+from spacy.lang.en import LEMMA_EXC, LEMMA_INDEX, LEMMA_RULES
+from spacy.lemmatizer import Lemmatizer
+from tqdm import tqdm
+
+# Those CSV-files are too big and we need this add-on
+csv.field_size_limit(sys.maxsize)
 # YFCC100M CSV mapping
 IMAGE_ID = 0
 USER_ID = 1
@@ -16,25 +29,22 @@ PHOTO_OR_VIDEO = 22
 IMAGES_PER_TAR = 10000
 # Magic constants
 TRAINABLE_THRESHOLD = 1000
+# Data data data ... the dark matter of machine learning
+NOUNS_FILE = 'data/interim/didemo/nouns_to_video.json'
+VAL_FILE = 'data/raw/val_data.json'
+TAG_FREQUENCY_CSV = 'data/interim/yfcc100m/tag_frequency.csv'
 
-print(f'Top-k {TOPK}')
-print(f'Under-represented threshold {UNDERREPRESENTED_THRESHOLD}')
-
-import json
-import numpy as np
 
 def create_vocabulary(underrepresented_threshold=10):
     "Create vocabulary of underrepresented NOUNs to augment"
 
     # load stats about nouns in DIDEMO
-    NOUNS_FILE = '../data/interim/didemo/nouns_to_video.json'
     with open(NOUNS_FILE, 'r') as fid:
         stats = json.load(fid)
         for k, v in stats['nouns_per_subset'].items():
             stats['nouns_per_subset'][k] = set(v)
 
     # load annotations in val-set
-    VAL_FILE = '../data/raw/val_data.json'
     with open(VAL_FILE, 'r') as fid:
         data = json.load(fid)
     num_val_instances = len(data)
@@ -64,7 +74,7 @@ def create_vocabulary(underrepresented_threshold=10):
 
     num_samples_well_represented = len(np.unique(val_ids_represented))
     nouns_only_val = (stats['nouns_per_subset']['val'] -
-                      stats['nouns_per_subset']['train'])
+                    stats['nouns_per_subset']['train'])
     num_nouns_notrepresented = len(nouns_only_val)
     for k in nouns_only_val:
         val_ids_toimpact.extend(
@@ -74,122 +84,120 @@ def create_vocabulary(underrepresented_threshold=10):
 
     print('Num evaluation instances:', num_val_instances)
     print('Spanned instances', len(spanned_annotations))
-    print('NOUNs are underrepresented when appear less than', underrepresented_threshold + 1)
+    print('NOUNs are underrepresented when appear less than',
+          underrepresented_threshold + 1)
     print('Total NOUNs in train', num_nouns_train)
     print('NOUNs Under-represented', num_nouns_underrepresented)
     print('NOUNs Unseen during training', num_nouns_notrepresented)
     print('Num descriptions with Under&Unseen NOUNs', num_samples_to_impact)
     print('Num descriptions with Well NOUNs', num_samples_well_represented)
-    print('Pctg to impact', f'{num_samples_to_impact / num_val_instances:.4f}')
+    print('Pctg to impact',
+          f'{num_samples_to_impact / num_val_instances:.4f}')
     return nouns_vocab
 
-# Load clean (scrapped) tags
-import csv
-filename = '../data/interim/yfcc100m/tag_frequency.csv'
-clean_tags = set()
-with open(filename, 'r') as fid:
-    reader = csv.DictReader(fid, delimiter=',')
-    for row in reader:
-        clean_tags.add(row['tag'])
 
-# load a set of interesting NOUNs from DiDeMo
-didemo_nouns = create_vocabulary(UNDERREPRESENTED_THRESHOLD)
+def main(wildcard='/mnt/ilcompf2d1/data/yfcc100m/yfcc100m_dataset-*',
+         underrepresented_threshold=300, topk=1,
+         prefix='nouns-under-and-not-leq'):
+    print(f'Top-k {topk}')
+    print(f'Under-represented threshold {underrepresented_threshold}')
 
-# Lemmatizer to deal with plurals
-from spacy.lemmatizer import Lemmatizer
-from spacy.lang.en import LEMMA_INDEX, LEMMA_EXC, LEMMA_RULES
-lemmatizer = Lemmatizer(LEMMA_INDEX, LEMMA_EXC, LEMMA_RULES)
+    # Load clean (scrapped) tags
+    clean_tags = set()
+    with open(TAG_FREQUENCY_CSV, 'r') as fid:
+        reader = csv.DictReader(fid, delimiter=',')
+        for row in reader:
+            clean_tags.add(row['tag'])
 
-# Extract mapping tags 2 image
-import glob
-import pandas as pd
-import sys
-from tqdm import tqdm
-# Those CSV-files are too big and we need this add-on
-csv.field_size_limit(sys.maxsize)
+    # load a set of interesting NOUNs from DiDeMo
+    didemo_nouns = create_vocabulary(underrepresented_threshold)
 
-tag2image = {}
-images = []
-image_tags_topk_flickr = []
-image_tags_flickr = []
-image_tags_topk = []
-image_tags = []
-image_urls = []
-for filename in tqdm(glob.glob('/mnt/ilcompf2d1/data/yfcc100m/yfcc100m_dataset-*')):
-    with open(filename, newline='') as csvfile:
-        file_index = filename.split('-')[1]
-        reader = csv.reader(csvfile, delimiter='\t', quoting=csv.QUOTE_NONE)
-        for line_no, row in enumerate(reader):
-            if int(row[PHOTO_OR_VIDEO]) != 0 or len(row[USER_TAGS]) == 0:
-                continue
+    # Lemmatizer to deal with plurals
+    lemmatizer = Lemmatizer(LEMMA_INDEX, LEMMA_EXC, LEMMA_RULES)
 
-            counter, amen = 0, False
-            tags_topk_flickr = []
-            tags_topk = []
-            for tag in row[USER_TAGS].split(','):
-                lemmatized_tag = lemmatizer(tag, u'NOUN')[0]
-                if lemmatized_tag not in clean_tags:
+    # Extract mapping tags 2 image
+    tag2image = {}
+    images = []
+    image_tags_topk_flickr = []
+    image_tags_flickr = []
+    image_tags_topk = []
+    image_tags = []
+    image_urls = []
+    for filename in tqdm(glob.glob(wildcard)):
+        with open(filename, newline='') as csvfile:
+            file_index = filename.split('-')[1]
+            reader = csv.reader(csvfile, delimiter='\t',
+                                quoting=csv.QUOTE_NONE)
+            for line_no, row in enumerate(reader):
+                if int(row[PHOTO_OR_VIDEO]) != 0 or len(row[USER_TAGS]) == 0:
                     continue
-                if lemmatized_tag not in didemo_nouns:
+
+                counter, amen = 0, False
+                tags_topk_flickr = []
+                tags_topk = []
+                for tag in row[USER_TAGS].split(','):
+                    lemmatized_tag = lemmatizer(tag, u'NOUN')[0]
+                    if lemmatized_tag not in clean_tags:
+                        continue
+                    if lemmatized_tag not in didemo_nouns:
+                        continue
+                    # after this point the image will be considered, thus we
+                    # can add it to tag2image dict
+                    counter += 1
+                    tags_topk.append(lemmatized_tag)
+                    tags_topk_flickr.append(tag)
+                    amen = True
+                    if lemmatized_tag in tag2image:
+                        tag2image[lemmatized_tag].append(len(images))
+                    else:
+                        tag2image[lemmatized_tag] = [len(images)]
+                    if counter == topk:
+                        # according to previous Bryan's project top-5 tags in
+                        # YFCC100M have purity >= 60%
+                        break
+                tags = [i for i in row[USER_TAGS].split(',')
+                        if lemmatizer(i, u'NOUN')[0] in clean_tags]
+
+                # I don't need this but just in case
+                if not amen:
                     continue
-                # after this point the image will be considered, thus we
-                # can add it to tag2image dict
-                counter += 1
-                tags_topk.append(lemmatized_tag)
-                tags_topk_flickr.append(tag)
-                amen = True
-                if lemmatized_tag in tag2image:
-                    tag2image[lemmatized_tag].append(len(images))
-                else:
-                    tag2image[lemmatized_tag] = [len(images)]
-                if counter == TOPK:
-                    # according to previous Bryan's project top-5 tags in YFCC100M
-                    # have purity >= 60%
-                    break
-            tags = [i for i in row[USER_TAGS].split(',')
-                    if lemmatizer(i, u'NOUN')[0] in clean_tags]
+                tar_index = line_no // IMAGES_PER_TAR
+                img_index = line_no % IMAGES_PER_TAR
+                image_loc = f'{file_index}-{tar_index:03d}/{tar_index:03d}{img_index:04d}.jpg'
+                image_url = row[IMAGE_URL]
+                images.append(image_loc)
+                image_urls.append(image_url)
+                image_tags_topk_flickr.append(';'.join(tags_topk_flickr))
+                image_tags_flickr.append(row[USER_TAGS].replace(',', ';'))
+                image_tags_topk.append(';'.join(tags_topk))
+                image_tags.append(';'.join(tags))
 
-            # I don't need this but just in case
-            if not amen:
-                continue
-            tar_index = line_no // IMAGES_PER_TAR
-            img_index = line_no % IMAGES_PER_TAR
-            image_loc = f'{file_index}-{tar_index:03d}/{tar_index:03d}{img_index:04d}.jpg'
-            image_url = row[IMAGE_URL]
-            images.append(image_loc)
-            image_urls.append(image_url)
-            image_tags_topk_flickr.append(';'.join(tags_topk_flickr))
-            image_tags_flickr.append(row[USER_TAGS].replace(',', ';'))
-            image_tags_topk.append(';'.join(tags_topk))
-            image_tags.append(';'.join(tags))
+    print('Num clean tags:', len(clean_tags))
+    with open(NOUNS_FILE, 'r') as fid:
+        didemo_stats = json.load(fid)
 
-print('Num clean tags:', len(clean_tags))
+    trainable_tags = 0
+    val_instances = []
+    for k, v in tag2image.items():
+        if len(v) > TRAINABLE_THRESHOLD:
+            trainable_tags += 1
+        if k in didemo_stats['annotations_per_subset']['val']:
+            val_instances.extend(didemo_stats['annotations_per_subset']['val'][k])
+    val_instances = np.unique(val_instances)
+    print(f'Top-{topk} gives {len(tag2image)} '
+        f'and {trainable_tags} >= {TRAINABLE_THRESHOLD} images')
+    print(f'Number of val instances with those NOUNs {len(val_instances)}')
 
-import json
-import numpy as np
-NOUNS_FILE = '../data/interim/didemo/nouns_to_video.json'
-with open(NOUNS_FILE, 'r') as fid:
-    didemo_stats = json.load(fid)
+    df = pd.DataFrame([images, image_urls,
+                    image_tags_topk, image_tags,
+                    image_tags_topk_flickr, image_tags_flickr]).T
+    df.columns = ['adobe_cil', 'url', 'topk_tags', 'tags', 'topk_tags_yfcc100m', 'tags_yfcc100m']
 
-trainable_tags = 0
-val_instances = []
-for k, v in tag2image.items():
-    if len(v) > TRAINABLE_THRESHOLD:
-        trainable_tags += 1
-    if k in didemo_stats['annotations_per_subset']['val']:
-        val_instances.extend(didemo_stats['annotations_per_subset']['val'][k])
-val_instances = np.unique(val_instances)
-print(f'Top-{TOPK} gives {len(tag2image)} '
-      f'and {trainable_tags} >= {TRAINABLE_THRESHOLD} images')
-print(f'Number of val instances with those NOUNs {len(val_instances)}')
+    basename = f'{prefix}-{underrepresented_threshold}_topk-{topk}'
+    df.to_csv(f'{basename}.csv')
+    with open(f'{basename}.json', 'w') as fid:
+        json.dump(tag2image, fid)
 
-import pandas as pd
-df = pd.DataFrame([images, image_urls,
-                   image_tags_topk, image_tags,
-                   image_tags_topk_flickr, image_tags_flickr]).T
-df.columns = ['adobe_cil', 'url', 'topk_tags', 'tags', 'topk_tags_yfcc100m', 'tags_yfcc100m']
-basename = (f'yfcc100m_intersect-didemo_under-and-not-nouns-leq'
-            f'-{UNDERREPRESENTED_THRESHOLD}_topk-{TOPK}')
-df.to_csv(f'{basename}.csv')
-with open(f'{basename}.json', 'w') as fid:
-    json.dump(tag2image, fid)
+
+if __name__ == '__main__':
+    fire.Fire()

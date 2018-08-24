@@ -1,47 +1,56 @@
-# moments-retrieval
+# Corpus Video Moment Retrieval
 
-# TODO
+Welcome to the Corpus Video Moment Retrieval porject!
 
-1. Pytorch MCN over chunks (Due Tuesday)
+## Setup
 
-    Implement Bryan's idea
+Let's say you wanna run our codebase. You will need the following requirements:
 
-    - Check picture in slack
+- Linux box, x64.
 
-1. Extract features (Due Thursday)
+- conda.
 
-    - Images
+    In case, it's your first time with conda. You can do the following:
 
-        - resnet 152/101
+    ```
+    wget https://repo.continuum.io/miniconda/Miniconda3-latest-Linux-x86_64.sh
+    sh Miniconda3-latest-Linux-x86_64.sh -b -p $HOME/miniconda3
+    ```
 
-        - facenet
+    __Note__: This will install miniconda3 in your $HOME folder. Edit the last part as u prefer 😉.
 
-    - Text
+Once, you are ready just type:
 
-        - word2vec
+`conda env create -n pytorch -f environment-devel.yml`
 
-        - skipthought
+In case you wanna do experiments involving `spacy` e.g. intersecting YFCC100M and DiDemo, You may also need the following packages <sup>1</sup>.
 
-        - openai language model
+`python -m spacy download en_core_web_sm`
 
-    - audio
+That's all. You have all requirements to run the code.
 
-        - VGGs from google
+> <sup>1</sup> Sorry, I could not find a way to pack spacy models inside conda.
 
-        - AudioNet Vondrick and others
+### Testing
 
-    - Video
+We have a full test-suite in case you want to double check that everything is placed correctly.
 
-        - I3D
+First, let's copy the same repo of data to ensure the algorithm look at the same trend.
 
-        - NLN
+`bash scripts/setup_data.sh`
 
-1. LSTM with variable sequence length
+I hope it wasn't difficult to reach this point. Now, you are ready to run a full test suite.
 
-    - query features
+`bash scripts/test_all.sh`
 
-    - 0/1 representing time to match
+__FAQs__
 
-1. Test approach in other dataset
+- unable to find conda
 
-    - Charades or ActivityNet
+    Ensure that you install conda properly. Once, you are confident, check out the comment related to the setup of conda in `scripts/test_all.sh`.
+
+- Memory error
+
+    The models and batch-size are low by default. Maybe, you are trying to use the GPU of someone else 🙂. Edit the `gpu_device` in the file `scripts/test_all.sh`.
+
+Finally, if you are struggling and have spend a couple of hours without seeing the light, drop a line to @escorcia (victor.escorcia@kaust.edu.sa) and @brussel (brussel@adobe.com).

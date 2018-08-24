@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html lang="en" class="gr__getbootstrap_com">
+  <!-- <script type="text/javascript">window["_gaUserPrefs"] = { ioo : function() { return true; } }</script> -->
+  <head>
+    <meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+    <link rel="icon" href="https://getbootstrap.com/favicon.ico">
+
+    <!-- Bootstrap core CSS -->
+    <link href="https://maxcdn.bootstrapcdn.com/bootstrap/4.1.1/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdn.datatables.net/1.10.16/css/jquery.dataTables.css" rel="stylesheet" type="text/css">
+    <link href="https://cdn.datatables.net/select/1.2.5/css/select.jqueryui.min.css" rel="stylesheet" type="text/css">
+    <!-- Bootstrap core JavaScript -->
+    <script src="https://ajax.googleapis.com/ajax/libs/jquery/3.3.1/jquery.min.js"></script>
+    <script src="https://maxcdn.bootstrapcdn.com/bootstrap/3.3.7/js/bootstrap.min.js"></script>
+    <script type="text/javascript" charset="utf8" src="https://cdn.datatables.net/1.10.16/js/jquery.dataTables.js"></script>
+    <script type="text/javascript" charset="utf8" src="https://cdn.datatables.net/select/1.2.5/js/dataTables.select.min.js"></script>
+    <!-- Custom JS for this template -->
+    <script src="{{ url_for('static', filename='sentence_retrieval.js') }}"></script>
+  </head>
+
+  <body data-gr-c-s-loaded="true">
+    <div class="container-fluid">
+      <h1>Sentence Retrieval Results</h1>
+      <p>rank difference means difference of rank wrt the baseline. lower is better.</p>
+      <div class="row">
+        <div class="col">
+          <table id="IndexTable" class="display" style="width:100%">
+            <thead>
+              <th>Descriptions</th>
+              <th>Rank</th>
+              <th>Rank difference</th>
+              <th>In subset</th>
+            </thead>
+            <tbody>
+              {% for row in get_table_by_rows() %}
+              <tr>
+                {% for cell in row %}
+                <td>{{cell}}</td>
+                {% endfor %}
+              </tr>
+              {% endfor %}
+            </tbody>
+            <tfoot>
+              <tr>
+                <th>Sentence</th>
+                <th>Rank</th>
+                <td></td>
+                <td></td>
+              </tr>
+          </tfoot>
+          </table>
+        </div>
+        <div id="colVideo" class="col"></div>
+        <div id="colSentences" class="col"></div>
+      </div>
+    </div>
+  </body>
+</html>

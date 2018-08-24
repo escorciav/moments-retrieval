@@ -1,0 +1,12 @@
+body {
+  padding-top: 5rem;
+}
+.starter-template {
+  padding: 3rem 1.5rem;
+  text-align: center;
+}
+tfoot input {
+  width: 100%;
+  padding: 3px;
+  box-sizing: border-box;
+}

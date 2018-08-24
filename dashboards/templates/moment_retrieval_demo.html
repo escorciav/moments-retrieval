@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html lang="en" class="gr__getbootstrap_com">
+  <!-- <script type="text/javascript">window["_gaUserPrefs"] = { ioo : function() { return true; } }</script> -->
+  <head>
+    <meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+    <link rel="icon" href="https://getbootstrap.com/favicon.ico">
+
+    <!-- Bootstrap core CSS -->
+    <link href="https://maxcdn.bootstrapcdn.com/bootstrap/4.1.1/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/4.7.0/css/font-awesome.min.css">
+    <!-- Bootstrap core JavaScript -->
+    <script src="https://ajax.googleapis.com/ajax/libs/jquery/3.3.1/jquery.min.js"></script>
+    <script src="https://maxcdn.bootstrapcdn.com/bootstrap/3.3.7/js/bootstrap.min.js"></script>
+    <!-- Custom JS for this template -->
+    <script src="{{ url_for('static', filename='moment_retrieval_demo.js') }}"></script>
+  </head>
+
+  <body data-gr-c-s-loaded="true">
+    <div class="container-fluid">
+      <h1>Moments Retrieval</h1>
+      <p>Tell me what you are interested on, and 🤖 will help u to find it!</p>
+      <p>In case you need help, try out "girl jumping for the first time"</p>
+      <p>Some people also like to search camera movements like "camera pans away from the clouds"</p>
+      <p>Have fun (human) buddy!</p>
+      <div class="row">
+        <div class="col-6">
+          <form>
+            <div class="input-group">
+              <input id="searchQuery" class="form-control border-secondary py-2" type="text" placeholder="Search">
+              <div class="input-group-append">
+                <button id="submitButton" class="btn btn-outline-secondary" type="button"> <i class="fa fa-search"></i> </button>
+              </div>
+            </div>
+          </form>
+        </div>
+      </div>
+      <div id="searchSummary"></div>
+      <div id="searchResults" class="container-fluid"></div>
+    </div>
+  </body>
+</html>

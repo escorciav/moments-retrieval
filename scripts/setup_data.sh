@@ -18,7 +18,7 @@ yfcc_resnet152_dir=data/interim/yfcc100m/resnet152
 
 # didemo-yfcc100m
 filename=data/interim/didemo_yfcc100m/train_data.json
-[ ! -d $(basename $filename) ] && mkdir -p $(basename $filename)
+[ ! -d $(dirname $filename) ] && mkdir -p $(dirname $filename)
 [ ! -f $filename ] &&  ln -s $escorcia_folder/$i $i
 
 # data for corpus retrieval evaluation
@@ -55,5 +55,5 @@ filename=data/processed/test/smcn_12_5_sr_rest.json
 [ ! -f $filename ] && ln -s $escorcia_folder/$filename $filename
 # moment explorer
 filename=data/interim/mcn_retrieval_results/rest_val_intra+inter_rgb+flow.json
-[ ! -d $(basename $filename) ] && mkdir -p $(basename $filename)
+[ ! -d $(dirname $filename) ] && mkdir -p $(dirname $filename)
 [ ! -f $filename ] && ln -s $escorcia_folder/$i $i

@@ -9,7 +9,9 @@ __Notes__:
 
 - Some notebooks may not run and that's fine, right?
 
-    If I take your notes I may have a hard time navigating through them. Anyways, going back to the topic. As long as you have the correct environement, you can fix missing funtions or modules errors by appending the root folder into the PYTHONPATH. The trick is similar to the following lines:
+    If I take your notes I may have a hard time navigating through them 😁. Going back to the topic, as long as you have the correct development environment, errors are trivial to fix. At least those related to missing funtions or modules, just append the project folder into the PYTHONPATH.
+
+    The trick is similar to the following lines:
 
     ```python
     import sys

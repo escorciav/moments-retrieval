@@ -254,6 +254,7 @@ if __name__ == '__main__':
     parser.add_argument('--json-file', default='data/raw/val_data_wwa.json')
     parser.add_argument('--distance-h5', type=Path, default='non-existent')
     parser.add_argument('--full', action='store_true', help='more metrics')
+    parser.add_argument('--dirname', default='test_output')
     args = parser.parse_args()
     if args.distance_h5.exists():
         _judge = CorpusVideoMomentRetrievalEvalFromMatrix(
@@ -261,8 +262,8 @@ if __name__ == '__main__':
         _performance = _judge.eval()
         print('R@{0:}={1:};\nmRank={2:.2f};'
               .format(_judge.k, *_performance))
-        with open('test_output/corpus_moment_retrieval_from_matrix.results',
-                  'x') as f:
+        output_filename = 'corpus_moment_retrieval_from_matrix.results'
+        with open(f'{args.dirname}/{output_filename}', 'x') as f:
             json.dump({'k': _judge.k, 'performance': _performance}, f)
         exit()
 
@@ -285,5 +286,6 @@ if __name__ == '__main__':
         else:
             print('R@{0:}={1:};\nmRank={2:.2f};'
                   .format(_judge.k, *_performace))
-        with open('test_output/corpus_moment_retrieval.results', 'x') as f:
+        output_filename = 'corpus_moment_retrieval.results'
+        with open(f'{args.dirname}/{output_filename}', 'x') as f:
             json.dump({'k': _judge.k, 'performance': _performace}, f)

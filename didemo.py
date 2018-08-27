@@ -33,6 +33,21 @@ def sentences_to_words(sentences):
     return words
 
 
+@unique
+class TemporalFeatures(IntEnum):
+    NONE = 0
+    TEMPORAL_ENDPOINT = 1
+    TEMPORALLY_AWARE = 2
+
+    @staticmethod
+    def from_string(s):
+        # credits to https://bit.ly/2Mvu9bz
+        try:
+            return TemporalFeatures[s]
+        except KeyError:
+            raise ValueError()
+
+
 class Didemo(Dataset):
     "Base DiDeMo Dataset"
 
@@ -243,17 +258,23 @@ class DidemoMCN(Didemo):
 
 
 class DidemoSMCN(DidemoMCN):
-    "Data feeder for SMCM"
+    """Data feeder for SMCM
 
-    def __init__(self, json_file, cues=None, loc=True, max_words=50,
+    TODO:
+        refactor and create a base-class. currently, it's an "empanada" to
+        make sure we don't introduce confounding factors (and avoid code
+        duplication).
+        rename tef_interface attribute if Temporally-Aware stuff works.
+    """
+
+    def __init__(self, json_file, cues=None,
+                 loc=TemporalFeatures.TEMPORAL_ENDPOINT, max_words=50,
                  test=False, context=True):
         self._setup_list(json_file)
         self._load_features(cues)
         self.visual_interface = VisualRepresentationSMCN(context=context)
         self.lang_interface = LanguageRepresentationMCN(max_words)
-        self.tef_interface = None
-        if loc:
-            self.tef_interface = TemporalEndpointFeature()
+        self._set_tef_interface(loc)
         self.eval = False
         if test:
             self.eval = True
@@ -292,6 +313,18 @@ class DidemoSMCN(DidemoMCN):
             all_t_dict[k] = np.stack(v)
         return all_t_dict
 
+    def _set_tef_interface(self, loc):
+        # TODO (minor). There should be a nice way to do this. Probably,
+        # using simple Enum.
+        if loc == TemporalFeatures.NONE:
+            self.tef_interface = None
+        elif loc == TemporalFeatures.TEMPORAL_ENDPOINT:
+            self.tef_interface = TemporalEndpointFeature()
+        elif loc == TemporalFeatures.TEMPORALLY_AWARE:
+            self.tef_interface = TemporallyAwareFeature()
+        else:
+            raise
+
 
 @unique
 class SourceID(IntEnum):
@@ -303,17 +336,16 @@ class DidemoSMCNHeterogeneous(DidemoSMCN):
     "Data feeder for SMCM with Heterogenous data"
 
     @timeit
-    def __init__(self, json_file, cues=None, loc=False, max_words=50,
-                 test=False, context=False, sampling_scheme='skip',
-                 sampler_kwargs={'epoch': 0}, DEBUG=False):
+    def __init__(self, json_file, cues=None, loc=TemporalFeatures.NONE,
+                 max_words=50, test=False, context=False,
+                 sampling_scheme='skip', sampler_kwargs={'epoch': 0},
+                 DEBUG=False):
         self.DEBUG = DEBUG
         self._setup_list(json_file)
         self._load_features(cues)
         self.visual_interface = VisualRepresentationSMCN(context)
         self.lang_interface = LanguageRepresentationMCN(max_words)
-        self.tef_interface = None
-        if loc:
-            self.tef_interface = TemporalEndpointFeature()
+        self._set_tef_interface(loc)
         self.eval = False
         if test:
             self.eval = True
@@ -437,7 +469,8 @@ class RetrievalMode(IntEnum):
 
 class DidemoSMCNRetrieval(DidemoSMCN):
 
-    def __init__(self, json_file, cues=None, loc=True, max_words=50,
+    def __init__(self, json_file, cues=None,
+                 loc=TemporalFeatures.TEMPORAL_ENDPOINT, max_words=50,
                  test=False, context=True,
                  mode=RetrievalMode.MOMENT_TO_DESCRIPTION):
         self._setup_list(json_file)
@@ -445,9 +478,7 @@ class DidemoSMCNRetrieval(DidemoSMCN):
         self._load_features(cues)
         self.visual_interface = VisualRepresentationSMCN(context=context)
         self.lang_interface = LanguageRepresentationMCN(max_words)
-        self.tef_interface = None
-        if loc:
-            self.tef_interface = TemporalEndpointFeature()
+        self._set_tef_interface(loc)
         self.eval = False
         self.mode = mode
         # self._set_feat_dim()
@@ -576,6 +607,7 @@ class VisualRepresentationSMCN(object):
         scaling_factor = np.linalg.norm(x_, axis=1, keepdims=True) + self.EPS
         return x_ / scaling_factor
 
+
 class TemporalEndpointFeature(object):
     "Relative position in the video"
 
@@ -584,6 +616,21 @@ class TemporalEndpointFeature(object):
 
     def __call__(self, start_end):
         return np.array(start_end, dtype=self.dtype) / 6
+
+
+class TemporallyAwareFeature(object):
+    "Temporally aware position in the video"
+
+    def __init__(self, dtype=np.float32):
+        self.dtype = dtype
+
+    def __call__(self, start_end):
+        start, end = start_end
+        T = end - start + 1
+        feat = np.empty((T, 2), dtype=self.dtype)
+        feat[:, 0] = np.arange(start, end + 1)
+        feat[:, 1] = feat[:, 0]
+        return feat / 6
 
 
 def normalization1d(start, end, features):

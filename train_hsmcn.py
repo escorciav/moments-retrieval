@@ -13,7 +13,7 @@ import torch.optim as optim
 from torch.utils.data import DataLoader
 
 import didemo
-from didemo import DidemoSMCNHeterogeneous, DidemoSMCN
+from didemo import DidemoSMCNHeterogeneous, DidemoSMCN, TemporalFeatures
 from model import SMCN
 from loss import IntraInterMarginLoss
 from evaluation import video_evaluation
@@ -43,8 +43,10 @@ parser.add_argument('--rgb-path', type=Path, default=[RGB_FEAT_PATH],
                     nargs='+',
                     help='HDF5-files with RGB features')
 # Model features
-parser.add_argument('--no-loc', action='store_false', dest='loc',
-                    help='Remove TEF features')
+parser.add_argument('--loc', type=TemporalFeatures.from_string,
+                    default=TemporalFeatures.NONE,
+                    choices=list(TemporalFeatures),
+                    help='Type of Temporal Feature')
 parser.add_argument('--no-context', action='store_false', dest='context',
                     help='Remove global video representation')
 # Model-specific hyper-parameters

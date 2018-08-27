@@ -12,7 +12,7 @@ from optim import SGDCaffe
 import torch.optim as optim
 from torch.utils.data import DataLoader
 
-from didemo import DidemoSMCN
+from didemo import DidemoSMCN, TemporalFeatures
 from model import SMCN
 from loss import IntraInterMarginLoss
 from evaluation import video_evaluation
@@ -38,8 +38,10 @@ parser.add_argument('--feat', default='rgb', choices=MODALITY,
 parser.add_argument('--rgb-path', type=Path, default=RGB_FEAT_PATH,
                     help='HDF5-file with RGB features')
 # Model features
-parser.add_argument('--no-loc', action='store_false', dest='loc',
-                    help='Remove TEF features')
+parser.add_argument('--loc', type=TemporalFeatures.from_string,
+                    default=TemporalFeatures.TEMPORAL_ENDPOINT,
+                    choices=list(TemporalFeatures),
+                    help='Type of Temporal Feature')
 parser.add_argument('--no-context', action='store_false', dest='context',
                     help='Remove global video representation')
 # Model
@@ -302,6 +304,9 @@ def setup_hyperparameters(args):
             continue
         random.shuffle(v)
         args_dview[k] = v[0]
+    # paired hp (simplify exploration)
+    if args.w_inter is None:
+        args.w_inter = 1 - args.w_intra
 
 
 def setup_logging(args):

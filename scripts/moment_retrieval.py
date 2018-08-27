@@ -9,7 +9,7 @@ import torch
 from tqdm import tqdm
 
 from model import SMCN
-from didemo import DidemoSMCNRetrieval, RetrievalMode
+from didemo import DidemoSMCNRetrieval, RetrievalMode, TemporalFeatures
 
 RGB_FEAT_PATH = 'data/interim/didemo/resnet152/320x240_max.h5'
 VAL_LIST_PATH = 'data/raw/val_data_wwa.json'
@@ -23,7 +23,7 @@ parser.add_argument('--no-cuda', action='store_false', dest='cuda',
 parser.add_argument('--debug', type=int, default=-1,
                     help='break for-loop')
 args = parser.parse_args()
-args.dataset_prm = dict(context=False, loc=False,
+args.dataset_prm = dict(context=False, loc=TemporalFeatures.NONE,
                         cues=dict(rgb=dict(file=RGB_FEAT_PATH)))
 args.smcn_prm = dict(visual_size=2048, lang_size=300, embedding_size=100,
                      dropout=0.3, max_length=50, visual_hidden=500,
@@ -32,7 +32,7 @@ args.smcn_prm = dict(visual_size=2048, lang_size=300, embedding_size=100,
 # design this to make it ease to load and update the config files.
 # In the meantime, uncomment these lines for SMCN - ResNet+Local+Global+TEF
 # args.dataset_prm['context'] = True
-# args.dataset_prm['loc'] = True
+# args.dataset_prm['loc'] = TemporalFeatures.TEMPORAL_ENDPOINT,
 # args.smcn_prm = dict(visual_size=4098, lang_size=300, embedding_size=100,
 #                      dropout=0.3, max_length=50, visual_hidden=500,
 #                      lang_hidden=1000)

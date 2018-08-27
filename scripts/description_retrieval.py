@@ -8,7 +8,7 @@ import torch
 from tqdm import tqdm
 
 from model import SMCN
-from didemo import DidemoSMCNRetrieval, RetrievalMode
+from didemo import DidemoSMCNRetrieval, RetrievalMode, TemporalFeatures
 
 RGB_FEAT_PATH = 'data/interim/didemo/resnet152/320x240_max.h5'
 VAL_LIST_PATH = 'data/raw/val_data.json'
@@ -19,7 +19,7 @@ parser.add_argument('--model-pth', type=Path, help='pth-tar file')
 parser.add_argument('--no-cuda', action='store_false', dest='cuda',
                     help='disable GPU')
 args = parser.parse_args()
-args.dataset_prm = dict(context=False, loc=False,
+args.dataset_prm = dict(context=False, loc=TemporalFeatures.NONE,
                         cues=dict(rgb=dict(file=RGB_FEAT_PATH)))
 # TODO add stuff to change SMCN_PRM
 args.smcn_prm = dict(visual_size=2048, lang_size=300, embedding_size=100,

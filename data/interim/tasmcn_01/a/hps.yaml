@@ -1,12 +1,13 @@
 # Reference for epoch dependent hyper-prm
 epochs: 108
+seed: -1
+loc: 2
 # w_inter will take 1 - w_intra ;)
 w_inter: null
 # search space
-seed: [-1, 1701]
 patience: [-1, 12, 36]
 lr: [0.05, 0.01, 0.005]
 original_setup: [true, false]
-momentum: [0.9, 0.95, 0.99]
+momentum: [0.9, 0.95]
 w_intra: [0.0, 0.25, 0.5, 0.75, 1.0]
 margin: [0.1, 0.25, 0.5]

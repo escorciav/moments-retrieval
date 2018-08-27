@@ -48,7 +48,7 @@ gif_dir=dashboards/static/gif
 [ ! -d $gif_dir ] && ln -s /mnt/ilcompf9d1/user/escorcia/gif-didemo-val $gif_dir
 # moment-retrieval demo
 for i in data/interim/mcn/corpus_val_flow.hdf5 data/interim/mcn/rgb-weights.hdf5 data/interim/mcn/flow-weights.hdf5; do
-  [ ! -f $filename ] && ln -s $escorcia_folder/$i $i
+  [ ! -f $i ] && ln -s $escorcia_folder/$i $i
 done
 # sentence-retrieval
 filename=data/processed/test/smcn_12_5_sr_rest.json
@@ -56,4 +56,4 @@ filename=data/processed/test/smcn_12_5_sr_rest.json
 # moment explorer
 filename=data/interim/mcn_retrieval_results/rest_val_intra+inter_rgb+flow.json
 [ ! -d $(dirname $filename) ] && mkdir -p $(dirname $filename)
-[ ! -f $filename ] && ln -s $escorcia_folder/$i $i
+[ ! -f $filename ] && ln -s $escorcia_folder/$filename $filename

@@ -41,6 +41,12 @@ args.smcn_prm = dict(visual_size=2048, lang_size=300, embedding_size=100,
 # args.smcn_prm = dict(visual_size=4096, lang_size=300, embedding_size=100,
 #                      dropout=0.3, max_length=50, visual_hidden=500,
 #                      lang_hidden=1000)
+# Uncomment these lines for TA-SMCN - ResNet+Local+Global+TAF
+# args.dataset_prm['context'] = True
+# args.dataset_prm['loc'] = TemporalFeatures.TEMPORALLY_AWARE
+# args.smcn_prm = dict(visual_size=4098, lang_size=300, embedding_size=100,
+#                      dropout=0.3, max_length=50, visual_hidden=500,
+#                      lang_hidden=1000)
 
 
 def load_model(filename=None):
@@ -109,6 +115,8 @@ def main():
             # TODO (critical): block-out segments in videos without visual
             # feature e.g. a video only has 5 chunks, similarity for the 6-th
             # should be 0
+            # TODO (optional): reduce data foot-print to dump by only saving
+            # this once and assert order afterwards
             video_id = val_dataset.metada_per_video[video_j_ind][0]
             video_id_int = int(
                 hashlib.sha256(video_id.encode('utf-8')).hexdigest(),

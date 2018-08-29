@@ -1,8 +1,8 @@
 Welcome to @escorcia garage!!!
 
-Research projects are highly non-linear, thus designing code in advance becomes too much overhead for a single person. Moreover, dealing with data just adds more fire to the non-trivial amount of under specification in research. Based on this, I ended up setting a middle point, the garage, where I just prototype, debug and play while it becomes easy how to solve the problem.
+Research projects are highly non-linear, thus designing code in advance becomes too much overhead for a single person. Moreover, dealing with data just adds more fire to the non-trivial amount of under specification in research. Based on this, I ended up setting a middle point, the garage, where I just prototype, debug and play while it's less fuzzy how to solve the problem.
 
-Sometimes, cells takes a lot of time that I prefer to move them onto "scripts" an let them running on clusters. In general, the code here requires refactoring, but at least you might find comments and figures to guide you XD.
+Sometimes, cells takes a lot of time that I prefer to move them onto "/scripts" an let them running on clusters. In general, the code here requires refactoring, but at least you might find comments and figures to guide you 😅.
 
 
 __Notes__:

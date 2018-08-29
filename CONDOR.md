@@ -16,6 +16,14 @@
 
     `condor_submit -interactive requirements='(TARGET.Machine == "ilcomp24.ilcomp")'`
 
+- Status
+
+    `condor_status` or `condor_status -claimed`
+
+    `condor_q -nob -all | sort -k5`
+
+According to @zhding, there are more commands in the cluster wiki.
+
 # Notes
 
 - interactive mode does not setup GPU. Thus, you gotta set the env variable CUDA_VISIBLE_DEVICES by yourself 😫. On the other side, this is a backdoor 😎. BTW, there are a couple of backdoors to exploit.

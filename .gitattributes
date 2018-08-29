@@ -1,0 +1,3 @@
+notebooks/* linguist-vendored
+adobe/* linguist-vendored
+*.ipynb linguist-vendored

@@ -1,5 +1,5 @@
-[ ! -z $conda_env ] && conda_env=pytorch
-[ ! -z $conda_root ] && conda_root=$HOME/miniconda3
+[ -z $conda_env ] && conda_env=pytorch
+[ -z $conda_root ] && conda_root=$HOME/miniconda3
 
 # You should not edit anything from this point onwards
 echo $(date): Setup conda

@@ -37,14 +37,25 @@ parser.add_argument('--feat', default='rgb', choices=MODALITY,
                     help='kind of modality')
 parser.add_argument('--rgb-path', type=Path, default=RGB_FEAT_PATH,
                     help='HDF5-file with RGB features')
-# Model features
+# Arch features
 parser.add_argument('--loc', type=TemporalFeatures.from_string,
                     default=TemporalFeatures.TEMPORAL_ENDPOINT,
                     choices=list(TemporalFeatures),
                     help='Type of Temporal Feature')
 parser.add_argument('--no-context', action='store_false', dest='context',
                     help='Remove global video representation')
-# Model
+# Arch hyper-parameters
+parser.add_argument('--visual-hidden', type=int, default=500,
+                    help='Hidden unit in MLP visual stream')
+parser.add_argument('--dropout', type=float, default=0.3,
+                    help='Dropout rate in visual stream')
+parser.add_argument('--embedding-size', type=int, default=100,
+                    help='Dimensionaity of cross-modal embedding')
+parser.add_argument('--lang-hidden', type=int, default=1000,
+                    help='Dimensionaity of cross-modal embedding')
+parser.add_argument('--visual-layers', type=int, default=1,
+                    help='Number of layers in visual encoder')
+# Criterion hyper-parameters
 parser.add_argument('--margin', type=float, default=0.1,
                     help='MaxMargin margin value')
 parser.add_argument('--w-inter', type=float, default=0.2,
@@ -83,8 +94,8 @@ parser.add_argument('--no-shuffle', action='store_false', dest='shuffle',
 # Logging
 parser.add_argument('--logfile', default='',
                     help='Logging file')
-parser.add_argument('--n-display', type=int, default=15,
-                    help='Information display frequence')
+parser.add_argument('--n-display', type=float, default=0.1,
+                    help='Rate of logging during per epoch')
 # Hyper-parameter search
 parser.add_argument('--hps', action='store_true',
                     help='Enable use of hps.yaml in folder of logfile')
@@ -145,9 +156,16 @@ def main(args):
     performance_test = {i: best_result for i in METRICS}
     patience = 0
     performance_per_sample = []
+    n_display_float = args.n_display
     for epoch in range(args.epochs):
+        # on epoch begin
+        args.n_display = int(n_display_float * len(train_dataset) /
+                             train_loader.batch_size)
         lr_schedule.step()
+
         train_epoch(args, net, ranking_loss, train_loader, optimizer, epoch)
+
+        # on epoch end
         performance_val = validation(args, net, None, val_loader)
         val_result = performance_val[TRACK]
 
@@ -322,7 +340,12 @@ def setup_model(args, dataset):
     logging.info('Model: SMCN')
     mcn_setup = dict(visual_size=dataset.visual_size[args.feat],
                      lang_size=dataset.language_size,
-                     max_length=dataset.max_words)
+                     max_length=dataset.max_words,
+                     embedding_size=args.embedding_size,
+                     dropout=args.dropout,
+                     visual_hidden=args.visual_hidden,
+                     lang_hidden=args.lang_hidden,
+                     visual_layers=args.visual_layers)
     net = SMCN(**mcn_setup)
     opt_parameters = net.optimization_parameters(
         args.lr, args.original_setup)

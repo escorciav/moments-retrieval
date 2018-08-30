@@ -1,0 +1,14 @@
+# Reference for epoch dependent hyper-prm
+epochs: 108
+seed: 1701
+loc: 2
+momentum: 0.95
+# search space
+batch_size: [128, 1024]
+patience: [-1, 12, 36]
+lr: [0.05, 0.01, 0.005]
+original_setup: [true, false]
+visual_layers: [1, 2, 4]
+visual_hidden: [256, 512, 1024]
+dropout: [0, 0.3, 0.5]
+embedding_size: [62, 128, 256]

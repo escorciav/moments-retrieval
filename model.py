@@ -13,15 +13,19 @@ class MCN(nn.Module):
 
     def __init__(self, visual_size=4096, lang_size=300, embedding_size=100,
                  dropout=0.3, max_length=None, visual_hidden=500,
-                 lang_hidden=1000):
+                 lang_hidden=1000, visual_layers=1):
         super(MCN, self).__init__()
         self.embedding_size = embedding_size
         self.max_length = max_length
 
+        visual_encoder = [nn.Linear(visual_size, visual_hidden),
+                          nn.ReLU(inplace=True)]
+        # (optional) add depth to visual enconder (capacity)
+        for i in  range(visual_layers - 1):
+            visual_encoder += [nn.Linear(visual_hidden, visual_hidden),
+                               nn.ReLU(inplace=True)]
         self.visual_encoder = nn.Sequential(
-          nn.Linear(visual_size, visual_hidden),
-          nn.ReLU(inplace=True),
-          nn.Linear(visual_hidden, embedding_size),
+          *visual_encoder, nn.Linear(visual_hidden, embedding_size),
           nn.Dropout(dropout)
         )
 
@@ -350,15 +354,21 @@ if __name__ == '__main__':
     import torch, random
     from torch.nn.utils.rnn import pad_sequence
     B, LD = 3, 5
-    net = MCN(lang_size=LD)
+    net = MCN(lang_size=LD, visual_layers=2)
     x = torch.rand(B, 4096, requires_grad=True)
     z = [random.randint(2, 6) for i in range(B)]
     z.sort(reverse=True)
     y = [torch.rand(i, LD, requires_grad=True) for i in z]
     y_padded = pad_sequence(y, True)
-    a, b, c, d = net(y_padded, z, x, x, x)
-    a, b, *c = net(y_padded, z, x)
-    b.backward(b.clone())
+    z = torch.tensor(z, requires_grad=True)
+    argout = net(y_padded, z, x, x, x)
+    assert len(argout) == 3
+    assert all([isinstance(i, torch.Tensor) for i in argout])
+    argout = net(y_padded, z, x)
+    assert len(argout) == 3
+    argout[0].backward(argout[0].clone())
+    assert all([i is None for i in argout[1:]])
+    print(net)
     # Unsuccesful attempt tp check backward
     # b.backward(10000*b.clone())
     # print(z)

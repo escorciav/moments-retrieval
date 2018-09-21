@@ -346,6 +346,52 @@ class SMCN(MCN):
         return argout
 
 
+class SMCNTalcv1(SMCN):
+    "SMCNTalc model version 1"
+
+    def __init__(self, num_chunks=6, *args, **kwargs):
+        self.num_chunks = num_chunks
+        super(SMCNTalcv1, self).__init__(*args, **kwargs)
+        # TODO: add capacity to this caga
+        self.lang_res_branch = nn.Linear(self.lang_encoder.in_features,
+                                         num_chunks * self.embedding_size)
+
+    def forward(self, padded_query, query_length, visual_pos,
+                visual_neg_intra=None, visual_neg_inter=None):
+        # v_v_embedded_* are tensors of shape [B, N, D]
+        (v_embedded_pos, v_embedded_neg_intra,
+         v_embedded_neg_inter) = self.encode_visual(
+             visual_pos, visual_neg_intra, visual_neg_inter)
+
+        l_embedded = self.encode_query(padded_query, query_length)
+
+        # meta-comparison
+        c_pos, c_neg_intra, c_neg_inter = self.compare_emdedded_snippets(
+            v_embedded_pos, v_embedded_neg_intra, v_embedded_neg_inter,
+            l_embedded, visual_pos, visual_neg_intra, visual_neg_inter)
+        return c_pos, c_neg_intra, c_neg_inter
+
+    def encode_query(self, padded_query, query_length):
+        B = len(padded_query)
+        packed_query = pack_padded_sequence(
+            padded_query, query_length, batch_first=True)
+        packed_output, _ = self.sentence_encoder(packed_query)
+        output, _ = pad_packed_sequence(packed_output, batch_first=True,
+                                        total_length=self.max_length)
+        # TODO: try max-pooling
+        last_output = output[range(B), query_length - 1, :]
+        # 1st alternative
+        residual = self.lang_encoder(last_output)
+        extra_stuff = self.lang_res_branch(last_output)
+        # MLP generates time... gimme that sh!t to get an extra day XD
+        # create time dimension [B, S*ES] -> [B, S, ES]
+        extra_stuff = extra_stuff.view(B, -1, self.embedding_size)
+        # create time dimension [B, ES] -> [B, 1, ES]
+        residual = residual.view(B, 1, -1)
+        language_code = residual + extra_stuff
+        return language_code
+
+
 if __name__ == '__main__':
     import torch, random
     from torch.nn.utils.rnn import pad_sequence
@@ -356,9 +402,10 @@ if __name__ == '__main__':
     z.sort(reverse=True)
     y = [torch.rand(i, LD, requires_grad=True) for i in z]
     y_padded = pad_sequence(y, True)
-    a, b, c, d = net(y_padded, z, x, x, x)
-    a, b, *c = net(y_padded, z, x)
+    z = torch.tensor(z)
+    a, b, c = net(y_padded, z, x, x, x)
     b.backward(b.clone())
+    a, b, *c = net(y_padded, z, x)
     # Unsuccesful attempt tp check backward
     # b.backward(10000*b.clone())
     # print(z)
@@ -366,6 +413,26 @@ if __name__ == '__main__':
     # print(f'y.shape = {y_padded.shape}')
     # print(y_padded.grad)
     # print([i.grad for i in y])
+
+    # SMCNTalcv1
+    B, LD, S = 3, 5, 4
+    net = SMCNTalcv1(num_chunks=S, lang_size=LD)
+    x = torch.rand(B, S, 4096, requires_grad=True)
+    m = []
+    for i in range(B):
+        m_i = torch.zeros(S)
+        m_i[:random.randint(0, S) + 1] = 1
+        m.append(m_i)
+    m = torch.stack(m, 0).requires_grad_()
+    x_packed = {'hola': x, 'mask': m}
+    z = [random.randint(2, 6) for i in range(B)]
+    z.sort(reverse=True)
+    y = [torch.rand(i, LD, requires_grad=True) for i in z]
+    y_padded = pad_sequence(y, True)
+    z = torch.tensor(z)
+    a, b, c = net(y_padded, z, x_packed, x_packed, x_packed)
+    b.backward(b.clone())
+    a, *_ = net(y_padded, z, x_packed)
 
     # simple test ContextGating
     d = 50

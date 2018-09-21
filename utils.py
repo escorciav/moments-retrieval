@@ -1,6 +1,7 @@
 import glob
 import json
 import random
+import subprocess
 import time
 
 import pandas as pd
@@ -106,6 +107,12 @@ def timeit(method):
         print(f'{method.__name__}  {te - ts:.2f} s')
         return result
     return timed
+
+
+def get_git_revision_hash():
+    "credits: https://stackoverflow.com/a/21901260"
+    return subprocess.check_output(['git', 'rev-parse', 'HEAD'],
+                                   universal_newlines=True).strip()
 
 
 if __name__ == '__main__':

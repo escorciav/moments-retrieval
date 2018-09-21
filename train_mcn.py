@@ -16,6 +16,7 @@ from model import MCN
 from loss import IntraInterMarginLoss
 from evaluation import video_evaluation
 from utils import Multimeter, ship_to
+from utils import get_git_revision_hash
 
 RAW_PATH = Path('data/raw')
 MODALITY = ['rgb', 'flow']
@@ -99,6 +100,7 @@ def main(args):
     if args.gpu_id >= 0 and torch.cuda.is_available():
         args.device = torch.device(f'cuda:{args.gpu_id}')
         device_name = torch.cuda.get_device_name(args.gpu_id)
+    logging.info('Git revision hash: ' + get_git_revision_hash())
     logging.info('Launching training')
     logging.info(args)
     logging.info(f'Device: {device_name}')
@@ -110,9 +112,9 @@ def main(args):
 
     logging.info('Pre-loading features... This may take a couple of minutes.')
     if not args.loc:
-        logging.warning('WIP: a PR is welcome to make it effective')
+        logging.warning('WIP. loc is not available. PR is welcome.')
     if not args.context:
-        logging.warning('WIP: a PR is welcome to make it effective')
+        logging.warning('WIP: context is not available. PR is welcome.')
     train_dataset = DidemoMCN(TRAIN_LIST_PATH, cues=cues)
     val_dataset = DidemoMCN(VAL_LIST_PATH, cues=cues, test=True)
     test_dataset = DidemoMCN(TEST_LIST_PATH, cues=cues, test=True)
@@ -278,6 +280,8 @@ def dumping_arguments(args, val_performance, test_performance,
 
 
 def save_checkpoint(args, state):
+    if len(args.logfile) == 0:
+        return
     torch.save(state, args.logfile + '_checkpoint.pth.tar')
 
 

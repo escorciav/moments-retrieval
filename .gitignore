@@ -5,6 +5,10 @@ activate*.sh
 # pseudo-test
 test_output*
 
+workers
+# temporal becuase vscode was bothering with the recursive search
+data-adobe
+
 # adobe setup
 adobe
 log/consumed

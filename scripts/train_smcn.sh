@@ -11,7 +11,7 @@ offset=0
 environment=moments-retrieval-devel
 conda_root=$HOME/install/bin/miniconda3
 # git variables
-dont_track_this=*.log\n*.json\n*.csv\n*.h5\n*.tar
+dont_track_this="*.log\n*.json\n*.csv\n*.h5\n*.tar"
 # Note: comment it if u dont care about reproducibility
 # commit_reference=c9e604fab8fdffaa2e920587cab97fbb311179f2
 

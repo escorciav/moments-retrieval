@@ -5,7 +5,6 @@ import random
 import time
 from pathlib import Path
 
-import numpy as np
 import torch
 import yaml
 from optim import SGDCaffe
@@ -13,7 +12,7 @@ import torch.optim as optim
 from torch.utils.data import DataLoader
 
 from didemo import DidemoSMCN
-from model import SMCN
+from model import SMCN, SMCNTalcv1
 from loss import IntraInterMarginLoss
 from evaluation import video_evaluation
 from utils import Multimeter, ship_to
@@ -38,6 +37,9 @@ parser.add_argument('--feat', default='rgb', choices=MODALITY,
                     help='kind of modality')
 parser.add_argument('--rgb-path', type=Path, default=RGB_FEAT_PATH,
                     help='HDF5-file with RGB features')
+# Add-ons to model
+parser.add_argument('--talcv1', action='store_true',
+                    help='Use TALCv1 rather than simple SMCN')
 # Model features
 parser.add_argument('--no-loc', action='store_false', dest='loc',
                     help='Remove TEF features')
@@ -95,6 +97,7 @@ parser.add_argument('--debug', action='store_true')
 parser.add_argument('--per-sample', action='store_true')
 
 args = parser.parse_args()
+
 
 def main(args):
     setup_logging(args)
@@ -278,8 +281,8 @@ def dumping_arguments(args, val_performance, test_performance,
     if args.per_sample:
         with open(args.logfile + '.csv', 'x') as fid:
             fid.write('{},{},{},{}\n'.format('annotation_id', *METRICS))
-            status = [fid.write('{},{},{},{}\n'.format(*i))
-                      for i in performance_per_sample]
+            _ = [fid.write('{},{},{},{}\n'.format(*i))
+                 for i in performance_per_sample]
     args.device = device
 
 
@@ -318,11 +321,15 @@ def setup_logging(args):
 
 
 def setup_model(args, dataset):
-    logging.info('Model: SMCN')
     mcn_setup = dict(visual_size=dataset.visual_size[args.feat],
                      lang_size=dataset.language_size,
                      max_length=dataset.max_words)
-    net = SMCN(**mcn_setup)
+
+    msg, arch = 'Model: SMCN', SMCN
+    if args.talcv1:
+        msg, arch = 'Model: SMCN-TALCv1', SMCNTalcv1
+    logging.info(msg)
+    net = arch(**mcn_setup)
     opt_parameters = net.optimization_parameters(
         args.lr, args.original_setup)
     ranking_loss = IntraInterMarginLoss(

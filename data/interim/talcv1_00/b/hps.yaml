@@ -1,0 +1,19 @@
+talcv1: true
+n_display: 15
+# search space
+# 1st exploration
+epochs: 20
+original_setup: [true, false]
+patience: [-1, 10]
+lr: [0.05, 0.01, 1.e-3]
+momentum: [0.95, 0.9]
+# last-resource: with enough trials lack of results smell to shitty model
+# epochs: 108
+# original_setup: [true, false]
+# patience: [-1, 12, 36]
+# lr: [0.05, 0.01, 1.e-3]
+# momentum: [0.95, 0.9]
+# seed: [1701]
+# lr_decay: [0.1, 0.5]
+# lr_step: [6, 12, 30]
+# sw_inter: [[0.25], [0.5], [0.75]]

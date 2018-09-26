@@ -1,5 +1,9 @@
 .vscode
 
+# scripts for launching
+moment_explorer.sh
+moment_retrieval_demo.sh
+
 __pycache__/
 
 # data

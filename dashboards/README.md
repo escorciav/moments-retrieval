@@ -11,13 +11,12 @@ For simplicity, we use the same development environment of the main project. Tha
 To launch a server just execute the following commands __from the dashboard folder__
 
 ```bash
-source setup.sh
-source [X]
+bash [X]
 ```
 
-e.g. if you wanna launch the moment retrieval demo replace `[X]` by `moment_retrieval_demo.sh`.
+e.g. if you wanna launch the moment retrieval demo replace `[X]` by `bash moment_retrieval_demo.sh`.
 
-> Make sure that you edit the `setup.sh` file accordingly if you have an exotic config.
+> TODO: define the way to go if `setup.sh` or `[X].sh.example`.
 
 By default, the ports are:
 

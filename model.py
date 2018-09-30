@@ -3,6 +3,8 @@ import torch.nn as nn
 import torch.nn.functional as F
 from torch.nn.utils.rnn import pack_padded_sequence, pad_packed_sequence
 
+from distance import squared_l2
+
 
 class MCN(nn.Module):
     """MCN model
@@ -13,7 +15,7 @@ class MCN(nn.Module):
 
     def __init__(self, visual_size=4096, lang_size=300, embedding_size=100,
                  dropout=0.3, max_length=None, visual_hidden=500,
-                 lang_hidden=1000):
+                 lang_hidden=1000, distance_function=squared_l2):
         super(MCN, self).__init__()
         self.embedding_size = embedding_size
         self.max_length = max_length
@@ -28,6 +30,7 @@ class MCN(nn.Module):
         self.sentence_encoder = nn.LSTM(
             lang_size, lang_hidden, batch_first=True)
         self.lang_encoder = nn.Linear(lang_hidden, embedding_size)
+        self.distance_function = distance_function
         self.init_parameters()
 
     def forward(self, padded_query, query_length, visual_pos,
@@ -73,8 +76,8 @@ class MCN(nn.Module):
         return self.lang_encoder(last_output)
 
     def compare_emdeddings(self, anchor, x, dim=-1):
-        # TODO: generalize to other similarities
-        return (anchor - x).pow(2).sum(dim=dim)
+        # TODO (downstream): generalize to similarities
+        return self.distance_function(anchor, x, dim=dim)
 
     def init_parameters(self):
         "Initialize network parameters"

@@ -319,13 +319,17 @@ class SMCN(MCN):
             pos, neg_intra, neg_inter)
         c_neg_intra, c_neg_inter = None, None
 
+        embedded_a = F.relu(embedded_a)
+        embedded_p = F.relu(embedded_p)
         c_pos = self.pool_compared_snippets(
             self.compare_emdeddings(embedded_a, embedded_p), mask_p)
         if embedded_n_intra is not None:
+            embedded_n_intra = F.relu(embedded_n_intra)
             c_neg_intra = self.pool_compared_snippets(
                 self.compare_emdeddings(embedded_a, embedded_n_intra),
                 mask_n_intra)
         if embedded_n_inter is not None:
+            embedded_n_inter = F.relu(embedded_n_inter)
             c_neg_inter = self.pool_compared_snippets(
                 self.compare_emdeddings(embedded_a, embedded_n_inter),
                 mask_n_inter)

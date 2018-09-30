@@ -14,6 +14,7 @@ from torch.utils.data import DataLoader
 from didemo import DidemoSMCN
 from model import SMCN, SMCNTalcv1
 from loss import IntraInterMarginLoss
+import distance as distance_functions
 from evaluation import video_evaluation
 from utils import Multimeter, ship_to
 from utils import get_git_revision_hash
@@ -31,7 +32,14 @@ TRAIN_LIST_PATH = RAW_PATH / 'train_data.json'
 VAL_LIST_PATH = RAW_PATH / 'val_data.json'
 TEST_LIST_PATH = RAW_PATH / 'test_data.json'
 
-parser = argparse.ArgumentParser(description='SMCN training DiDeMo')
+DISTANCE_NAMES = sorted(name for name in distance_functions.__dict__
+                        if name.islower() and not name.startswith("__")
+                        and callable(distance_functions.__dict__[name])
+                        and name != 'cosine_similarity')
+
+parser = argparse.ArgumentParser(
+    description='SMCN training DiDeMo',
+    formatter_class=argparse.ArgumentDefaultsHelpFormatter)
 # Features
 parser.add_argument('--feat', default='rgb', choices=MODALITY,
                     help='kind of modality')
@@ -40,6 +48,8 @@ parser.add_argument('--rgb-path', type=Path, default=RGB_FEAT_PATH,
 # Add-ons to model
 parser.add_argument('--talcv1', action='store_true',
                     help='Use TALCv1 rather than simple SMCN')
+parser.add_argument('--distance', default='squared_l2',
+                    choices=DISTANCE_NAMES, help='Distance function')
 # Model features
 parser.add_argument('--no-loc', action='store_false', dest='loc',
                     help='Remove TEF features')
@@ -321,9 +331,11 @@ def setup_logging(args):
 
 
 def setup_model(args, dataset):
-    mcn_setup = dict(visual_size=dataset.visual_size[args.feat],
-                     lang_size=dataset.language_size,
-                     max_length=dataset.max_words)
+    mcn_setup = dict(
+        visual_size=dataset.visual_size[args.feat],
+        lang_size=dataset.language_size,
+        max_length=dataset.max_words,
+        distance_function=distance_functions.__dict__[args.distance])
 
     msg, arch = 'Model: SMCN', SMCN
     if args.talcv1:

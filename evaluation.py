@@ -1,11 +1,15 @@
 "DiDeMo evaluation"
 import json
+from itertools import product
 
 import numpy as np
 
 from corpus import Corpus, CorpusAsDistanceMatrix
 from dataset import Queries
-from np_segments_ops import iou as segments_iou
+from np_segments_ops import iou as numpy_iou
+from np_segments_ops import torch_iou
+
+DEFAULT_TOPK_AND_IOUTHRESHOLDS = tuple(product((1, 5), (0.5, 0.7)))
 
 
 def iou(gt, pred):
@@ -26,6 +30,34 @@ def video_evaluation(gt, predictions, k=(1, 5)):
     average_ranks = np.mean(np.sort(ranks)[:3])
     r_at_k = [average_ranks <= i for i in k]
     return [average_iou] + r_at_k
+
+
+def single_moment_retrieval(true_segments, pred_segments,
+                            k_iou=DEFAULT_TOPK_AND_IOUTHRESHOLDS):
+    """Compute if a given segment is retrieved in top-k for a given IOU
+
+    Args:
+        true_segments (torch tensor) : shape [1, 2] holding 1 segments.
+        pred_segments (torch tensor) : shape [M, 2] holding M segments sorted
+            by their scores. pred_segment[0, :] is the most confident segment
+            retrieved.
+        k_iou (sequence of pairs) : a pair represents the top-k and iou
+            threshold used for evaluation. It must be sorted in ascending
+            order based on top-k i.e. k_iou[-1][0] is the largest k.
+    Returns:
+        list of torch tensors indicating if the true segment was found for a
+        given iou_threshold
+    """
+    max_k = k_iou[-1][0]
+    if pred_segments.shape[0] < max_k:
+        # make zero matrix with shape max_k, 2] and pred_segments on the top
+        raise NotImplementedError('WIP: fix me')
+    tp_fp = []
+    iou_matrix = torch_iou(pred_segments, true_segments)
+    for top_k, iou_threshold in k_iou:
+        best_iou_topk, _ = iou_matrix[:top_k, :].max(dim=0)
+        tp_fp.append(best_iou_topk >= iou_threshold)
+    return tp_fp
 
 
 class RetrievalEvaluation():
@@ -131,7 +163,7 @@ class RetrievalEvaluation():
     def _precompute_iou(self):
         segments = self.corpus.segments * 5
         segments[:, 1] += 5
-        self.iou_matrix = segments_iou(segments, segments)
+        self.iou_matrix = numpy_iou(segments, segments)
 
 
 class CorpusVideoMomentRetrievalEvalFromMatrix():
@@ -238,7 +270,7 @@ class CorpusVideoMomentRetrievalEvalFromMatrix():
 
     def _precompute_iou(self):
         segments = self.corpus.segments_time
-        self.iou_matrix = segments_iou(segments, segments)
+        self.iou_matrix = numpy_iou(segments, segments)
 
 
 if __name__ == '__main__':

@@ -15,18 +15,20 @@ class SlidingWindowMSFS(TemporalProposalsBase):
     TODO: documentation
     """
 
-    def __init__(self, length, num_scales, stride, unique=False):
+    def __init__(self, length, num_scales, stride, unique=False,
+                 dtype=np.float32):
         self.length = length
         self.num_scales = num_scales
         self.stride = stride
         self.unique = unique
-        self.canonical_windows = np.zeros((num_scales, 2))
+        self.dtype = dtype
+        self.canonical_windows = np.zeros((num_scales, 2), dtype=self.dtype)
         self.canonical_windows[:, 1] += (
             length * np.arange(1, num_scales + 1))
 
     def sliding_windows(self, t_end, t_start=0):
         "sliding canonical windows over a given time interval"
-        t_zero = np.arange(t_start, t_end, self.stride)
+        t_zero = np.arange(t_start, t_end, self.stride, dtype=self.dtype)
         windows = (np.tile(self.canonical_windows, (len(t_zero), 1)) +
                    np.repeat(t_zero, len(self.canonical_windows))[:, None])
         # hacky way to make windows fit inside video

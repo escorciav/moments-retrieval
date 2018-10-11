@@ -491,6 +491,17 @@ class DidemoSMCNRetrieval(DidemoSMCN):
         return super().__len__()
 
 
+class FakeLanguageRepresentation():
+    "Allow faster iteration while I learn to cache stuff ;P"
+
+    def __init__(self, max_words=50, dim=300):
+        self.max_words = max_words
+        self.dim = dim
+
+    def __call__(self, query):
+        return np.random.rand(self.max_words, self.dim).astype(np.float32)
+
+
 class LanguageRepresentationMCN(object):
     "Get representation of sentence"
 

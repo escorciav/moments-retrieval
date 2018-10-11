@@ -9,6 +9,6 @@ Files used to ensure packing/shipping went well (our dummy ContinousIntegration 
 
 # charades-sta
 
-- 302af8666e48a150818d19a4df0255ce  charades-sta/test.json
-- b81c54b2aab1d7a3dce31dc79f73493d  charades-sta/train.json
-- abe8f49c395484353e40122cf04005e3  charades-sta/rgb_resnet152_max.h5
+- c1bf2714950bf07203bdcf6d6a74dbea  charades-sta/test.json
+- 948b539a6ad9df44b9d43e4f99261068  charades-sta/train.json
+- abe8f49c395484353e40122cf04005e3  charades-sta/rgb_resnet152_max_cs-3.h5

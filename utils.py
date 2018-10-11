@@ -109,7 +109,7 @@ def setup_rng(args):
 
 def save_checkpoint(args, state):
     "Serialize model into pth"
-    if len(args.logfile) == 0 or args.not_serialize:
+    if len(args.logfile) == 0 or not args.serialize:
         return
     torch.save(state, args.logfile + '_checkpoint.pth.tar')
 

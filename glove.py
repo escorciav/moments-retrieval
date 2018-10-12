@@ -11,7 +11,8 @@ class GloveEmbedding(object):
     "Creates glove embedding object"
 
     def __init__(self, glove_file=GLOVE_FILE, glove_dim=GLOVE_DIM):
-        glove_txt = open(glove_file, encoding='utf-8').readlines()
+        with open(glove_file, encoding='utf-8') as fid:
+            glove_txt = fid.readlines()
         glove_txt = [g.strip() for g in glove_txt]
         glove_vector = [g.split(' ') for g in glove_txt]
         glove_words = [g[0] for g in glove_vector]
@@ -34,7 +35,8 @@ class RecurrentEmbedding(object):
         self.glove_file = glove_file
         self.embedding = GloveEmbedding(self.glove_file, glove_dim)
 
-        vocab = open(vocab_file, encoding='utf-8').readlines()
+        with open(vocab_file, encoding='utf-8') as fid:
+            vocab = fid.readlines()
         vocab = [v.strip() for v in vocab]
         if '<unk>' in vocab:
             # don't have an <unk> vector.  Alternatively, could map to random

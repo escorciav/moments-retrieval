@@ -21,14 +21,11 @@ from utils import setup_logging, setup_rng
 from utils import dumping_arguments, save_checkpoint
 from utils import get_git_revision_hash
 
-import warnings
-warnings.filterwarnings("error")
-
 OPTIMIZER = ['sgd', 'sgd_caffe']
 EVAL_BATCH_SIZE = 1
 TOPK_IOU_POINTS = tuple(product((1, 5), (0.5, 0.7)))
 METRICS = [f'r@{k},{iou}' for k, iou in TOPK_IOU_POINTS]
-TRACK = 'r@1,0.5'
+TRACK = 'r@1,0.7'
 
 parser = argparse.ArgumentParser(description='*MCN training')
 # Data
@@ -157,7 +154,7 @@ def main(args):
                                'state_dict': net.state_dict(),
                                'best_result': best_result})
 
-    logging.info(f'Best val r@1: {best_result:.4f}')
+    logging.info(f'Best val {TRACK}: {best_result:.4f}')
     # TODO: update to dump
     dumping_arguments(args, performance_val, performance_test)
 

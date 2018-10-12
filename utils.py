@@ -65,23 +65,31 @@ def dict_of_lists(list_of_dicts):
         )
 
 
-def dumping_arguments(args, val_performance, test_performance,
-                      performance_per_sample=None, metrics=None):
-    "Quick-and-dirty way to save state and results"
+def dumping_arguments(args, val_performance=None, test_performance=None,
+                      performance_per_sample=None,  metrics=None):
+    """Quick-and-dirty way to save args and results
+    
+    Note: next time we put this inside the torch.save and khalas!
+    """
     if len(args.logfile) == 0:
         return
     result_file = args.logfile + '.json'
     device = args.device
     # Update dict with performance and remove non-serializable stuff
+    args.h5_path = str(args.h5_path) if args.h5_path.exists() else None
+    args.train_list = str(args.train_list) if args.train_list.exists() else None
+    args.val_list = str(args.val_list) if args.val_list.exists() else None
+    args.test_list = str(args.test_list) if args.test_list.exists() else None
     args.device = None
-    args.rgb_path = str(args.rgb_path)
     args_dict = vars(args)
-    args_dict.update({f'val_{k}': v for k, v in val_performance.items()})
-    args_dict.update({f'test_{k}': v for k, v in test_performance.items()})
+    if val_performance is not None:
+        args_dict.update({f'val_{k}': v for k, v in val_performance.items()})
+    if test_performance is not None:
+        args_dict.update({f'test_{k}': v for k, v in test_performance.items()})
     with open(result_file, 'w') as fid:
-        json.dump(args_dict, fid)
+        json.dump(args_dict, fid, skipkeys=True)
     if performance_per_sample is not None:
-        with open(args.logfile + '.csv', 'x') as fid:
+        with open(args.logfile + '.csv', 'w') as fid:
             fid.write('{},{},{},{}\n'.format('annotation_id', *metrics))
             [fid.write('{},{},{},{}\n'.format(*i))
              for i in performance_per_sample]

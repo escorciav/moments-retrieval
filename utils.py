@@ -66,7 +66,7 @@ def dict_of_lists(list_of_dicts):
 def dumping_arguments(args, val_performance=None, test_performance=None,
                       performance_per_sample=None,  metrics=None):
     """Quick-and-dirty way to save args and results
-    
+
     Note: next time we put this inside the torch.save and khalas!
     """
     if len(args.logfile) == 0:
@@ -150,6 +150,32 @@ class AverageMeter(object):
         self.sum += val * n
         self.count += n
         self.avg = self.sum / self.count
+
+
+class Tracker(object):
+    "Keep track of torch tensors or numpy scalar things"
+
+    def __init__(self, keys):
+        self.data = {i: [] for i in keys}
+
+    def append(self, *args):
+        "Add values to track"
+        for i, key in enumerate(self.data):
+            self.data[key].append(args[i])
+
+    def freeze(self, cpu=True):
+        "Make everything a tensor and move to cpu"
+        for key, value in self.data.items():
+            if not isinstance(value[0], torch.Tensor):
+                continue
+            elif value[0].dim() > 1 or value[0].shape[0] > 1:
+                self.data[key] = torch.stack(value)
+            else:
+                self.data[key] = torch.cat(value)
+
+            if cpu:
+                self.data[key] = self.data[key].to('cpu')
+            del (value)
 
 
 class Multimeter(object):

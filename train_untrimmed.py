@@ -15,7 +15,7 @@ import model
 import proposals
 from loss import IntraInterMarginLoss
 from evaluation import single_moment_retrieval
-from utils import Multimeter
+from utils import Multimeter, Tracker
 from utils import collate_data, collate_data_eval, ship_to
 from utils import setup_logging, setup_rng
 from utils import dumping_arguments, save_checkpoint
@@ -24,7 +24,10 @@ from utils import get_git_revision_hash
 OPTIMIZER = ['sgd', 'sgd_caffe']
 EVAL_BATCH_SIZE = 1
 TOPK_IOU_POINTS = tuple(product((1, 5), (0.5, 0.7)))
+TOPK = 5  # the maximum in the first tuple on the line above :)
 METRICS = [f'r@{k},{iou}' for k, iou in TOPK_IOU_POINTS]
+HIT_K_IOU = [f'hit@{k},{iou}' for k, iou in TOPK_IOU_POINTS]
+VAL_VARS_TO_RECORD = ['id'] + HIT_K_IOU + ['scores', 'topk_segments']
 TRACK = 'r@1,0.7'
 
 parser = argparse.ArgumentParser(description='*MCN training')
@@ -90,8 +93,6 @@ parser.add_argument('--no-shuffle', action='store_false', dest='shuffle',
 parser.add_argument('--logfile', default='', help='Logging file')
 parser.add_argument('--n-display', type=int, default=15,
                     help='Information display frequence')
-parser.add_argument('--augmented-results', action='store_true',
-                    help='Dump results to assess model')
 parser.add_argument('--not-serialize', action='store_false', dest='serialize',
                     help='Avoid dumping .pth.tar with model parameters')
 # Reproducibility
@@ -131,14 +132,14 @@ def main(args):
     for epoch in range(args.epochs):
         lr_schedule.step()
         train_epoch(args, net, ranking_loss, train_loader, optimizer, epoch)
-        performance_val = validation(args, net, val_loader)
+        performance_val, _ = validation(args, net, val_loader)
         val_result = performance_val[TRACK]
 
         if val_result > best_result:
             patience = 0
             best_result = val_result
             logging.info(f'Hit jackpot {TRACK}: {best_result:.4f}')
-            performance_test = check_testing(args, net, test_loader)
+            performance_test, _ = check_testing(args, net, test_loader)
             save_checkpoint(args, {'epoch': epoch + 1,
                                    'state_dict': net.state_dict(),
                                    'best_result': best_result})
@@ -149,7 +150,7 @@ def main(args):
             break
     args.epochs = epoch + 1
     if args.patience == -1:
-        performance_test = check_testing(args, net, test_loader)
+        performance_test, _ = check_testing(args, net, test_loader)
         save_checkpoint(args, {'epoch': epoch + 1,
                                'state_dict': net.state_dict(),
                                'best_result': best_result})
@@ -199,6 +200,7 @@ def validation(args, net, loader):
     ind = 2 if args.debug else 0
     time_meters = Multimeter(keys=['Batch', 'Eval'])
     meters = Multimeter(keys=METRICS)
+    tracker = Tracker(keys=VAL_VARS_TO_RECORD)
     logging.info(f'* Evaluation')
     net.eval()
     with torch.no_grad():
@@ -212,7 +214,7 @@ def validation(args, net, loader):
             batch_time = time.time() - end
             end = time.time()
 
-            _, idx = results.sort(descending=descending)
+            scores, idx = results.sort(descending=descending)
             gt_segment, segments = minibatch[-2:]
             sorted_segments = segments[idx, :]
             # Note: these next two lines look a bit slower and stupid, #sorry
@@ -220,9 +222,13 @@ def validation(args, net, loader):
                 gt_segment, sorted_segments, TOPK_IOU_POINTS)
             meters.update([i.item() for i in hit_k_iou])
             time_meters.update([batch_time, time.time() - end])
+            tracker.append(it, *hit_k_iou, scores[: TOPK],
+                           sorted_segments[:TOPK, :])
             end = time.time()
     logging.info(f'{time_meters.report()}\t{meters.report()}')
-    performance = meters.dump()
+    tracker.freeze()
+    performance = (meters.dump(), tracker.data)
+    logging.info(f'Results aggregation completed')
     return performance
 
 
@@ -232,7 +238,7 @@ def check_testing(args, net, loader):
     Note: Please do not fool yourself picking model based on testing
     """
     if loader is None:
-        return None
+        return None, None
     return validation(args, net, loader)
 
 

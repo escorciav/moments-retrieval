@@ -52,12 +52,12 @@ def single_moment_retrieval(true_segments, pred_segments,
     if pred_segments.shape[0] < max_k:
         # make zero matrix with shape max_k, 2] and pred_segments on the top
         raise NotImplementedError('WIP: fix me')
-    tp_fp = []
+    hit_topk_iou = []
     iou_matrix = torch_iou(pred_segments, true_segments)
     for top_k, iou_threshold in k_iou:
         best_iou_topk, _ = iou_matrix[:top_k, :].max(dim=0)
-        tp_fp.append(best_iou_topk >= iou_threshold)
-    return tp_fp
+        hit_topk_iou.append(best_iou_topk >= iou_threshold)
+    return hit_topk_iou
 
 
 class RetrievalEvaluation():

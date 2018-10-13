@@ -16,7 +16,7 @@ import proposals
 from loss import IntraInterMarginLoss
 from evaluation import single_moment_retrieval
 from utils import Multimeter
-from utils import collate_data, collate_test_data, ship_to
+from utils import collate_data, collate_data_eval, ship_to
 from utils import setup_logging, setup_rng
 from utils import dumping_arguments, save_checkpoint
 from utils import get_git_revision_hash
@@ -215,13 +215,12 @@ def validation(args, net, loader):
             _, idx = results.sort(descending=descending)
             gt_segment, segments = minibatch[-2:]
             sorted_segments = segments[idx, :]
-            # Note: these two lines look a bit slower and stupid in general
-            tp_fp_i = single_moment_retrieval(
+            # Note: these next two lines look a bit slower and stupid, #sorry
+            hit_k_iou = single_moment_retrieval(
                 gt_segment, sorted_segments, TOPK_IOU_POINTS)
-            meters.update([i.item() for i in tp_fp_i])
+            meters.update([i.item() for i in hit_k_iou])
             time_meters.update([batch_time, time.time() - end])
             end = time.time()
-            # TODO (update): add tp_fp_i to performance for dumping
     logging.info(f'{time_meters.report()}\t{meters.report()}')
     performance = meters.dump()
     return performance
@@ -256,7 +255,7 @@ def setup_dataset(args):
         {'shuffle': args.shuffle, 'collate_fn': collate_data,
          'batch_size': args.batch_size},
         # Validation or Testing
-        {'shuffle': False, 'collate_fn': collate_test_data,
+        {'shuffle': False, 'collate_fn': collate_data_eval,
          'batch_size': EVAL_BATCH_SIZE}
     ]
 

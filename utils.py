@@ -17,9 +17,11 @@ def collate_data(batch):
 
     Note: sort to based on query length for using cuDNN-LSTM.
     """
+    debug_mode = False
     all_tensors = default_collate(batch)
-    # for debug (sounds that we should pack it as method in the dataset)
-    # idxs, source_ids, *all_tensors = all_tensors
+    if len(all_tensors) == 7:
+        debug_mode = True
+        idxs, source_ids, *all_tensors = all_tensors
     al_s, idx = all_tensors[1].sort(descending=True)
     a_s = all_tensors[0][idx, ...]
     a_s.requires_grad_()
@@ -27,24 +29,21 @@ def collate_data(batch):
         {k: v[idx, ...].requires_grad_() for k, v in i.items()}
         for i in all_tensors[2:])
     argout = (a_s, al_s) + tuple(dicts_of_tensors)
-    # for debug
-    # return (idxs, source_ids) + argout
+    if debug_mode:
+        return (idxs, source_ids) + argout
     return argout
 
 
-def collate_test_data(batch):
+def collate_data_eval(batch):
     """torchify data during eval
 
     Note: We could do batching but taking care of the length of the sentence
         was a mess, magnified with generic proposal schemes for untrimmed
         videos.
     """
-    # for debug (sounds that we should pack it as method in the dataset)
-    # ind = 2
     assert len(batch) == 1
     tensors = []
-    ind = 0
-    for item in batch[0][ind:]:
+    for item in batch[0]:
         if isinstance(item, np.ndarray):
             tensors.append(torch.from_numpy(item))
         elif isinstance(item, list):
@@ -53,9 +52,8 @@ def collate_test_data(batch):
             tensors.append({k: torch.from_numpy(t_np)
                             for k, t_np in item.items()})
         else:
-            tensors.append(None)
+            tensors.append(item)
     return tensors
-
 
 def dict_of_lists(list_of_dicts):
     "Return dict of lists from list of dicts"

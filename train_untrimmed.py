@@ -38,6 +38,10 @@ parser.add_argument('--val-list', type=Path, default='non-existent',
                     help='JSON-file with training instances')
 parser.add_argument('--test-list', type=Path, default='non-existent',
                     help='JSON-file with training instances')
+# Program control
+parser.add_argument('--evaluate', type=Path, default='non-existent',
+                    help=('pht.tar with dict and state_dict key with '
+                          'model parameters to evaluate in val set'))
 # Features
 parser.add_argument('--feat', default='rgb',
                     help='Record the type of feature used (modality)')
@@ -90,11 +94,13 @@ parser.add_argument('--patience', type=int, default=-1,
 parser.add_argument('--no-shuffle', action='store_false', dest='shuffle',
                     help='Disable suffle dataset after each epoch')
 # Logging
-parser.add_argument('--logfile', default='', help='Logging file')
+parser.add_argument('--logfile', type=Path, default='', help='Logging file')
 parser.add_argument('--n-display', type=int, default=15,
                     help='Information display frequence')
 parser.add_argument('--not-serialize', action='store_false', dest='serialize',
                     help='Avoid dumping .pth.tar with model parameters')
+parser.add_argument('--dump-results', action='store_true',
+                    help='Dump HDF5 with per sample results in val & test')
 # Reproducibility
 parser.add_argument('--seed', type=int, default=1701,
                     help='random seed (-1 := random)')
@@ -121,25 +127,36 @@ def main(args):
     logging.info(f'Device: {device_name}')
 
     train_loader, val_loader, test_loader = setup_dataset(args)
-    net, ranking_loss, optimizer = setup_model(args, train_loader.dataset)
+    net, ranking_loss, optimizer = setup_model(args, train_loader, val_loader)
+
+    if args.evaluate.exists():
+        snapshot = torch.load(args.evaluate)['state_dict']
+        net.load_state_dict(snapshot)
+        args.logfile = args.evaluate.with_suffix('').with_suffix('')
+        rst, per_sample_rst = validation(args, net, val_loader)
+        dumping_arguments(args, val_performance=rst,
+                          perf_per_sample_val=per_sample_rst)
+        return
+
     lr_schedule = torch.optim.lr_scheduler.StepLR(
         optimizer, args.lr_step, args.lr_decay)
 
     logging.info('Starting optimization...')
     best_result = 0.0
-    performance_test = None
+    perf_test = None
     patience = 0
     for epoch in range(args.epochs):
         lr_schedule.step()
         train_epoch(args, net, ranking_loss, train_loader, optimizer, epoch)
-        performance_val, _ = validation(args, net, val_loader)
-        val_result = performance_val[TRACK]
+        perf_val, perf_per_sample_val = validation(args, net, val_loader)
 
+        val_result = perf_val[TRACK]
         if val_result > best_result:
             patience = 0
             best_result = val_result
             logging.info(f'Hit jackpot {TRACK}: {best_result:.4f}')
-            performance_test, _ = check_testing(args, net, test_loader)
+            perf_test, perf_per_sample_test = check_testing(
+                args, net, test_loader)
             save_checkpoint(args, {'epoch': epoch + 1,
                                    'state_dict': net.state_dict(),
                                    'best_result': best_result})
@@ -150,14 +167,14 @@ def main(args):
             break
     args.epochs = epoch + 1
     if args.patience == -1:
-        performance_test, _ = check_testing(args, net, test_loader)
+        perf_test, perf_per_sample_test = check_testing(args, net, test_loader)
         save_checkpoint(args, {'epoch': epoch + 1,
                                'state_dict': net.state_dict(),
                                'best_result': best_result})
 
     logging.info(f'Best val {TRACK}: {best_result:.4f}')
-    # TODO: update to dump
-    dumping_arguments(args, performance_val, performance_test)
+    dumping_arguments(args, perf_val, perf_test,
+                      perf_per_sample_val, perf_per_sample_test)
 
 
 def train_epoch(args, net, criterion, loader, optimizer, epoch):
@@ -291,36 +308,43 @@ def setup_dataset(args):
     return train_loader, val_loader, test_loader
 
 
-def setup_model(args, train_dataset):
+def setup_model(args, train_loader=None, val_loader=None):
     "Setup model, criterion and optimizer"
+    if train_loader is not None:
+        dataset = train_loader.dataset
+    elif val_loader is not None:
+        dataset = val_loader.dataset
+    else:
+        raise ValueError('either train or val list must exists')
     logging.info('Setting-up MCN')
-    mcn_setup = dict(visual_size=train_dataset.visual_size[args.feat],
-                     lang_size=train_dataset.language_size,
-                     max_length=train_dataset.max_words)
+    mcn_setup = dict(visual_size=dataset.visual_size[args.feat],
+                     lang_size=dataset.language_size,
+                     max_length=dataset.max_words)
     net = model.MCN(**mcn_setup)
 
-    # opt_parameters = None
-    # if train_dataset is not None:
-    opt_parameters = net.optimization_parameters(
-        args.lr, args.original_setup)
-    criterion = IntraInterMarginLoss(
-        margin=args.margin, w_inter=args.w_inter,
-        w_intra=args.w_intra)
+    opt_parameters, criterion = None, None
+    if train_loader is not None:
+        logging.info('Setting-up criterion')
+        opt_parameters = net.optimization_parameters(
+            args.lr, args.original_setup)
+        criterion = IntraInterMarginLoss(
+            margin=args.margin, w_inter=args.w_inter,
+            w_intra=args.w_intra)
 
     logging.info('Setting-up model mode')
     net.train()
-    # if train_dataset is None:
-    #     net.eval()
+    if train_loader is None:
+        net.eval()
 
     if args.gpu_id >= 0:
         logging.info('Transferring model to GPU')
         net.to(args.device)
-        # if ranking_loss is not None:
-        criterion.to(args.device)
+        if criterion is not None:
+            criterion.to(args.device)
 
     logging.info(f'Setting-up optimizer: {args.optimizer}')
-    # if opt_parameters is None:
-    #     return net, None, None
+    if opt_parameters is None:
+        return net, None, None
     if args.optimizer == 'sgd':
         optimizer = optim.SGD(opt_parameters, lr=args.lr,
                               momentum=args.momentum)

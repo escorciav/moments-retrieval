@@ -5,6 +5,7 @@ import random
 import subprocess
 import time
 
+import h5py
 import numpy as np
 import pandas as pd
 import torch
@@ -55,6 +56,7 @@ def collate_data_eval(batch):
             tensors.append(item)
     return tensors
 
+
 def dict_of_lists(list_of_dicts):
     "Return dict of lists from list of dicts"
     return dict(
@@ -64,20 +66,22 @@ def dict_of_lists(list_of_dicts):
 
 
 def dumping_arguments(args, val_performance=None, test_performance=None,
-                      performance_per_sample=None,  metrics=None):
+                      perf_per_sample_val=None, perf_per_sample_test=None):
     """Quick-and-dirty way to save args and results
 
     Note: next time we put this inside the torch.save and khalas!
     """
-    if len(args.logfile) == 0:
+    if len(args.logfile.name) == 0:
         return
-    result_file = args.logfile + '.json'
+    result_file = args.logfile.with_suffix('.json')
     device = args.device
     # Update dict with performance and remove non-serializable stuff
+    args.logfile = str(args.logfile)
     args.h5_path = str(args.h5_path) if args.h5_path.exists() else None
     args.train_list = str(args.train_list) if args.train_list.exists() else None
     args.val_list = str(args.val_list) if args.val_list.exists() else None
     args.test_list = str(args.test_list) if args.test_list.exists() else None
+    args.evaluate = str(args.evaluate) if args.evaluate.exists() else None
     args.device = None
     args_dict = vars(args)
     if val_performance is not None:
@@ -86,20 +90,28 @@ def dumping_arguments(args, val_performance=None, test_performance=None,
         args_dict.update({f'test_{k}': v for k, v in test_performance.items()})
     with open(result_file, 'w') as fid:
         json.dump(args_dict, fid, skipkeys=True)
-    if performance_per_sample is not None:
-        with open(args.logfile + '.csv', 'w') as fid:
-            fid.write('{},{},{},{}\n'.format('annotation_id', *metrics))
-            [fid.write('{},{},{},{}\n'.format(*i))
-             for i in performance_per_sample]
+    if args.dump_results and perf_per_sample_val is not None:
+        dump_tensors_as_hdf5(args.logfile + '_instances_rst_val.h5',
+                             perf_per_sample_val)
+    if args.dump_results and perf_per_sample_test is not None:
+        dump_tensors_as_hdf5(args.logfile + '_instances_rst_test.h5',
+                             perf_per_sample_test)
     args.device = device
+
+
+def dump_tensors_as_hdf5(filename, tensors_as_dict_values):
+    "Dump dict with torch tensors into a HDF5"
+    with h5py.File(filename, 'w') as fid:
+        for key, value in tensors_as_dict_values.items():
+            fid.create_dataset(name=key, data=value.numpy())
 
 
 def setup_logging(args):
     "Setup logging to dump progress into file or print it"
     log_prm = dict(format='%(asctime)s:%(levelname)s:%(message)s',
                    level=logging.DEBUG)
-    if len(args.logfile) > 1:
-        log_prm['filename'] = args.logfile + '.log'
+    if len(args.logfile.name) >= 1:
+        log_prm['filename'] = args.logfile.with_suffix('.log')
         log_prm['filemode'] = 'w'
     logging.basicConfig(**log_prm)
 
@@ -115,9 +127,9 @@ def setup_rng(args):
 
 def save_checkpoint(args, state):
     "Serialize model into pth"
-    if len(args.logfile) == 0 or not args.serialize:
+    if len(args.logfile.name) == 0 or not args.serialize:
         return
-    torch.save(state, args.logfile + '_checkpoint.pth.tar')
+    torch.save(state, args.logfile.with_suffix('.pth.tar'))
 
 
 def ship_to(x, device):
@@ -167,6 +179,7 @@ class Tracker(object):
         "Make everything a tensor and move to cpu"
         for key, value in self.data.items():
             if not isinstance(value[0], torch.Tensor):
+                self.data[key] = torch.tensor(value)
                 continue
             elif value[0].dim() > 1 or value[0].shape[0] > 1:
                 self.data[key] = torch.stack(value)

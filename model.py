@@ -3,6 +3,8 @@ import torch.nn as nn
 import torch.nn.functional as F
 from torch.nn.utils.rnn import pack_padded_sequence, pad_packed_sequence
 
+MOMENT_RETRIEVAL_MODELS = ['MCN', 'SMCN', 'SMCNTalcv1']
+
 
 class MCN(nn.Module):
     """MCN model

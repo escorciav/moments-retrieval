@@ -38,6 +38,9 @@ parser.add_argument('--val-list', type=Path, default='non-existent',
                     help='JSON-file with training instances')
 parser.add_argument('--test-list', type=Path, default='non-existent',
                     help='JSON-file with training instances')
+# Architecture
+parser.add_argument('--arch', choices=model.MOMENT_RETRIEVAL_MODELS,
+                    default='MCN', help='model architecture')
 # Program control
 parser.add_argument('--evaluate', type=Path, default='non-existent',
                     help=('pht.tar with dict and state_dict key with '
@@ -122,7 +125,7 @@ def main(args):
         args.device = torch.device(f'cuda:{args.gpu_id}')
         device_name = torch.cuda.get_device_name(args.gpu_id)
     logging.info(f'Git revision hash:  {get_git_revision_hash()}')
-    logging.info('*MCN in untrimmed videos')
+    logging.info(f'{args.arch} in untrimmed videos')
     logging.info(args)
     logging.info(f'Device: {device_name}')
 
@@ -261,6 +264,14 @@ def check_testing(args, net, loader):
 
 def setup_dataset(args):
     "Setup dataset and loader"
+    # model dependend part
+    if args.arch == 'MCN':
+        dataset_name = 'UntrimmedMCN'
+    elif args.arch == 'SMCN':
+        dataset_name = 'UntrimmedSMCN'
+    else:
+        raise ValueError(f'Unsuported arch: {args.arch}, call 911!')
+
     subset_files = [('train', args.train_list), ('val', args.val_list),
                     ('test', args.test_list)]
     cues = {args.feat: {'file': args.h5_path}}
@@ -268,10 +279,9 @@ def setup_dataset(args):
         args.min_length, args.num_scales, args.stride, unique=True)
     extras_dataset_configs = [
         # Training
-        {'debug': args.debug},
+        {},
         # Validation or Testing
-        {'eval': True, 'proposals_interface': proposal_generator,
-         'debug': args.debug}
+        {'eval': True, 'proposals_interface': proposal_generator}
     ]
     extras_loaders_configs = [
         # Training
@@ -295,9 +305,9 @@ def setup_dataset(args):
             loaders.append(None)
             continue
         logging.info(f'Found {subset}-list: {filename}')
-        dataset = dataset_untrimmed.UntrimmedMCN(
+        dataset = dataset_untrimmed.__dict__[dataset_name](
             filename, cues=cues, loc=args.loc, context=args.context,
-            **extras_dataset)
+            debug=args.debug, **extras_dataset)
         logging.info(f'Setting loader')
         loaders.append(
             DataLoader(dataset, num_workers=args.num_workers,
@@ -316,11 +326,11 @@ def setup_model(args, train_loader=None, val_loader=None):
         dataset = val_loader.dataset
     else:
         raise ValueError('either train or val list must exists')
-    logging.info('Setting-up MCN')
-    mcn_setup = dict(visual_size=dataset.visual_size[args.feat],
-                     lang_size=dataset.language_size,
-                     max_length=dataset.max_words)
-    net = model.MCN(**mcn_setup)
+    logging.info('Setting-up model')
+    arch_setup = dict(visual_size=dataset.visual_size[args.feat],
+                      lang_size=dataset.language_size,
+                      max_length=dataset.max_words)
+    net = model.__dict__[args.arch](**arch_setup)
 
     opt_parameters, criterion = None, None
     if train_loader is not None:

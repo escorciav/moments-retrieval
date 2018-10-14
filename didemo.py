@@ -587,6 +587,7 @@ class VisualRepresentationSMCN(object):
         scaling_factor = np.linalg.norm(x_, axis=1, keepdims=True) + self.EPS
         return x_ / scaling_factor
 
+
 class TemporalEndpointFeature(object):
     "Relative position in the video"
 

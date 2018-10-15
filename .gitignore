@@ -4,6 +4,8 @@ activate*.sh
 
 # pseudo-test
 test_output*
+# debugging/repeatability scripts
+scripts/*debug*
 
 workers
 # temporal becuase vscode was bothering with the recursive search

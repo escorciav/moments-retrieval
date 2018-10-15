@@ -448,7 +448,7 @@ class VisualRepresentationSMCN():
         im_end = int((moment_loc[1] - self.eps) // time_unit)
         # T := \mathcal{T} but in this case is the cardinality of the set
         T = im_end - im_start + 1
-        padded_data = np.empty((n_feat, f_dim * self.size_factor),
+        padded_data = np.zeros((n_feat, f_dim * self.size_factor),
                                dtype=self.dtype)
         # mask is numpy array of type self.dtype to avoid upstream casting
         mask = np.zeros(n_feat, dtype=self.dtype)

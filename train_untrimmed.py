@@ -41,10 +41,11 @@ parser.add_argument('--test-list', type=Path, default='non-existent',
 # Architecture
 parser.add_argument('--arch', choices=model.MOMENT_RETRIEVAL_MODELS,
                     default='MCN', help='model architecture')
+parser.add_argument('--snapshot', type=Path, default='non-existent',
+                    help='pht.tar with dict and state_dict key with params ')
 # Program control
-parser.add_argument('--evaluate', type=Path, default='non-existent',
-                    help=('pht.tar with dict and state_dict key with '
-                          'model parameters to evaluate in val set'))
+parser.add_argument('--evaluate', action='store_true',
+                    help='only run the model in the val set')
 # Features
 parser.add_argument('--feat', default='rgb',
                     help='Record the type of feature used (modality)')
@@ -136,10 +137,20 @@ def main(args):
     train_loader, val_loader, test_loader = setup_dataset(args)
     net, ranking_loss, optimizer = setup_model(args, train_loader, val_loader)
 
-    if args.evaluate.exists():
-        snapshot = torch.load(args.evaluate)['state_dict']
-        net.load_state_dict(snapshot)
-        args.logfile = args.evaluate.with_suffix('').with_suffix('')
+    if args.snapshot.exists():
+        logging.info(f'Loading parameters from {args.snapshot}')
+        snapshot = torch.load(args.snapshot).get('state_dict')
+        if snapshot is not None:
+            net.load_state_dict(snapshot)
+        else:
+            logging.error('Fail loading parameters, proceeding without them.')
+
+    if args.evaluate:
+        if not args.snapshot.exists():
+            logging.info('Aborting due to lack of snapshot')
+            return
+        logging.info('Evaluating model')
+        args.logfile = args.snapshot.with_suffix('').with_suffix('')
         rst, per_sample_rst = validation(args, net, val_loader)
         dumping_arguments(args, val_performance=rst,
                           perf_per_sample_val=per_sample_rst)

@@ -82,7 +82,7 @@ def dumping_arguments(args, val_performance=None, test_performance=None,
     args.train_list = str(args.train_list) if args.train_list.exists() else None
     args.val_list = str(args.val_list) if args.val_list.exists() else None
     args.test_list = str(args.test_list) if args.test_list.exists() else None
-    args.evaluate = str(args.evaluate) if args.evaluate.exists() else None
+    args.snapshot = str(args.snapshot) if args.snapshot.exists() else None
     args.device = None
     args_dict = vars(args)
     if val_performance is not None:

@@ -453,7 +453,8 @@ class VisualRepresentationSMCN():
         # mask is numpy array of type self.dtype to avoid upstream casting
         mask = np.zeros(n_feat, dtype=self.dtype)
 
-        padded_data[:T, 0:f_dim] = normalization1d(im_start, im_end, features)
+        padded_data[:T, 0:f_dim] = self._local_feature(
+            im_start, im_end, features)
         mask[:T] = 1
         if self.context:
             ic_start, ic_end = 0, len(features) - 1
@@ -461,8 +462,8 @@ class VisualRepresentationSMCN():
                 ic_start, ic_end, features)
         return padded_data, mask
 
-    def _local_feature(self, x, start, end):
-        "Compute local representation for multiple chunks"
+    def _local_feature(self, start, end, x):
+        "Return normalized representation of each clip/chunk"
         y = x[start:end + 1, :]
         scaling_factor = np.linalg.norm(y, axis=1, keepdims=True) + self.eps
         return y / scaling_factor

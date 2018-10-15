@@ -9,6 +9,7 @@ import h5py
 import numpy as np
 import pandas as pd
 import torch
+import yaml
 from torch.utils.data.sampler import Sampler
 from torch.utils.data.dataloader import default_collate
 
@@ -104,6 +105,26 @@ def dump_tensors_as_hdf5(filename, tensors_as_dict_values):
     with h5py.File(filename, 'w') as fid:
         for key, value in tensors_as_dict_values.items():
             fid.create_dataset(name=key, data=value.numpy())
+
+
+def setup_hyperparameters(args):
+    "Update Namescope with random hyper-paramters according to a YAML-file"
+    if not args.hps:
+        return
+    filename = args.logfile.parent / 'hps.yml'
+    if not filename.exists():
+        logging.error(f'Ignoring HPS. Not found {filename}')
+        return
+    with open(filename, 'r') as fid:
+        config = yaml.load(fid)
+    logging.info('Proceeding to perform random HPS')
+    args_dview = vars(args)
+    for k, v in config.items():
+        if not isinstance(v, list):
+            args_dview[k] = v
+            continue
+        random.shuffle(v)
+        args_dview[k] = v[0]
 
 
 def setup_logging(args):

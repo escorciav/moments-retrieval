@@ -17,7 +17,7 @@ from loss import IntraInterMarginLoss
 from evaluation import single_moment_retrieval
 from utils import Multimeter, Tracker
 from utils import collate_data, collate_data_eval, ship_to
-from utils import setup_logging, setup_rng
+from utils import setup_hyperparameters, setup_logging, setup_rng
 from utils import dumping_arguments, save_checkpoint
 from utils import get_git_revision_hash
 
@@ -107,6 +107,9 @@ parser.add_argument('--dump-results', action='store_true',
 # Reproducibility
 parser.add_argument('--seed', type=int, default=1701,
                     help='random seed (-1 := random)')
+# Hyper-parameter search
+parser.add_argument('--hps', action='store_true',
+                    help='Enable use of hps.yml in folder of logfile')
 # Debug
 parser.add_argument('--debug', action='store_true',
                     help=('yield incorrect results! only to verify things '
@@ -118,6 +121,7 @@ args = parser.parse_args()
 
 def main(args):
     setup_logging(args)
+    setup_hyperparameters(args)
     setup_rng(args)
 
     args.device = device_name = 'cpu'

@@ -1,2 +1,5 @@
+activitynet/*.json
+charades-sta/*.json
+
 # Debugging code
 *debug

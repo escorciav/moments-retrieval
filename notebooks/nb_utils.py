@@ -12,6 +12,73 @@ FPS = 5
 IOU_THRESHOLDS = [0.5, 0.7]
 
 
+def extend_metadata(list_of_moments, videos_gbv, filename, offset=0, fps=FPS):
+    """Augment list of moments' (in-place) metadata and create video metadata
+
+    The augmentation add `annotation_id` and `time` to each moment in
+    list_of_moments.
+
+    Args:
+        list_of_moments (list of dicts) : the output of any parsing function
+            such as `function::parse_charades_sta` or
+            `function::parse_activitynet_captions`.
+        videos_gbv (DataFrame groupedby) : pandas DataFrame grouped by
+            `video_id` field. It is mandatory that the DataFrame has a column
+            `num_frames` such that we can estimate the duration of the video.
+        filename (str) : path to HDF5 with all features of the dataset.
+        offset (int, optional) : ensure annotation-id accross moments is
+            unique accross the entire dataset.
+    Returns:
+        videos (dict) : key-value pairs formed by video-id and its
+            corresponding metadata.
+        clean_list_of_moments (list) : the same contern of list_of_moments
+            limited to the moments with duration >= 0.
+
+    Note:
+        We use the row index of the original CSV as unique identifier for the
+        moment. For JSON files, the behavior it's trickier but we double check
+        it. This worked for the json package of python (==3.6 from anaconda)
+        standard library and the `function::parse_activitynet_captions`.
+        BTW, the annotation-id is 0-indexed.
+    """
+    with h5py.File(filename, 'r') as fid:
+        videos = {}
+        keep = []
+        for i, moment in enumerate(list_of_moments):
+            assert len(moment['times']) == 1
+            video_id = moment['video']
+            # Get estimated video duration
+            num_frames = videos_gbv.get_group(
+                video_id)['num_frames'].values[0]
+            video_duration = num_frames / fps
+
+            # TODO: sanitize by trimming moments up to video duration <= 0
+            # Sanitize
+            # 1) clamp moments inside video
+            moment['times'][0][0] = min(moment['times'][0][0], video_duration)
+            moment['times'][0][1] = min(moment['times'][0][1], video_duration)
+            # 2) remove moments with duration <= 0
+            if moment['times'][0][1] <= moment['times'][0][0]:
+                continue
+
+            keep.append(i)
+            moment['time'] = moment['times'][0]
+            moment['annotation_id'] = i + offset
+
+            # Update dict with video info
+            if video_id not in videos:
+                num_clips = fid[video_id].shape[0]
+                videos[video_id] = {'duration': video_duration,
+                                    'num_clips': num_clips,
+                                    'num_moments': 0}
+            videos[video_id]['num_moments'] += 1
+
+    clean_list_of_moments = []
+    for i in keep:
+        clean_list_of_moments.append(list_of_moments[i])
+    return videos, clean_list_of_moments
+
+
 def make_annotations_df(instances, file_h5):
     "Create data-frames to ease indexing"
     instances_df = pd.DataFrame([{**i, **{'t_start': i['times'][0][0],

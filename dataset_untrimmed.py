@@ -137,7 +137,7 @@ class UntrimmedBasedMCNStyle(UntrimmedBase):
         "Get language representation of words in query"
         # TODO: pack next two vars into a dict
         feature = self.lang_interface(query)
-        len_query = len(query)
+        len_query = min(len(query), self.max_words)
         return feature, len_query
 
     def _compute_visual_feature(self, video_id, moment_loc, video_duration):

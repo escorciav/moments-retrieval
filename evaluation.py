@@ -48,12 +48,12 @@ def single_moment_retrieval(true_segments, pred_segments,
         list of torch tensors indicating if the true segment was found for a
         given iou_threshold
     """
-    max_k = k_iou[-1][0]
-    if pred_segments.shape[0] < max_k:
-        # make zero matrix with shape max_k, 2] and pred_segments on the top
-        raise NotImplementedError('WIP: fix me')
-    hit_topk_iou = []
     iou_matrix = torch_iou(pred_segments, true_segments)
+    max_k = k_iou[-1][0]
+    if iou_matrix.shape[0] < max_k:
+        n_times = round(max_k / iou_matrix.shape[0])
+        iou_matrix = iou_matrix.repeat(n_times, 1)
+    hit_topk_iou = []
     for top_k, iou_threshold in k_iou:
         best_iou_topk, _ = iou_matrix[:top_k, :].max(dim=0)
         hit_topk_iou.append(best_iou_topk >= iou_threshold)

@@ -27,8 +27,9 @@ TOPK_IOU_POINTS = tuple(product((1, 5), (0.5, 0.7)))
 TOPK = 5  # the maximum in the first tuple on the line above :)
 METRICS = [f'r@{k},{iou}' for k, iou in TOPK_IOU_POINTS]
 HIT_K_IOU = [f'hit@{k},{iou}' for k, iou in TOPK_IOU_POINTS]
-VAL_VARS_TO_RECORD = ['id'] + HIT_K_IOU + ['scores', 'topk_segments']
+VARS_TO_RECORD = ['id'] + HIT_K_IOU + ['scores', 'topk_segments']
 TRACK = 'r@1,0.7'
+BEST_RESULT = 0.0
 
 parser = argparse.ArgumentParser(description='*MCN training')
 # Data
@@ -151,7 +152,7 @@ def main(args):
             return
         logging.info('Evaluating model')
         args.logfile = args.snapshot.with_suffix('').with_suffix('')
-        rst, per_sample_rst = validation(args, net, val_loader)
+        rst, per_sample_rst = evaluate(args, net, val_loader)
         dumping_arguments(args, val_performance=rst,
                           perf_per_sample_val=per_sample_rst)
         return
@@ -160,20 +161,20 @@ def main(args):
         optimizer, args.lr_step, args.lr_decay)
 
     logging.info('Starting optimization...')
-    best_result = 0.0
+    best_result = BEST_RESULT
     perf_test = None
     patience = 0
     for epoch in range(args.epochs):
         lr_schedule.step()
         train_epoch(args, net, ranking_loss, train_loader, optimizer, epoch)
-        perf_val, perf_per_sample_val = validation(args, net, val_loader)
+        perf_val, perf_per_sample_val = evaluate(args, net, val_loader)
 
-        val_result = perf_val[TRACK]
+        val_result = perf_val[TRACK] if perf_val else best_result
         if val_result > best_result:
             patience = 0
             best_result = val_result
             logging.info(f'Hit jackpot {TRACK}: {best_result:.4f}')
-            perf_test, perf_per_sample_test = check_testing(
+            perf_test, perf_per_sample_test = evaluate(
                 args, net, test_loader)
             save_checkpoint(args, {'epoch': epoch + 1,
                                    'state_dict': net.state_dict(),
@@ -185,7 +186,7 @@ def main(args):
             break
     args.epochs = epoch + 1
     if args.patience == -1:
-        perf_test, perf_per_sample_test = check_testing(args, net, test_loader)
+        perf_test, perf_per_sample_test = evaluate(args, net, test_loader)
         save_checkpoint(args, {'epoch': epoch + 1,
                                'state_dict': net.state_dict(),
                                'best_result': best_result})
@@ -235,7 +236,7 @@ def validation(args, net, loader):
     ind = 2 if args.debug else 0
     time_meters = Multimeter(keys=['Batch', 'Eval'])
     meters = Multimeter(keys=METRICS)
-    tracker = Tracker(keys=VAL_VARS_TO_RECORD)
+    tracker = Tracker(keys=VARS_TO_RECORD) if args.dump_results else None
     logging.info(f'* Evaluation')
     net.eval()
     with torch.no_grad():
@@ -257,17 +258,25 @@ def validation(args, net, loader):
                 gt_segment, sorted_segments, TOPK_IOU_POINTS)
             meters.update([i.item() for i in hit_k_iou])
             time_meters.update([batch_time, time.time() - end])
-            tracker.append(it, *hit_k_iou, scores[: TOPK],
-                           sorted_segments[:TOPK, :])
+            if tracker:
+                # artifact to ease Tracker job for few number of segments
+                if scores.shape[0] < TOPK:
+                    n_times = round(TOPK / scores.shape[0])
+                    scores = scores.repeat(n_times)
+                    sorted_segments = sorted_segments.repeat(n_times, 1)
+                tracker.append(it, *hit_k_iou, scores[: TOPK],
+                               sorted_segments[:TOPK, :])
             end = time.time()
     logging.info(f'{time_meters.report()}\t{meters.report()}')
-    tracker.freeze()
-    performance = (meters.dump(), tracker.data)
-    logging.info(f'Results aggregation completed')
-    return performance
+    if tracker:
+        tracker.freeze()
+        performance = (meters.dump(), tracker.data)
+        logging.info(f'Results aggregation completed')
+        return performance
+    return meters.dump(), None
 
 
-def check_testing(args, net, loader):
+def evaluate(args, net, loader):
     """Lazy function to make comparsion = to json parsing.
 
     Note: Please do not fool yourself picking model based on testing

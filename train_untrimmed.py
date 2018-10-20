@@ -78,7 +78,9 @@ parser.add_argument('--stride', type=float, default=3,
 parser.add_argument('--batch-size', type=int, default=128, help='batch size')
 parser.add_argument('--gpu-id', type=int, default=-1, help='GPU device')
 parser.add_argument('--num-workers', type=int, default=6,
-                    help='Number of processes')
+                    help='Num workers during training')
+parser.add_argument('--num-workers-eval', type=int, default=6,
+                    help='Num workers for evaluation (useful long videos)')
 # Optimization
 parser.add_argument('--lr', type=float, default=0.05,
                     help='initial learning rate')
@@ -310,10 +312,10 @@ def setup_dataset(args):
     extras_loaders_configs = [
         # Training
         {'shuffle': args.shuffle, 'collate_fn': collate_data,
-         'batch_size': args.batch_size},
+         'batch_size': args.batch_size, 'num_workers': args.num_workers},
         # Validation or Testing
         {'shuffle': False, 'collate_fn': collate_data_eval,
-         'batch_size': EVAL_BATCH_SIZE}
+         'batch_size': EVAL_BATCH_SIZE, 'num_workers': args.num_workers_eval}
     ]
 
     logging.info('Setting-up datasets and loaders')
@@ -334,8 +336,7 @@ def setup_dataset(args):
             debug=args.debug, **extras_dataset)
         logging.info(f'Setting loader')
         loaders.append(
-            DataLoader(dataset, num_workers=args.num_workers,
-                       **extras_loader)
+            DataLoader(dataset, **extras_loader)
         )
 
     train_loader, val_loader, test_loader = loaders

@@ -15,14 +15,19 @@ class MCN(nn.Module):
 
     def __init__(self, visual_size=4096, lang_size=300, embedding_size=100,
                  dropout=0.3, max_length=None, visual_hidden=500,
-                 lang_hidden=1000):
+                 lang_hidden=1000, visual_layers=1):
         super(MCN, self).__init__()
         self.embedding_size = embedding_size
         self.max_length = max_length
 
+        visual_encoder = [nn.Linear(visual_size, visual_hidden),
+                          nn.ReLU(inplace=True)]
+        # (optional) add depth to visual encoder (capacity)
+        for i in  range(visual_layers - 1):
+            visual_encoder += [nn.Linear(visual_hidden, visual_hidden),
+                               nn.ReLU(inplace=True)]
         self.visual_encoder = nn.Sequential(
-          nn.Linear(visual_size, visual_hidden),
-          nn.ReLU(inplace=True),
+          *visual_encoder,
           nn.Linear(visual_hidden, embedding_size),
           nn.Dropout(dropout)
         )

@@ -44,6 +44,17 @@ parser.add_argument('--arch', choices=model.MOMENT_RETRIEVAL_MODELS,
                     default='MCN', help='model architecture')
 parser.add_argument('--snapshot', type=Path, default='non-existent',
                     help='pht.tar with dict and state_dict key with params ')
+# Arch hyper-parameters
+parser.add_argument('--visual-hidden', type=int, default=500,
+                    help='Hidden unit in MLP visual stream')
+parser.add_argument('--dropout', type=float, default=0.3,
+                    help='Dropout rate in visual stream')
+parser.add_argument('--embedding-size', type=int, default=100,
+                    help='Dimensionaity of cross-modal embedding')
+parser.add_argument('--lang-hidden', type=int, default=1000,
+                    help='Dimensionality of sentence representation')
+parser.add_argument('--visual-layers', type=int, default=1,
+                    help='Number of layers in visual encoder')
 # Program control
 parser.add_argument('--evaluate', action='store_true',
                     help='only run the model in the val set')
@@ -102,8 +113,8 @@ parser.add_argument('--no-shuffle', action='store_false', dest='shuffle',
                     help='Disable suffle dataset after each epoch')
 # Logging
 parser.add_argument('--logfile', type=Path, default='', help='Logging file')
-parser.add_argument('--n-display', type=int, default=15,
-                    help='Information display frequence')
+parser.add_argument('--n-display', type=float, default=0.1,
+                    help='logging rate during epoch')
 parser.add_argument('--not-serialize', action='store_false', dest='serialize',
                     help='Avoid dumping .pth.tar with model parameters')
 parser.add_argument('--dump-results', action='store_true',
@@ -166,12 +177,17 @@ def main(args):
     best_result = BEST_RESULT
     perf_test = None
     patience = 0
+    n_display_float = args.n_display
     for epoch in range(args.epochs):
+        # on epoch begin
+        args.n_display = max(int(n_display_float * len(train_loader)), 1)
         lr_schedule.step()
-        train_epoch(args, net, ranking_loss, train_loader, optimizer, epoch)
-        perf_val, perf_per_sample_val = evaluate(args, net, val_loader)
 
+        train_epoch(args, net, ranking_loss, train_loader, optimizer, epoch)
+
+        perf_val, perf_per_sample_val = evaluate(args, net, val_loader)
         val_result = perf_val[TRACK] if perf_val else best_result
+
         if val_result > best_result:
             patience = 0
             best_result = val_result
@@ -354,7 +370,12 @@ def setup_model(args, train_loader=None, val_loader=None):
     logging.info('Setting-up model')
     arch_setup = dict(visual_size=dataset.visual_size[args.feat],
                       lang_size=dataset.language_size,
-                      max_length=dataset.max_words)
+                      max_length=dataset.max_words,
+                      embedding_size=args.embedding_size,
+                      dropout=args.dropout,
+                      visual_hidden=args.visual_hidden,
+                      lang_hidden=args.lang_hidden,
+                      visual_layers=args.visual_layers)
     net = model.__dict__[args.arch](**arch_setup)
 
     opt_parameters, criterion = None, None

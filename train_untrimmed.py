@@ -18,8 +18,9 @@ from evaluation import single_moment_retrieval
 from utils import Multimeter, Tracker
 from utils import collate_data, collate_data_eval, ship_to
 from utils import setup_hyperparameters, setup_logging, setup_rng
-from utils import dumping_arguments, save_checkpoint
+from utils import dumping_arguments, logfile_from_snapshot, save_checkpoint
 from utils import get_git_revision_hash
+from np_segments_ops import non_maxima_suppresion
 
 OPTIMIZER = ['sgd', 'sgd_caffe']
 EVAL_BATCH_SIZE = 1
@@ -85,6 +86,7 @@ parser.add_argument('--num-scales', type=int, default=8,
                          'window')
 parser.add_argument('--stride', type=float, default=3,
                     help='stride of the slidding window (seconds)')
+parser.add_argument('--nms-threshold', type=float, default=0.5)
 # Device specific
 parser.add_argument('--batch-size', type=int, default=128, help='batch size')
 parser.add_argument('--gpu-id', type=int, default=-1, help='GPU device')
@@ -164,7 +166,7 @@ def main(args):
             logging.info('Aborting due to lack of snapshot')
             return
         logging.info('Evaluating model')
-        args.logfile = args.snapshot.with_suffix('').with_suffix('')
+        args.logfile = logfile_from_snapshot(args)
         rst, per_sample_rst = evaluate(args, net, val_loader)
         dumping_arguments(args, val_performance=rst,
                           perf_per_sample_val=per_sample_rst)
@@ -268,9 +270,17 @@ def validation(args, net, loader):
             batch_time = time.time() - end
             end = time.time()
 
-            scores, idx = results.sort(descending=descending)
             gt_segment, segments = minibatch[-2:]
-            sorted_segments = segments[idx, :]
+            if args.nms_threshold < 1:
+                segments, scores = segments.cpu(), results.cpu()
+                idx = non_maxima_suppresion(
+                    segments.numpy(), -scores.numpy(), args.nms_threshold)
+                sorted_segments = segments[idx]
+                gt_segment = gt_segment.cpu()
+            else:
+                scores, idx = results.sort(descending=descending)
+                sorted_segments = segments[idx, :]
+
             # Note: these next two lines look a bit slower and stupid, #sorry
             hit_k_iou = single_moment_retrieval(
                 gt_segment, sorted_segments, TOPK_IOU_POINTS)

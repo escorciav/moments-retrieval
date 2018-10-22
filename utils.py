@@ -107,6 +107,14 @@ def dump_tensors_as_hdf5(filename, tensors_as_dict_values):
             fid.create_dataset(name=key, data=value.numpy())
 
 
+def logfile_from_snapshot(args):
+    "Return log-filename for evaluation out of snapshot"
+    # remove .pth.tar
+    filename = args.snapshot.with_suffix('').with_suffix('')
+    # append eval to avoid overwriting
+    return filename.with_name(filename.name + '_eval')
+
+
 def setup_hyperparameters(args):
     "Update Namescope with random hyper-paramters according to a YAML-file"
     if not args.hps:

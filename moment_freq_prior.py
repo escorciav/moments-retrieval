@@ -16,6 +16,7 @@ not implement due to lack of time.
 """
 import argparse
 import logging
+from itertools import product
 from pathlib import Path
 
 import numpy as np
@@ -25,9 +26,12 @@ import dataset_untrimmed
 import proposals
 from evaluation import single_moment_retrieval
 from np_segments_ops import iou as segment_iou
-from train_untrimmed import METRICS, TOPK_IOU_POINTS
 from utils import setup_logging
 from utils import Multimeter
+
+# TODO(tier-2;release): mirror this constants from init file
+TOPK_IOU_POINTS = tuple(product((1, 5), (0.5, 0.7)))
+METRICS = [f'r@{k},{iou}' for k, iou in TOPK_IOU_POINTS]
 
 parser = argparse.ArgumentParser(description='Frequency prior')
 parser.add_argument('--train-list', type=Path, default='non-existent',

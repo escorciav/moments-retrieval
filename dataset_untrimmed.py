@@ -23,16 +23,17 @@ class UntrimmedBase(Dataset):
         self.features = None
         self.max_clips = None
         self.metadata = None
-        self.metada_per_video = None
+        self.metadata_per_video = None
+        self.video_list = None
         self.time_unit = TIME_UNIT
 
     def max_number_of_clips(self):
         "Return maximum number of clips/chunks over all videos in dataset"
         if self.max_clips is None:
-            if self.metada_per_video is None:
+            if self.metadata_per_video is None:
                 raise ValueError('Dataset is empty. Run setup first')
             max_clips = 0
-            for vid_metadata in self.metada_per_video.values():
+            for vid_metadata in self.metadata_per_video.values():
                 max_clips = max(max_clips, vid_metadata.get('num_clips', 0))
             self.max_clips = max_clips
         return self.max_clips
@@ -48,7 +49,7 @@ class UntrimmedBase(Dataset):
         for key, params in cues.items():
             with h5py.File(params.get('file', 'NO-filename'), 'r') as fid:
                 self.features[key] = {}
-                for video_id in self.metada_per_video:
+                for video_id in self.metadata_per_video:
                     self.features[key][video_id] = fid[video_id][:]
 
     def _preprocess_descriptions(self):
@@ -64,7 +65,7 @@ class UntrimmedBase(Dataset):
         with open(filename, 'r') as fid:
             data = json.load(fid)
             self.metadata = data['moments']
-            self.metada_per_video = data['videos']
+            self.metadata_per_video = data['videos']
             self.time_unit = data['time_unit']
             for i, moment in enumerate(self.metadata):
                 self.metadata[i]['times'] = np.array(
@@ -72,8 +73,15 @@ class UntrimmedBase(Dataset):
         self._preprocess_descriptions()
 
     def _update_metadata_per_video(self):
-        "Add keys to each item in attribute:metada_per_video"
+        "Add keys to each item in attribute:metadata_per_video"
         pass
+
+    @property
+    def videos(self):
+        "Iterator over videos in Dataset"
+        if self.video_list is None:
+            self.video_list = list(self.metadata_per_video.keys())
+        return self.video_list
 
     def __len__(self):
         return len(self.metadata)
@@ -162,6 +170,7 @@ class UntrimmedBasedMCNStyle(UntrimmedBase):
         len_query = [len_query] * num_segments
         words_feature = np.tile(words_feature, (num_segments, 1, 1))
 
+        # TODO: return a dict to avoid messing around with indices
         argout = (words_feature, len_query, pos_visual_feature,
                   neg_intra_visual_feature, neg_inter_visual_feature,
                   gt_segments, segments)
@@ -180,7 +189,7 @@ class UntrimmedBasedMCNStyle(UntrimmedBase):
         "Sample another moment inside the video"
         moment_i = self.metadata[idx]
         video_id = moment_i['video']
-        video_duration = self.metada_per_video[video_id]['duration']
+        video_duration = self.metadata_per_video[video_id]['duration']
         tiou = 1
         while tiou >= self.MAGIC_TIOU:
             # sample segment
@@ -205,13 +214,13 @@ class UntrimmedBasedMCNStyle(UntrimmedBase):
         "Sample another moment from other video as in original MCN paper"
         moment_i = self.metadata[idx]
         video_id = moment_i['video']
-        video_duration = self.metada_per_video[video_id]['duration']
+        video_duration = self.metadata_per_video[video_id]['duration']
         other_video = video_id
         while other_video == video_id:
             idx = int(random.random()*len(self.metadata))
             other_video = self.metadata[idx]['video']
         # MCN-strategy as close as possible
-        other_video_duration = self.metada_per_video[other_video]['duration']
+        other_video_duration = self.metadata_per_video[other_video]['duration']
         sampled_loc = moment_loc
         if other_video_duration < video_duration:
             sampled_loc = [random.random() * other_video_duration,
@@ -226,7 +235,7 @@ class UntrimmedBasedMCNStyle(UntrimmedBase):
         time = moment_i['time']
         query = moment_i['language_input']
         video_id = moment_i['video']
-        video_i = self.metada_per_video[video_id]
+        video_i = self.metadata_per_video[video_id]
         video_duration = video_i['duration']
 
         pos_visual_feature = self._compute_visual_feature(
@@ -283,16 +292,10 @@ class UntrimmedMCN(UntrimmedBasedMCNStyle):
         return feature_collection
 
     def _compute_visual_feature_eval(self, video_id):
-        """Return visual features plus TEF for candidate segments in video
-
-        Note:
-            This implementation deals with non-decomposable features such
-            as TEF. In practice, if you can decompose your model/features
-            it's more efficient to re-write the final pooling.
-        """
+        "Return visual features plus TEF for candidate segments in video"
         # We care about corpus video moment retrieval thus our
         # `proposals_interface` does not receive language queries.
-        metadata = self.metada_per_video[video_id]
+        metadata = self.metadata_per_video[video_id]
         candidates = self.proposals_interface(
             video_id, metadata=metadata, feature_collection=self.features)
         candidates_rep = dict_of_lists(
@@ -317,7 +320,13 @@ class UntrimmedSMCN(UntrimmedBasedMCNStyle):
         self._set_feat_dim()
 
     def _compute_visual_feature(self, video_id, moment_loc, video_duration):
-        "Return visual features plus TEF for a given segment in the video"
+        """Return visual features plus TEF for a given segment in the video
+
+        Note:
+            This implementation deals with non-decomposable features such
+            as TEF. In practice, if you can decompose your model/features
+            it's more efficient to re-write the final pooling.
+        """
         feature_collection = {}
         for key, feat_db in self.features.items():
             feature_video = feat_db[video_id]
@@ -340,7 +349,7 @@ class UntrimmedSMCN(UntrimmedBasedMCNStyle):
 
     def _compute_visual_feature_eval(self, video_id):
         "Return visual features plus TEF for all candidate segments in video"
-        metadata = self.metada_per_video[video_id]
+        metadata = self.metadata_per_video[video_id]
         # We care about corpus video moment retrieval thus our
         # `proposals_interface` does not receive language queries.
         candidates = self.proposals_interface(

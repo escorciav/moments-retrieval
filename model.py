@@ -122,6 +122,10 @@ class MCN(nn.Module):
         d_pos, *_ = self.forward(*args)
         return d_pos, False
 
+    def search(self, query, table):
+        "Exhaustive search of single query in table"
+        return self.compare_emdeddings(query, table), False
+
     def _unpack_visual(self, *args):
         "Get visual feature inside a dict"
         argout = ()
@@ -133,145 +137,6 @@ class MCN(nn.Module):
             else:
                 argout += (i,)
         return argout
-
-
-class ContextGating(nn.Module):
-    """GLU transformation to the incoming data
-
-    Args:
-        dimension: size of each input sample
-
-    Credits to @antoine77340
-    """
-
-    def __init__(self, dimension):
-        super(ContextGating, self).__init__()
-        self.fc = nn.Linear(dimension, dimension)
-        self.bn = nn.BatchNorm1d(dimension)
-
-    def forward(self, x):
-        x1 = self.fc(x)
-        x1 = self.bn(x1)
-        x = torch.cat((x, x1), 1)
-        return F.glu(x, 1)
-
-
-class GatedEmbedding(nn.Module):
-    """Non-linear transformation to the incoming data
-
-    Args:
-        in_features: size of each input sample
-        out_features: size of each output sample
-
-    Credits to @antoine77340
-    """
-
-    def __init__(self, in_features, out_features):
-        super(GatedEmbedding, self).__init__()
-        self.fc = nn.Linear(in_features, out_features)
-        self.cg = ContextGating(out_features)
-
-    def forward(self, x):
-        x = self.fc(x)
-        x = self.cg(x)
-        x = F.normalize(x)
-        return x
-
-
-class MEE(nn.Module):
-    """Mixture of Embedding Experts
-
-    Args:
-        video_modality_dim: dict.
-        text_dim: size of each output sample.
-    TODO:
-        weighted sum as einsum. caveat: emmbbedings of different size.
-
-    Credits to @antoine77340
-    """
-
-    def __init__(self, text_dim, video_modality_dim):
-        super(MEE, self).__init__()
-        self.m = list(video_modality_dim.keys())
-        video_GU, text_GU = zip(*[(GatedEmbedding(dim[0], dim[1]),
-                                   GatedEmbedding(text_dim, dim[1]))
-                                  for _, dim in video_modality_dim.items()])
-        self.video_GU = nn.ModuleList(video_GU)
-        self.text_GU = nn.ModuleList(text_GU)
-        self.moe_fc = nn.Linear(text_dim, len(video_modality_dim))
-
-    def forward(self, text, video):
-        # Note: available and conf stuff were removed
-        B, M = len(text), len(self.m)
-        v_embedding, t_embedding = {}, {}
-        for i, l in enumerate(self.video_GU):
-            v_embedding[self.m[i]] = l(video[self.m[i]])
-        for i, l in enumerate(self.text_GU):
-            t_embedding[self.m[i]] = l(text)
-
-        # MOE weights computation + normalization
-        moe_weights = self.moe_fc(text)
-        moe_weights = F.softmax(moe_weights, dim=1)
-        norm_weights = torch.sum(moe_weights, dim=1)
-        norm_weights = norm_weights.unsqueeze(1)
-        moe_weights = torch.div(moe_weights, norm_weights)
-
-        # TODO: search a clean way to do this
-        scores_m_list = [None for i in range(len(self.m))]
-        for i, m in enumerate(v_embedding):
-            w_similarity = (moe_weights[:, i:i + 1] *
-                            t_embedding[m] * v_embedding[m])
-            scores_m_list[i] = torch.sum(w_similarity, dim=-1, keepdim=True)
-        scores_m = torch.cat(scores_m_list, dim=1)
-        scores = torch.sum(scores_m, dim=-1)
-        return scores
-
-
-class TripletMEE(nn.Module):
-    """MEE model with triplets
-    TODO:
-        Improve abstraction
-    """
-
-    def __init__(self, text_embedding, visual_embedding, word_size=300,
-                 lstm_layers=1, max_length=50):
-        super(TripletMEE, self).__init__()
-        # Setup Text Encoder
-        self.max_length = max_length
-        self.sentence_encoder = nn.LSTM(
-            word_size, text_embedding, lstm_layers, batch_first=True)
-        # self.lang_encoder = nn.Linear(1000, embedding_size)
-        # Setup MEE
-        self.mee = MEE(text_embedding, visual_embedding)
-
-    def forward(self, padded_query, query_length, visual_pos,
-                visual_neg_intra=None, visual_neg_inter=None):
-        similarity_neg_intra = None
-        similarity_neg_inter = None
-        B = len(padded_query)
-
-        # Encode sentence
-        packed_query = pack_padded_sequence(
-            padded_query, query_length, batch_first=True)
-        packed_output, _ = self.sentence_encoder(packed_query)
-        output, _ = pad_packed_sequence(packed_output, batch_first=True,
-                                        total_length=self.max_length)
-        text_vector = output[range(B), query_length, :]
-
-        # MEE
-        similarity_pos = self.mee(text_vector, visual_pos)
-        if visual_neg_intra is not None:
-            similarity_neg_intra = self.mee(text_vector, visual_neg_intra)
-        if visual_neg_inter is not None:
-            similarity_neg_inter = self.mee(text_vector, visual_neg_inter)
-
-        return (similarity_pos, similarity_neg_intra,
-                similarity_neg_inter)
-
-    def predict(self, *args):
-        "Compute similarity between visual and sentence"
-        similarity, *_ = self.forward(*args)
-        return similarity, True
 
 
 class SMCN(MCN):
@@ -338,6 +203,10 @@ class SMCN(MCN):
                 mask_n_inter)
         return c_pos, c_neg_intra, c_neg_inter
 
+    def search(self, query, table):
+        "Exhaustive search of query in table"
+        raise NotImplementedError
+
     def _unpack_visual(self, *args):
         "Get visual feature inside a dict"
         argout = ()
@@ -398,6 +267,10 @@ class SMCNTalcv1(SMCN):
         language_code = residual + extra_stuff
         return language_code
 
+    def search(self, query, table):
+        "Exhaustive search of query in table"
+        raise NotImplementedError
+
 
 if __name__ == '__main__':
     import torch, random
@@ -440,50 +313,3 @@ if __name__ == '__main__':
     a, b, c = net(y_padded, z, x_packed, x_packed, x_packed)
     b.backward(b.clone())
     a, *_ = net(y_padded, z, x_packed)
-
-    # simple test ContextGating
-    d = 50
-    net = ContextGating(d)
-    x = torch.rand(B, d, requires_grad=True)
-    y = net(x)
-    y.backward(y.clone())
-
-    # simple test GatedEmbeddingUnit
-    d = 50
-    net = GatedEmbedding(d, 2*d)
-    x = torch.rand(B, d, requires_grad=True)
-    y = net(x)
-    y.backward(y.clone())
-
-    # simple test MEE
-    xd, yd1, yd2 = 15, (10, 20), (14, 14)
-    yshape = {'1': yd1, '2': yd2}
-    net = MEE(xd, yshape)
-    x = torch.rand(B, xd, requires_grad=True)
-    y = {i: torch.rand(B, v[0], requires_grad=True)
-         for i, v in yshape.items()}
-    z = net(x, y)
-    z.backward(z.clone())
-    # print(z.requires_grad, z.grad_fn)
-    # Checking backward (edit forward to expose those variable again)
-    # print(net.scores_m.requires_grad, net.scores_m.grad_fn)
-    # print([(i.requires_grad, i.grad_fn) for i in net.scores_lst])
-
-    # TripletMEE
-    B = 3
-    xd, yd1, yd2 = 15, (10, 20), (14, 14)
-    yshape = {'1': yd1, '2': yd2}
-    extra = {'word_size': 5, 'lstm_layers':1, 'max_length':11}
-    net = TripletMEE(xd, yshape, **extra)
-    l = [random.randint(2, extra['max_length']) for i in range(B)]
-    l.sort(reverse=True)
-    x = [torch.rand(i, extra['word_size'], requires_grad=True) for i in l]
-    x_padded = pad_sequence(x, True)
-    y = {i: torch.rand(B, v[0], requires_grad=True)
-         for i, v in yshape.items()}
-    yn = {i: torch.rand(B, v[0], requires_grad=True)
-          for i, v in yshape.items()}
-    z = net(x_padded, l, y, yn)
-    z_ = z[0] + z[1]
-    z_.backward(z_.clone())
-    assert z[-1] is None

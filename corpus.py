@@ -5,6 +5,7 @@ from collections import OrderedDict
 
 import h5py
 import numpy as np
+import torch
 
 from np_segments_ops import non_maxima_suppresion
 
@@ -258,6 +259,131 @@ class CorpusAsDistanceMatrix():
         return self.segments2ind[tuple(segment)]
 
 
+class CorpusVideoMomentRetrievalBase():
+    """Composite abstraction for scalable moment retrieval from video corpus
+
+    For simplicity the database is held in memory, and we perform exhaustive
+    search. However, the abstraction was conceived to throw all the history of
+    efficient indexing, such as PQ-codes, into it.
+
+    Notes:
+        - Our scientific tables are torch tensors `video_indices`, `segments`,
+          `moments_tables`, `entries_per_video` amenable for indexing. There
+          is a lot of repetition in many of them which could be exploited to
+          make them compact.
+        - `models` have a `search` method that returns a vector with the size
+           of the table i.e. all the elements that we give to them. Such that
+           we can do late fusion of models.
+        - Works for models that learnt distance functions btw embedding.
+          Extending to similarities should be trivial (I guess).
+    """
+
+    def __init__(self, dataset, dict_of_models, alpha=None):
+        self.dataset = dataset
+        self.models = dict_of_models
+        if alpha is None:
+            self.alpha = {key: 1 /len(dict_of_models)
+                          for key in dict_of_models}
+        assert dataset.cues.keys() == dict_of_models.keys()
+        assert dict_of_models.keys() == self.alpha.keys()
+        self.num_videos = None
+        self.num_moments = None
+        self.video_indices = None
+        self.entries_per_video = None
+        self.segments = None
+        self.moments_tables = None
+
+    def indexing(self):
+        "Create tables to retrieve videos, segments and store codes"
+        raise NotImplementedError('Subclass and implement your indexing')
+
+    def preprocess_description(self, description):
+        "Return tensors representing description as 1) vectors and 2) length"
+        assert isinstance(description, list)
+        # TODO (release): allow to tokenize description
+        lang_feature_, len_query_ = self.dataset._compute_language_feature(
+            description)
+        # torchify
+        lang_feature = torch.from_numpy(lang_feature_)
+        lang_feature.unsqueeze_(0)
+        len_query = torch.tensor([len_query_])
+        return lang_feature, len_query
+
+    def postprocess(self, distance):
+        "apply postprocessing functions"
+        raise NotImplementedError('WIP')
+
+    def query(self, description):
+        "Return videos and moments aligned with a text description"
+        raise NotImplementedError('Subclass and implement your indexing')
+
+
+class MomentRetrievalFromProposalsTable(CorpusVideoMomentRetrievalBase):
+    """Retrieve Moments which aligns with pre-defined proposals
+
+    This abstraction suits MCN kind of models that embed a whole segment into
+    a common visual-text embedding space.
+    """
+
+    def __init__(self, *args, **kwargs):
+        super(MomentRetrievalFromProposalsTable, self).__init__(
+            *args, **kwargs)
+
+    def indexing(self):
+        "Create database of moments in videos"
+        num_entries_per_video = []
+        codes = {key: [] for key in self.models}
+        all_segments = []
+        # TODO (tier-2;design): define method in dataset to do this?
+        # batchify the fwd-pass
+        for video_id in self.dataset.videos:
+            representation_dict, segments_ = (
+                self.dataset._compute_visual_feature_eval(video_id))
+            num_entries_per_video.append(len(segments_))
+
+            # torchify
+            for key, value in representation_dict.items():
+                representation_dict[key] = torch.from_numpy(value)
+            segments = torch.from_numpy(segments_)
+
+            # Append items to database
+            all_segments.append(segments)
+            for key in self.dataset.cues:
+                segment_rep_k = representation_dict[key]
+                # get codes of the segments -> S_m x D matrix
+                codes[key].append(
+                    self.models[key].visual_encoder(segment_rep_k))
+        # Form the M * S x D matrix. S = \sum_{m=1}^M S_m.
+        # We have as many tables as visual cues
+        self.moments_tables = {key: torch.cat(value)
+                               for key, value in codes.items()}
+        # TODO (tier-2; design): organize this better
+        self.num_videos = len(num_entries_per_video)
+        self.entries_per_video = torch.tensor(num_entries_per_video)
+        self.segments = torch.cat(all_segments)
+        self.num_moments = int(self.segments.shape[0])
+        video_indices = np.repeat(
+            np.arange(0, len(self.dataset.videos)),
+            num_entries_per_video)
+        self.video_indices = torch.from_numpy(video_indices)
+
+    def query(self, description):
+        "Search moments based on a text description given as list of words"
+        lang_feature, len_query = self.preprocess_description(description)
+        score_list, descending_list = [], []
+        for key, model_k in self.models.items():
+            lang_code = model_k.encode_query(lang_feature, len_query)
+            scores_k, descending_k = model_k.search(
+                lang_code, self.moments_tables[key])
+            score_list.append(scores_k * self.alpha[key])
+            descending_list.append(descending_k)
+        scores = sum(score_list)
+        # assert np.unique(descending_list).shape[0] == 1
+        scores, ind = scores.sort(descending=descending_k)
+        # TODO (tier-1): enable bell and whistles
+        return self.video_indices[ind], self.segments[ind, :]
+
+
 if __name__ == '__main__':
     _filename = 'data/interim/mcn/corpus_val_rgb.hdf5'
     _corpus = Corpus(_filename)
@@ -270,3 +396,40 @@ if __name__ == '__main__':
         _sample_key = list(fid.keys())[0]
         _sample_value = fid[_sample_key][:]
     _corpus.index(_sample_value)
+
+    # Unit-test
+    from dataset_untrimmed import UntrimmedMCN
+    from proposals import SlidingWindowMSFS
+    from model import MCN
+    np.random.seed(1701)
+
+    charades_data = 'data/processed/charades-sta'
+    dataset_setup = dict(
+        json_file=f'{charades_data}/test.json',
+        cues={'rgb': {'file': f'{charades_data}/rgb_resnet152_max_cs-3.h5'}},
+        loc=True,
+        context=True,
+        debug=True,
+        eval=True,
+        proposals_interface=SlidingWindowMSFS(
+            length=3,
+            num_scales=8,
+            stride=3,
+            unique=True
+        )
+    )
+    dataset = UntrimmedMCN(**dataset_setup)
+    arch_setup = dict(
+        visual_size=dataset.visual_size['rgb'],
+        lang_size=dataset.language_size,
+        max_length=dataset.max_words,
+        embedding_size=100,
+        visual_hidden=500,
+        lang_hidden=1000,
+        visual_layers=1
+    )
+    model = {'rgb': MCN(**arch_setup)}
+    subject = MomentRetrievalFromProposalsTable(dataset, model)
+    subject.indexing()
+    ind = np.random.randint(0, len(dataset))
+    subject.query(dataset.metadata[ind]['language_input'])

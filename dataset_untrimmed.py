@@ -314,10 +314,15 @@ class UntrimmedMCN(UntrimmedBasedMCNStyle):
 
 
 class UntrimmedSMCN(UntrimmedBasedMCNStyle):
-    "Data feeder for SMCN"
+    """Data feeder for SMCN
 
-    def __init__(self, *args, max_clips=None, **kwargs):
+    Attributes
+        padding (bool): if True the representation is padded with zeros.
+    """
+
+    def __init__(self, *args, max_clips=None, padding=True, **kwargs):
         super(UntrimmedSMCN, self).__init__(*args, **kwargs)
+        self.padding = padding
         if not self.eval:
             max_clips = self.max_number_of_clips()
         self.visual_interface = VisualRepresentationSMCN(
@@ -349,7 +354,8 @@ class UntrimmedSMCN(UntrimmedBasedMCNStyle):
                 np.float32, copy=False)
         # whatever masks is fine given that we don't consider time responsive
         # features yet?
-        feature_collection['mask'] = mask.astype(np.float32, copy=False)
+        dtype = np.float32 if self.padding else np.int64
+        feature_collection['mask'] = mask.astype(dtype, copy=False)
         return feature_collection
 
     def _compute_visual_feature_eval(self, video_id):
@@ -364,8 +370,16 @@ class UntrimmedSMCN(UntrimmedBasedMCNStyle):
              for t in candidates]
         )
         for k, v in candidates_rep.items():
-            candidates_rep[k] = np.stack(v)
+            if self.padding:
+                candidates_rep[k] = np.stack(v)
+            else:
+                candidates_rep[k] = np.concatenate(v, axis=0)
         return candidates_rep, candidates
+
+    def set_padding(self, padding):
+        "Change padding mode"
+        self.padding = padding
+        self.visual_interface.padding = padding
 
 
 class TemporalEndpointFeature():
@@ -443,12 +457,13 @@ class VisualRepresentationSMCN():
     """
 
     def __init__(self, context=True, dtype=np.float32, eps=1e-6,
-                 max_clips=None):
+                 max_clips=None, padding=True):
         self.context = context
         self.size_factor = context + 1
         self.dtype = dtype
         self.eps = eps
         self.max_clips = max_clips
+        self.padding = padding
 
     def __call__(self, features, moment_loc, time_unit=TIME_UNIT):
         n_feat, f_dim = features.shape
@@ -462,6 +477,8 @@ class VisualRepresentationSMCN():
         im_end = int((moment_loc[1] - self.eps) // time_unit)
         # T := \mathcal{T} but in this case is the cardinality of the set
         T = im_end - im_start + 1
+        if not self.padding:
+            n_feat = T
         padded_data = np.zeros((n_feat, f_dim * self.size_factor),
                                dtype=self.dtype)
         # mask is numpy array of type self.dtype to avoid upstream casting
@@ -474,7 +491,9 @@ class VisualRepresentationSMCN():
             ic_start, ic_end = 0, len(features) - 1
             padded_data[:T, f_dim:2 * f_dim] = normalization1d(
                 ic_start, ic_end, features)
-        return padded_data, mask
+        if self.padding:
+            return padded_data, mask
+        return padded_data, np.array([T])
 
     def _local_feature(self, start, end, x):
         "Return normalized representation of each clip/chunk"
@@ -615,3 +634,7 @@ if __name__ == '__main__':
     dataset.debug = False
     item = dataset[ind]
     assert len(item) == 7
+    print('\tpadding')
+    dataset.set_padding(False)
+    for k, v in dataset[ind][2].items():
+        print(f'\tMode:', k, v.shape)

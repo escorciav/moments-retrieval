@@ -363,44 +363,97 @@ class CorpusVideoMomentRetrievalEvalFromMatrix():
 
 
 if __name__ == '__main__':
-    args = None
-    if args is None:
-        return
-    args.corpus_h5 = None  # path to HDF5 with feature matrix of corpus
-    args.queries_h5 = None  # path HDF5 with feature matrix of queries
-    args.distance_h5 = None  # path to HDF5-file with distance matrix
-    args.json_file = None  # Path to JSON with DiDeMo format
-    args.full = None # HDF5 with distance matrix
-    if args.distance_h5.exists():
-        _judge = CorpusVideoMomentRetrievalEvalFromMatrix(
-            args.json_file, args.distance_h5, (1, 5, 10), 0.1)
-        _performance = _judge.eval()
-        print('R@{0:}={1:};\nmRank={2:.2f};'
-              .format(_judge.k, *_performance))
-        output_filename = 'corpus_moment_retrieval_from_matrix.results'
-        with open(f'{args.dirname}/{output_filename}', 'x') as f:
-            json.dump({'k': _judge.k, 'performance': _performance}, f)
-        exit()
+    import argparse
+    import logging
+    from pathlib import Path
 
-    _judge = RetrievalEvaluation(args.corpus_h5, args.json_file,
-                                 (1, 5, 10), 0.1)
-    with h5py.File(args.queries_h5, 'r') as fid:
-        import time
-        start = time.time()
-        for _sample_key, h5ds in fid.items():
-            _query_id = int(_sample_key)
-            _query_vector = h5ds[:]
-            _judge.eval_single_vector(_query_vector, _query_id)
-        _performace = _judge.eval(full=args.full)
-        print('Elapsed time:', time.time() - start)
-        if args.full:
-            print('R@{0:}={2:};\nR@{0:},{1:}={3:};\nR@{0:},didemo={4:};\n'
-                  'mIOU={5:.4f};\nmRank={6:.2f};'
-                  .format(_judge.k, _judge.iou_threshold,
-                          *_performace))
-        else:
-            print('R@{0:}={1:};\nmRank={2:.2f};'
-                  .format(_judge.k, *_performace))
-        output_filename = 'corpus_moment_retrieval.results'
-        with open(f'{args.dirname}/{output_filename}', 'x') as f:
-            json.dump({'k': _judge.k, 'performance': _performace}, f)
+    from tqdm import tqdm
+
+    from corpus import MomentRetrievalFromProposalsTable
+    from dataset_untrimmed import UntrimmedMCN
+    from proposals import SlidingWindowMSFS
+    from model import MCN
+    from utils import setup_logging
+
+    parser = argparse.ArgumentParser(
+        description='Corpus Retrieval Evaluation for MCN')
+    # Data
+    parser.add_argument('--test-list', type=Path, required=True,
+                        help='JSON-file with corpus instances')
+    parser.add_argument('--h5-path', type=Path, required=True,
+                        help='HDF5-file with features')
+    # Architecture
+    parser.add_argument('--snapshot', type=Path, required=True,
+                        help='pht.tar file with model parameters')
+    parser.add_argument('--snapshot-args', type=Path, required=True,
+                        help='JSON-file file with model parameters')
+    # Debug
+    parser.add_argument('--debug', action='store_true',
+                    help=('yield incorrect results! to verify we are gluing '
+                          'things (dataset, model, eval) correctly'))
+    args = parser.parse_args()
+    args.logfile = Path('')
+    setup_logging(args)
+
+    logging.info('Corpus Retrieval Evaluation for MCN')
+    logging.info('Parsing JSON file with hyper-parameters')
+    with open(args.snapshot_args, 'r') as fid:
+        model_hp = json.load(fid)
+
+    logging.info('Loading dataset')
+    dataset_setup = dict(
+        json_file=args.test_list,
+        cues={model_hp['feat']: {'file': args.h5_path}},
+        loc=model_hp['loc'],
+        context=model_hp['context'],
+        debug=args.debug,
+        eval=True,
+        proposals_interface=SlidingWindowMSFS(
+            length=model_hp['min_length'],
+            num_scales=model_hp['num_scales'],
+            stride=model_hp['stride'],
+            unique=True
+        )
+    )
+    dataset = UntrimmedMCN(**dataset_setup)
+
+    logging.info('Setting up model')
+    if model_hp.get('lang_hidden') is None:
+        # Fallback option when we weren't recording arch hyper-parameters
+        logging.warning('Inferring model hyper-parameters from snapshot')
+        weights = torch.load(args.snapshot)['state_dict']
+        model_hp['embedding_size'] = weights['lang_encoder.bias'].shape[0]
+        model_hp['visual_hidden'] = weights['visual_encoder.0.bias'].shape[0]
+        # Assumed that we were using LSTM
+        model_hp['lang_hidden'] = weights[
+            'sentence_encoder.weight_ih_l0'].shape[0] // 4
+        num_layers = sum([1 for layer_name in weights.keys()
+                          if layer_name.startswith('visual_encoder')]) // 2
+        model_hp['visual_layers'] = num_layers - 1
+    arch_setup = dict(
+        visual_size=dataset.visual_size['rgb'],
+        lang_size=dataset.language_size,
+        max_length=dataset.max_words,
+        embedding_size=model_hp['embedding_size'],
+        visual_hidden=model_hp['visual_hidden'],
+        lang_hidden=model_hp['lang_hidden'],
+        visual_layers=model_hp['visual_layers'],
+    )
+    models_dict = {model_hp['feat']: MCN(**arch_setup)}
+    models_dict[model_hp['feat']].load_state_dict(
+        torch.load(args.snapshot)['state_dict'])
+    models_dict[model_hp['feat']].eval()
+
+    logging.info('Creating database alas indexing corpus')
+    engine = MomentRetrievalFromProposalsTable(dataset, models_dict)
+    engine.indexing()
+
+    logging.info('Launch evaluation...')
+    judge = CorpusVideoMomentRetrievalEval()
+    for query_metadata in tqdm(dataset.metadata):
+        vid_indices, segments = engine.query(query_metadata['language_input'])
+        judge.add_single_predicted_moment_info(
+            query_metadata, vid_indices, segments)
+
+    logging.info('Summarizing results')
+    judge.evaluate()

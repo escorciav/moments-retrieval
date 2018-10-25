@@ -3,6 +3,7 @@ import json
 from itertools import product
 
 import numpy as np
+import torch
 
 from corpus import Corpus, CorpusAsDistanceMatrix
 from dataset import Queries
@@ -60,8 +61,94 @@ def single_moment_retrieval(true_segments, pred_segments,
     return hit_topk_iou
 
 
+class CorpusVideoMomentRetrievalEval():
+    """
+
+    Note:
+        - method:evaluate change the type of `_rank_iou` and `_hit_iou_k` to
+          block the addition of new instances. This also ease retrieval of per
+          query metrics.
+    """
+
+    def __init__(self, topk=(1, 5, 10), iou_thresholds=[0.5, 0.7]):
+        self.topk = topk
+        # 0-indexed rank
+        self.topk_ = torch.tensor(topk) - 1
+        self.iou_thresholds = iou_thresholds
+        self.map_query = {}
+        self._rank_iou = [[] for i in iou_thresholds]
+        self._hit_iou_k = [[] for i in iou_thresholds]
+        self.medrank_iou = [None] * len(iou_thresholds)
+        self.stdrank_iou = [None] * len(iou_thresholds)
+        self.recall_iou_k = [None] * len(iou_thresholds)
+        # TODO: define attributes
+
+    def add_single_predicted_moment_info(self, query_info, video_indices,
+                                         pred_segments):
+        """Compute rank@IOU and hit@IOU,k per query
+
+        Args:
+            query_info (dict) : metadata about the moment. Mandatory
+                key:values are a unique hashable `annotation_id`; an integer
+                of the `video_index`; numpy array of shape [N x 2] with the
+                ground-truth `times`.
+            video_indices (torch tensor) : ranked vector of shape [M]
+                representing videos associated with query_info.
+            pred_segments (torch tensor) : ranked segments of shape [M x 2]
+                representing segments inside the videos associated with
+                query_info.
+        """
+        query_id = query_info.get('annotation_id')
+        if query_id in self.map_query:
+            raise ValueError('query was already added to the list')
+        ind = len(self._rank_iou)
+        true_video = query_info.get('video_index')
+        true_segments = query_info.get('times')
+        true_segments = torch.from_numpy(true_segments)
+        hit_video = video_indices == true_video
+        iou_matrix = torch_iou(pred_segments, true_segments)
+        for i, iou_threshold in enumerate(self.iou_thresholds):
+            # TODO(tier-1): threshold over annotators. We need a fix >= for
+            # DiDeMo
+            hit_segment = (iou_matrix >= iou_threshold).sum(dim=1) >= 1
+            hit_iou = hit_segment & hit_video
+            rank_iou = (hit_iou != 0).nonzero()
+            if len(rank_iou) == 0:
+                # shall we use nan? study localization vs retrieval errors
+                rank_iou = torch.tensor(
+                    [len(pred_segments)], device=video_indices.device)
+            else:
+                rank_iou = rank_iou[0]
+            self._rank_iou[i].append(rank_iou)
+            self._hit_iou_k[i].append(self.topk_ >= rank_iou)
+        # Lock query-id and record index for debugging
+        self.map_query[query_id] = ind
+
+    def evaluate(self):
+        "Compute MedRank@IOU and R@IOU,k accross the dataset"
+        if self.medrank_iou[0] is not None:
+            return
+        num_queries = len(self.map_query)
+        for i, _ in enumerate(self.iou_thresholds):
+            self._rank_iou[i] = torch.cat(self._rank_iou[i])
+            # report results as 1-indexed ranks for humans
+            ranks_i = self._rank_iou[i] + 1
+            self.medrank_iou[i] = torch.median(ranks_i)
+            self.stdrank_iou[i] = torch.std(ranks_i.float())
+            self._hit_iou_k[i] = torch.stack(self._hit_iou_k[i])
+            recall_i = self._hit_iou_k[i].sum(dim=0) / num_queries
+            self.recall_iou_k[i] = recall_i
+        self._rank_iou = torch.stack(self._rank_iou).transpose_(0, 1)
+        self._hit_iou_k = torch.stack(self._hit_iou_k).transpose_(0, 1)
+
+
 class RetrievalEvaluation():
-    "TODO: count search for a given query_id"
+    """First implementation used to evaluate corpus video moment retrieval
+
+    DEPRECATED
+
+    TODO: count search for a given query_id
+    """
     # to run the evaluation again
     # _judge.reset()
 
@@ -169,6 +256,8 @@ class RetrievalEvaluation():
 class CorpusVideoMomentRetrievalEvalFromMatrix():
     """Helper for Corpus video moment retrieval from distance matrix
 
+    DEPRECATED. Replaced by CorpusVideoMomentRetrievalEval.
+
     TODO: refactor to avoid code-duplication
     """
 
@@ -274,20 +363,14 @@ class CorpusVideoMomentRetrievalEvalFromMatrix():
 
 
 if __name__ == '__main__':
-    import argparse
-    import json
-    from pathlib import Path
-    import h5py
-    parser = argparse.ArgumentParser(description='pseudo unit-test')
-    parser.add_argument('--corpus-h5',
-                        default='data/interim/mcn/corpus_val_rgb.hdf5')
-    parser.add_argument('--queries-h5',
-                        default='data/interim/mcn/queries_val_rgb.hdf5')
-    parser.add_argument('--json-file', default='data/raw/val_data_wwa.json')
-    parser.add_argument('--distance-h5', type=Path, default='non-existent')
-    parser.add_argument('--full', action='store_true', help='more metrics')
-    parser.add_argument('--dirname', default='test_output')
-    args = parser.parse_args()
+    args = None
+    if args is None:
+        return
+    args.corpus_h5 = None  # path to HDF5 with feature matrix of corpus
+    args.queries_h5 = None  # path HDF5 with feature matrix of queries
+    args.distance_h5 = None  # path to HDF5-file with distance matrix
+    args.json_file = None  # Path to JSON with DiDeMo format
+    args.full = None # HDF5 with distance matrix
     if args.distance_h5.exists():
         _judge = CorpusVideoMomentRetrievalEvalFromMatrix(
             args.json_file, args.distance_h5, (1, 5, 10), 0.1)

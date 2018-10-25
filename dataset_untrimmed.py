@@ -67,9 +67,14 @@ class UntrimmedBase(Dataset):
             self.metadata = data['moments']
             self.metadata_per_video = data['videos']
             self.time_unit = data['time_unit']
+            for i, key in enumerate(self.metadata_per_video):
+                self.metadata_per_video[key]['index'] = i
             for i, moment in enumerate(self.metadata):
+                video_id = self.metadata[i]['video']
                 self.metadata[i]['times'] = np.array(
                     moment['times'], dtype=np.float32)
+                self.metadata[i]['video_index'] = (
+                    self.metadata_per_video[video_id]['index'])
         self._preprocess_descriptions()
 
     def _update_metadata_per_video(self):

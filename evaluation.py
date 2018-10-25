@@ -81,7 +81,7 @@ class CorpusVideoMomentRetrievalEval():
         self.medrank_iou = [None] * len(iou_thresholds)
         self.stdrank_iou = [None] * len(iou_thresholds)
         self.recall_iou_k = [None] * len(iou_thresholds)
-        # TODO: define attributes
+        self.performance = None
 
     def add_single_predicted_moment_info(self, query_info, video_indices,
                                          pred_segments):
@@ -126,8 +126,8 @@ class CorpusVideoMomentRetrievalEval():
 
     def evaluate(self):
         "Compute MedRank@IOU and R@IOU,k accross the dataset"
-        if self.medrank_iou[0] is not None:
-            return
+        if self.performance is not None:
+            return self.performance
         num_queries = len(self.map_query)
         for i, _ in enumerate(self.iou_thresholds):
             self._rank_iou[i] = torch.cat(self._rank_iou[i])
@@ -140,6 +140,18 @@ class CorpusVideoMomentRetrievalEval():
             self.recall_iou_k[i] = recall_i
         self._rank_iou = torch.stack(self._rank_iou).transpose_(0, 1)
         self._hit_iou_k = torch.stack(self._hit_iou_k).transpose_(0, 1)
+        self._consolidate_results()
+        return self.performance
+
+    def _consolidate_results(self):
+        "Create dict with all the metrics"
+        self.performance = {}
+        for i, iou in enumerate(self.iou_thresholds):
+            self.performance[f'MedRank@{iou}'] = self.medrank_iou[i]
+            self.performance[f'StdRand@{iou}'] = self.medrank_iou[i]
+            for j, topk in enumerate(self.topk):
+                self.performance[f'Recall@{topk},{iou}'] = (
+                    self.recall_iou_k[i][j])
 
 
 class RetrievalEvaluation():
@@ -456,4 +468,5 @@ if __name__ == '__main__':
             query_metadata, vid_indices, segments)
 
     logging.info('Summarizing results')
-    judge.evaluate()
+    result = judge.evaluate()
+    _ = [logging.info(f'{k}: {v}') for k, v in result.items()]

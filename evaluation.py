@@ -381,10 +381,10 @@ if __name__ == '__main__':
 
     from tqdm import tqdm
 
-    from corpus import MomentRetrievalFromProposalsTable
-    from dataset_untrimmed import UntrimmedMCN
+    import corpus
+    import dataset_untrimmed
+    import model
     from proposals import SlidingWindowMSFS
-    from model import MCN
     from utils import setup_logging
 
     parser = argparse.ArgumentParser(
@@ -399,6 +399,16 @@ if __name__ == '__main__':
                         help='pht.tar file with model parameters')
     parser.add_argument('--snapshot-args', type=Path, required=True,
                         help='JSON-file file with model parameters')
+    # Extras
+    parser.add_argument('--arch', choices=model.MOMENT_RETRIEVAL_MODELS,
+                        default='MCN',
+                        help='model architecture, only for old JSON files')
+    parser.add_argument('--dataset', choices=model.MOMENT_RETRIEVAL_MODELS,
+                        default='UntrimmedMCN',
+                        help='model architecture, only for old JSON files')
+    parser.add_argument('--engine', choices=model.MOMENT_RETRIEVAL_MODELS,
+                        default='MomentRetrievalFromProposalsTable',
+                        help='Type of engine')
     # Debug
     parser.add_argument('--debug', action='store_true',
                     help=('yield incorrect results! to verify we are gluing '
@@ -408,9 +418,23 @@ if __name__ == '__main__':
     setup_logging(args)
 
     logging.info('Corpus Retrieval Evaluation for MCN')
+    logging.info(args)
     logging.info('Parsing JSON file with hyper-parameters')
     with open(args.snapshot_args, 'r') as fid:
         model_hp = json.load(fid)
+        if model_hp.get('arch') is None:
+            logging.warning(f'Old JSON-file. Using `arch`: {args.arch}')
+            model_hp['arch'] = args.arch
+        args.arch = model_hp['arch']
+
+    if args.arch == 'MCN':
+        args.dataset = 'UntrimmedMCN'
+        args.engine = 'MomentRetrievalFromProposalsTable'
+    elif args.arch == 'SMCN':
+        args.dataset = 'UntrimmedSMCN'
+        args.engine = 'MomentRetrievalFromClipBasedProposalsTable'
+    else:
+        logging.warning('Using `dataset` and `engine` classes given by user')
 
     logging.info('Loading dataset')
     dataset_setup = dict(
@@ -427,7 +451,9 @@ if __name__ == '__main__':
             unique=True
         )
     )
-    dataset = UntrimmedMCN(**dataset_setup)
+    dataset = dataset_untrimmed.__dict__[args.dataset](**dataset_setup)
+    if args.arch == 'SMCN':
+        dataset.set_padding(False)
 
     logging.info('Setting up model')
     if model_hp.get('lang_hidden') is None:
@@ -451,13 +477,13 @@ if __name__ == '__main__':
         lang_hidden=model_hp['lang_hidden'],
         visual_layers=model_hp['visual_layers'],
     )
-    models_dict = {model_hp['feat']: MCN(**arch_setup)}
+    models_dict = {model_hp['feat']: model.__dict__[args.arch](**arch_setup)}
     models_dict[model_hp['feat']].load_state_dict(
         torch.load(args.snapshot)['state_dict'])
     models_dict[model_hp['feat']].eval()
 
     logging.info('Creating database alas indexing corpus')
-    engine = MomentRetrievalFromProposalsTable(dataset, models_dict)
+    engine = corpus.__dict__[args.engine](dataset, models_dict)
     engine.indexing()
 
     logging.info('Launch evaluation...')

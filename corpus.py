@@ -16,7 +16,7 @@ for i in itertools.combinations(range(6), 2):
 
 
 class Corpus(object):
-    """Corpus of videos with clips of interest to index
+    """DEPRECATED. Corpus of videos with clips of interest to index
 
     TODO
         batch indexing
@@ -143,7 +143,7 @@ class Corpus(object):
 
 
 class CorpusAsDistanceMatrix():
-    """Distance matrix of video corpus
+    """DEPRECATED. Distance matrix of video corpus
 
     Retrieval by indexing columns of distance matrix pre-computed with
     moment_retrieval.py
@@ -350,10 +350,12 @@ class MomentRetrievalFromProposalsTable(CorpusVideoMomentRetrievalBase):
             all_segments.append(segments)
             for key in self.dataset.cues:
                 segment_rep_k = representation_dict[key]
-                # get codes of the segments -> S_m x D matrix
+                # get codes of the segments -> S_i x D matrix
+                # S_i := num segments in ith-video
                 codes[key].append(
                     self.models[key].visual_encoder(segment_rep_k))
-        # Form the M * S x D matrix. S = \sum_{m=1}^M S_m.
+        # Form the (M * S) x D matrix.
+        # M := number of videos, S = \sum_{i=1}^M S_i
         # We have as many tables as visual cues
         self.moments_tables = {key: torch.cat(value)
                                for key, value in codes.items()}
@@ -375,6 +377,100 @@ class MomentRetrievalFromProposalsTable(CorpusVideoMomentRetrievalBase):
             lang_code = model_k.encode_query(lang_feature, len_query)
             scores_k, descending_k = model_k.search(
                 lang_code, self.moments_tables[key])
+            score_list.append(scores_k * self.alpha[key])
+            descending_list.append(descending_k)
+        scores = sum(score_list)
+        # assert np.unique(descending_list).shape[0] == 1
+        scores, ind = scores.sort(descending=descending_k)
+        # TODO (tier-1): enable bell and whistles
+        return self.video_indices[ind], self.segments[ind, :]
+
+
+class MomentRetrievalFromClipBasedProposalsTable(
+        CorpusVideoMomentRetrievalBase):
+    """Retrieve Moments using a clip based model
+
+    This abstraction suits SMCN kind of models that the representation of the
+    video clips into a common visual-text embedding space.
+
+    Note:
+        - Make sure to setup the dataset in a way that retrieves a 2D
+          `numpy:ndarray` with the representation of all the segments and a 1D
+          `numpy:ndarray` with the number of clips per segment as `mask`.
+        - currently this implementation deals with the more general case of
+          non-decomposable models. Note that decomposable models would admit
+          smaller tables.
+    """
+
+    def __init__(self, *args, **kwargs):
+        super(MomentRetrievalFromClipBasedProposalsTable, self).__init__(
+            *args, **kwargs)
+        self.clips_per_moment = None
+        self.clips_per_moment_list = None
+
+    def indexing(self):
+        "Create database of moments in videos"
+        num_entries_per_video = []
+        clips_per_moment = []
+        codes = {key: [] for key in self.models}
+        all_segments = []
+        # TODO (tier-2;design): define method in dataset to do this?
+        # batchify the fwd-pass
+        for video_id in self.dataset.videos:
+            representation_dict, segments_ = (
+                self.dataset._compute_visual_feature_eval(video_id))
+            num_entries_per_video.append(len(segments_))
+            num_clips_i = representation_dict['mask']
+            if num_clips_i.ndim != 1:
+                raise ValueError('Dataset setup incorrectly. Disable padding')
+
+            # torchify
+            for key, value in representation_dict.items():
+                if key == 'mask': continue
+                # get representation of all segments -> (S_i * C_j) x D matrix
+                # S_i := num segments in ith-video
+                # Each S_i spans c_j clips of the i-th video.
+                # C_j = \sum_{j=1}^{S_i} c_j := num clips over all S_i
+                # segments in the video
+                representation_dict[key] = torch.from_numpy(value)
+            segments = torch.from_numpy(segments_)
+            clips_per_moment.append(torch.from_numpy(num_clips_i))
+
+            # Append items to database
+            all_segments.append(segments)
+            for key in self.dataset.cues:
+                segment_rep_k = representation_dict[key]
+                # get codes of the segments -> (S_i * C_j) x D matrix
+                codes[key].append(
+                    self.models[key].visual_encoder(segment_rep_k))
+        # Form the (M * S * C) x D matrix
+        # M := number of videos, S = \sum_{i=1}^M S_i
+        # C = \sum_{i=1}^M \sum_{j=1}^{S_i} c_j
+        # We have as many tables as visual cues
+        self.moments_tables = {key: torch.cat(value)
+                               for key, value in codes.items()}
+        # TODO (tier-2; design): organize this better
+        self.num_videos = len(num_entries_per_video)
+        self.entries_per_video = torch.tensor(num_entries_per_video)
+        self.segments = torch.cat(all_segments)
+        self.num_moments = int(self.segments.shape[0])
+        video_indices = np.repeat(
+            np.arange(0, len(self.dataset.videos)),
+            num_entries_per_video)
+        self.video_indices = torch.from_numpy(video_indices)
+        self.clips_per_moment = torch.cat(clips_per_moment)
+        self.clips_per_moment_list = self.clips_per_moment.tolist()
+        self.clips_per_moment = self.clips_per_moment.float()
+
+    def query(self, description):
+        "Search moments based on a text description given as list of words"
+        lang_feature, len_query = self.preprocess_description(description)
+        score_list, descending_list = [], []
+        for key, model_k in self.models.items():
+            lang_code = model_k.encode_query(lang_feature, len_query)
+            scores_k, descending_k = model_k.search(
+                lang_code, self.moments_tables[key], self.clips_per_moment,
+                self.clips_per_moment_list)
             score_list.append(scores_k * self.alpha[key])
             descending_list.append(descending_k)
         scores = sum(score_list)

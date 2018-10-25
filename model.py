@@ -2,6 +2,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from torch.nn.utils.rnn import pack_padded_sequence, pad_packed_sequence
+from torch.nn.utils.rnn import pad_sequence
 
 MOMENT_RETRIEVAL_MODELS = ['MCN', 'SMCN', 'SMCNTalcv1']
 
@@ -203,9 +204,21 @@ class SMCN(MCN):
                 mask_n_inter)
         return c_pos, c_neg_intra, c_neg_inter
 
-    def search(self, query, table):
-        "Exhaustive search of query in table"
-        raise NotImplementedError
+    def search(self, query, table, clips_per_segment, clips_per_segment_list):
+        """Exhaustive search of query in table
+
+        TODO: batch to avoid out of memory?
+        """
+        clip_distance = self.compare_emdeddings(
+            query, table).split(clips_per_segment_list)
+        _, ind = clips_per_segment.sort(descending=True)
+        padded_distance = pad_sequence([clip_distance[i] for i in ind],
+                                       batch_first=True)
+        sorted_segment_distance = (padded_distance.sum(dim=1) /
+                                   clips_per_segment)
+        _, original_ind = ind.sort(descending=False)
+        segment_distance = sorted_segment_distance[original_ind]
+        return segment_distance, False
 
     def _unpack_visual(self, *args):
         "Get visual feature inside a dict"

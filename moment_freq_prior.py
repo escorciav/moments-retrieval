@@ -1,18 +1,11 @@
 """Frequency prior baseline
 
-Note: trivial baseline based on the original MCN model. A more sophisticated
-adaption should take into account the video length. However, this would yield
-to continuous PDF which should be approximated via KDE or similar techniques.
+Huge thanks to @ModarTensai for a helpful discussion that elucidated the
+procedure for the KDE approach.
 
-Please reach @escorciav out if you are interested in implementing such kind of
-baseline. @ModarTensai helped me to sketch out a nice approach which we could
-not implement due to lack of time.
-1. Estimate f, a 2D-pdf of start-point and duration in train set.
-2. Given video proposals
-    a. Estimate the prob of each proposas i.e. p_i <- f(s_i) where s_i is a
-       given segment proposal and p_i is the likelihood of being sampled.
-3. From there you can sample with replacement, possibly applying NMS to
-   sample with "diversity", or return the sorted segments.
+TODO?
+1. Implement sample with replacement, possibly applying NMS, in between. Such
+   that we sample with "diversity" instead od returning the sorted segments.
 """
 import argparse
 import logging
@@ -21,6 +14,7 @@ from pathlib import Path
 
 import numpy as np
 import torch
+from scipy.stats import gaussian_kde
 
 import dataset_untrimmed
 import proposals
@@ -38,6 +32,9 @@ parser.add_argument('--train-list', type=Path, default='non-existent',
                     help='JSON-file with training instances')
 parser.add_argument('--test-list', type=Path, default='non-existent',
                     help='JSON-file with training instances')
+# Type pf freq prior approximation
+parser.add_argument('--kde', action='store_true',
+                    help='Perform continous analysis')
 # Features
 parser.add_argument('--feat', default='rgb',
                     help='Record the type of feature used (modality)')
@@ -59,26 +56,46 @@ args = parser.parse_args()
 
 def main(args):
     setup_logging(args)
+    logging.info('Moment frequency prior')
+    logging.info(args)
     logging.info('Setting-up datasets')
     train_dataset, test_dataset = setup_dataset(args)
     logging.info('Estimating prior')
     moment_freq_prior = DiscreteFrequencyPrior()
+    if args.kde:
+        moment_freq_prior = KDEFrequencyPrior()
     # "training"
     for i, data in enumerate(train_dataset):
         gt_segments, pred_segments = data[-2:]
-        moment_freq_prior.update(gt_segments, pred_segments)
+        duration_i = video_duration(train_dataset, i)
+        moment_freq_prior.update(gt_segments, pred_segments, duration_i)
+    logging.info('Model fitting')
     moment_freq_prior.fit()
 
     # testing
     logging.info(f'* Evaluation')
-    pred_segments = torch.from_numpy(moment_freq_prior.predict())
+    if not args.kde:
+        pred_segments = torch.from_numpy(moment_freq_prior.predict())
     meters = Multimeter(keys=METRICS)
     for i, data in enumerate(test_dataset):
+        duration_i = video_duration(train_dataset, i)
         gt_segments = torch.from_numpy(data[-2])
+        if args.kde:
+            pred_segments_ = data[-1]
+            prob = moment_freq_prior.predict(pred_segments_, duration_i)
+            ind = prob.argsort()
+            pred_segments_ = pred_segments_[ind[::-1], :]
+            pred_segments = torch.from_numpy(pred_segments_)
         hit_k_iou = single_moment_retrieval(
             gt_segments, pred_segments, TOPK_IOU_POINTS)
         meters.update([i.item() for i in hit_k_iou])
     logging.info(f'{meters.report()}')
+
+
+def video_duration(dataset, moment_index):
+    "Return duration of video of a given moment"
+    video_id = dataset.metadata[moment_index]['video']
+    return dataset.metadata_per_video[video_id]['duration']
 
 
 def setup_dataset(args):
@@ -107,7 +124,7 @@ class DiscreteFrequencyPrior():
         self.frequency = None
         self.segments = None
 
-    def update(self, gt_segments, pred_segments):
+    def update(self, gt_segments, pred_segments, duration=None):
         "Count how often a given segment appears"
         # TODO: use a soft-criteria such as IOU over pred_segments
         ind = np.unique(
@@ -130,8 +147,32 @@ class DiscreteFrequencyPrior():
         self.frequency = frequency[ind]
         self.segments = segments[ind, :].astype(np.float32)
 
-    def predict(self):
+    def predict(self, pred_segments=None, duration=None):
         return self.segments
+
+
+class KDEFrequencyPrior():
+    "Compute the frequency prior of segments in dataset"
+
+    def __init__(self):
+        self.table = []
+        self.num_segments = None
+        self.model = None
+
+    def update(self, gt_segments, pred_segments=None, duration=None):
+        "Count how often a given segment appears"
+        assert duration is not None
+        self.table.append(gt_segments / duration)
+
+    def fit(self):
+        "Sort table"
+        all_segments = np.row_stack(self.table).T
+        self.model = gaussian_kde(all_segments)
+
+    def predict(self, pred_segments=None, duration=None):
+        assert self.model is not None
+        normalized_segments = (pred_segments / duration).T
+        return self.model.pdf(normalized_segments)
 
 
 if __name__ == '__main__':

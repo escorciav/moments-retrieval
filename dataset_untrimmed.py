@@ -45,6 +45,8 @@ class UntrimmedBase(Dataset):
             - refactor duplicated code with Didemo
         """
         self.cues = cues
+        if cues is None:
+            return
         self.features = dict.fromkeys(cues.keys())
         for key, params in cues.items():
             with h5py.File(params.get('file', 'NO-filename'), 'r') as fid:
@@ -106,7 +108,7 @@ class UntrimmedBasedMCNStyle(UntrimmedBase):
 
     def __init__(self, json_file, cues=None, loc=True, max_words=50,
                  eval=False, context=True, proposals_interface=None,
-                 debug=False):
+                 no_visual=False, debug=False):
         super(UntrimmedBasedMCNStyle, self).__init__()
         self._setup_list(json_file)
         self._load_features(cues)
@@ -114,6 +116,7 @@ class UntrimmedBasedMCNStyle(UntrimmedBase):
         self.loc = loc
         self.context = context
         self.debug = debug
+        self.no_visual = no_visual
         self.visual_interface = None
         self.tef_interface = None
         self.proposals_interface = None
@@ -125,6 +128,9 @@ class UntrimmedBasedMCNStyle(UntrimmedBase):
             self.lang_interface = LanguageRepresentationMCN(max_words)
         if self.loc:
             self.tef_interface = TemporalEndpointFeature()
+        else:
+            # we need features to align with language
+            assert not no_visual
         if self.eval:
             self.eval = True
             self.proposals_interface = proposals_interface
@@ -281,6 +287,8 @@ class UntrimmedMCN(UntrimmedBasedMCNStyle):
 
     def _compute_visual_feature(self, video_id, moment_loc, video_duration):
         "Return visual features plus TEF for a given segment in the video"
+        if self.no_visual:
+            return self._only_tef(video_id, moment_loc, video_duration)
         feature_collection = {}
         for key, feat_db in self.features.items():
             feature_video = feat_db[video_id]
@@ -311,6 +319,14 @@ class UntrimmedMCN(UntrimmedBasedMCNStyle):
         for k, v in candidates_rep.items():
             candidates_rep[k] = np.concatenate(v).reshape((num_segments, -1))
         return candidates_rep, candidates
+
+    def _only_tef(self, video_id, moment_loc, video_duration):
+        feature_collection = {
+            'tef': self.tef_interface(moment_loc, video_duration)
+        }
+        feature_collection['tef'] = feature_collection['tef'].astype(
+            np.float32, copy=False)
+        return feature_collection
 
 
 class UntrimmedSMCN(UntrimmedBasedMCNStyle):

@@ -63,7 +63,7 @@ parser.add_argument('--evaluate', action='store_true',
 parser.add_argument('--feat', default='rgb',
                     help='Record the type of feature used (modality)')
 parser.add_argument('--h5-path', type=Path, default='non-existent',
-                    required=True, help='HDF5-file with features')
+                    help='HDF5-file with features')
 # Model features
 parser.add_argument('--no-loc', action='store_false', dest='loc',
                     help='Remove TEF features')
@@ -326,7 +326,10 @@ def setup_dataset(args):
 
     subset_files = [('train', args.train_list), ('val', args.val_list),
                     ('test', args.test_list)]
-    cues = {args.feat: {'file': args.h5_path}}
+    cues, no_visual = None, True
+    if args.h5_path.exists():
+        no_visual = False
+        cues = {args.feat: {'file': args.h5_path}}
     proposal_generator = proposals.SlidingWindowMSFS(
         args.min_length, args.num_scales, args.stride, unique=True)
     extras_dataset_configs = [
@@ -359,7 +362,7 @@ def setup_dataset(args):
         logging.info(f'Found {subset}-list: {filename}')
         dataset = dataset_untrimmed.__dict__[dataset_name](
             filename, cues=cues, loc=args.loc, context=args.context,
-            debug=args.debug, **extras_dataset)
+            no_visual=no_visual, debug=args.debug, **extras_dataset)
         logging.info(f'Setting loader')
         loaders.append(
             DataLoader(dataset, **extras_loader)

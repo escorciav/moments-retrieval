@@ -20,6 +20,7 @@ import dataset_untrimmed
 import proposals
 from evaluation import single_moment_retrieval
 from np_segments_ops import iou as segment_iou
+from np_segments_ops import non_maxima_suppresion
 from utils import setup_logging
 from utils import Multimeter
 
@@ -36,10 +37,8 @@ parser.add_argument('--test-list', type=Path, default='non-existent',
 parser.add_argument('--kde', action='store_true',
                     help='Perform continous analysis')
 # Features
-parser.add_argument('--feat', default='rgb',
+parser.add_argument('--feat', default='tef',
                     help='Record the type of feature used (modality)')
-parser.add_argument('--h5-path', type=Path, default='non-existent',
-                    required=True, help='HDF5-file with features')
 # Hyper-parameters to explore search space (inference)
 parser.add_argument('--min-length', type=float, default=3,
                     help='Minimum length of slidding windows (seconds)')
@@ -48,6 +47,7 @@ parser.add_argument('--num-scales', type=int, default=8,
                          'window')
 parser.add_argument('--stride', type=float, default=3,
                     help='stride of the slidding window (seconds)')
+parser.add_argument('--nms-threshold', type=float, default=0.5)
 # Logging
 parser.add_argument('--logfile', type=Path, default='', help='Logging file')
 
@@ -83,9 +83,12 @@ def main(args):
         if args.kde:
             pred_segments_ = data[-1]
             prob = moment_freq_prior.predict(pred_segments_, duration_i)
-            ind = prob.argsort()
-            pred_segments_ = pred_segments_[ind[::-1], :]
-            pred_segments = torch.from_numpy(pred_segments_)
+            if args.nms_threshold < 1:
+                ind = non_maxima_suppresion(
+                    pred_segments_, prob, args.nms_threshold)
+            else:
+                ind = prob.argsort()[::-1]
+            pred_segments = torch.from_numpy(pred_segments_[ind, :])
         hit_k_iou = single_moment_retrieval(
             gt_segments, pred_segments, TOPK_IOU_POINTS)
         meters.update([i.item() for i in hit_k_iou])
@@ -103,14 +106,14 @@ def setup_dataset(args):
     proposal_generator = proposals.SlidingWindowMSFS(
         args.min_length, args.num_scales, args.stride, unique=True)
     subset_files = [('train', args.train_list), ('test', args.test_list)]
-    cues = {args.feat: {'file': args.h5_path}}
     datasets = []
     for i, (subset, filename) in enumerate(subset_files):
         datasets.append(
             dataset_untrimmed.UntrimmedMCN(
-                filename, eval=True, proposals_interface=proposal_generator,
+                filename, proposals_interface=proposal_generator,
                 # we don't care about language only visual for lazy reasons
-                debug=True, cues=cues)
+                # similarly we don't care about eval or train mode
+                eval=True, debug=True, cues=None, no_visual=True, loc=True)
         )
     return datasets
 

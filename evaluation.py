@@ -136,7 +136,7 @@ class CorpusVideoMomentRetrievalEval():
             self.medrank_iou[i] = torch.median(ranks_i)
             self.stdrank_iou[i] = torch.std(ranks_i.float())
             self._hit_iou_k[i] = torch.stack(self._hit_iou_k[i])
-            recall_i = self._hit_iou_k[i].sum(dim=0) / num_queries
+            recall_i = self._hit_iou_k[i].sum(dim=0).float() / num_queries
             self.recall_iou_k[i] = recall_i
         self._rank_iou = torch.stack(self._rank_iou).transpose_(0, 1)
         self._hit_iou_k = torch.stack(self._hit_iou_k).transpose_(0, 1)
@@ -399,6 +399,9 @@ if __name__ == '__main__':
                         help='pht.tar file with model parameters')
     parser.add_argument('--snapshot-args', type=Path, required=True,
                         help='JSON-file file with model parameters')
+    # Evaluation parameters
+    parser.add_argument('--topk', nargs='+', default=[1, 10, 100, 1000, 10000],
+                        help='top-k values to compute')
     # Extras
     parser.add_argument('--arch', choices=model.MOMENT_RETRIEVAL_MODELS,
                         default='MCN',
@@ -487,7 +490,7 @@ if __name__ == '__main__':
     engine.indexing()
 
     logging.info('Launch evaluation...')
-    judge = CorpusVideoMomentRetrievalEval()
+    judge = CorpusVideoMomentRetrievalEval(topk=args.topk)
     for query_metadata in tqdm(dataset.metadata):
         vid_indices, segments = engine.query(query_metadata['language_input'])
         judge.add_single_predicted_moment_info(

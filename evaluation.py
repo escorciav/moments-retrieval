@@ -151,7 +151,7 @@ class CorpusVideoMomentRetrievalEval():
         self.performance = {}
         for i, iou in enumerate(self.iou_thresholds):
             self.performance[f'MedRank@{iou}'] = self.medrank_iou[i]
-            self.performance[f'StdRand@{iou}'] = self.medrank_iou[i]
+            self.performance[f'StdRand@{iou}'] = self.stdrank_iou[i]
             for j, topk in enumerate(self.topk):
                 self.performance[f'Recall@{topk},{iou}'] = (
                     self.recall_iou_k[i][j])

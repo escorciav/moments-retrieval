@@ -267,10 +267,10 @@ class CorpusVideoMomentRetrievalBase():
     efficient indexing, such as PQ-codes, into it.
 
     Notes:
-        - Our scientific tables are torch tensors `video_indices`, `segments`,
-          `moments_tables`, `entries_per_video` amenable for indexing. There
-          is a lot of repetition in many of them which could be exploited to
-          make them compact.
+        - Our scientific tables are torch tensors `video_indices`,
+          `proposals`, `moments_tables`, `entries_per_video` amenable for
+          indexing. There is a lot of repetition in many of them which could
+          be exploited to make them compact.
         - `models` have a `search` method that returns a vector with the size
            of the table i.e. all the elements that we give to them. Such that
            we can do late fusion of models.
@@ -290,11 +290,11 @@ class CorpusVideoMomentRetrievalBase():
         self.num_moments = None
         self.video_indices = None
         self.entries_per_video = None
-        self.segments = None
+        self.proposals = None
         self.moments_tables = None
 
     def indexing(self):
-        "Create tables to retrieve videos, segments and store codes"
+        "Create tables to retrieve videos, proposals and store codes"
         raise NotImplementedError('Subclass and implement your indexing')
 
     def preprocess_description(self, description):
@@ -333,28 +333,28 @@ class MomentRetrievalFromProposalsTable(CorpusVideoMomentRetrievalBase):
         "Create database of moments in videos"
         num_entries_per_video = []
         codes = {key: [] for key in self.models}
-        all_segments = []
+        all_proposals = []
         # TODO (tier-2;design): define method in dataset to do this?
         # batchify the fwd-pass
         for video_id in self.dataset.videos:
-            representation_dict, segments_ = (
+            representation_dict, proposals_ = (
                 self.dataset._compute_visual_feature_eval(video_id))
-            num_entries_per_video.append(len(segments_))
+            num_entries_per_video.append(len(proposals_))
 
             # torchify
             for key, value in representation_dict.items():
                 representation_dict[key] = torch.from_numpy(value)
-            segments = torch.from_numpy(segments_)
+            proposals = torch.from_numpy(proposals_)
 
             # Append items to database
-            all_segments.append(segments)
+            all_proposals.append(proposals)
             for key in self.dataset.cues:
                 segment_rep_k = representation_dict[key]
-                # get codes of the segments -> S_i x D matrix
-                # S_i := num segments in ith-video
+                # get codes of the proposals -> S_i x D matrix
+                # S_i := num proposals in ith-video
                 codes[key].append(
                     self.models[key].visual_encoder(segment_rep_k))
-        # Form the (M * S) x D matrix.
+        # Form the S x D matrix.
         # M := number of videos, S = \sum_{i=1}^M S_i
         # We have as many tables as visual cues
         self.moments_tables = {key: torch.cat(value)
@@ -362,8 +362,8 @@ class MomentRetrievalFromProposalsTable(CorpusVideoMomentRetrievalBase):
         # TODO (tier-2; design): organize this better
         self.num_videos = len(num_entries_per_video)
         self.entries_per_video = torch.tensor(num_entries_per_video)
-        self.segments = torch.cat(all_segments)
-        self.num_moments = int(self.segments.shape[0])
+        self.proposals = torch.cat(all_proposals)
+        self.num_moments = int(self.proposals.shape[0])
         video_indices = np.repeat(
             np.arange(0, len(self.dataset.videos)),
             num_entries_per_video)
@@ -395,8 +395,8 @@ class MomentRetrievalFromClipBasedProposalsTable(
 
     Note:
         - Make sure to setup the dataset in a way that retrieves a 2D
-          `numpy:ndarray` with the representation of all the segments and a 1D
-          `numpy:ndarray` with the number of clips per segment as `mask`.
+          `numpy:ndarray` with the representation of all the proposals and a
+          1D `numpy:ndarray` with the number of clips per segment as `mask`.
         - currently this implementation deals with the more general case of
           non-decomposable models. Note that decomposable models would admit
           smaller tables.
@@ -413,13 +413,13 @@ class MomentRetrievalFromClipBasedProposalsTable(
         num_entries_per_video = []
         clips_per_moment = []
         codes = {key: [] for key in self.models}
-        all_segments = []
+        all_proposals = []
         # TODO (tier-2;design): define method in dataset to do this?
         # batchify the fwd-pass
         for video_id in self.dataset.videos:
-            representation_dict, segments_ = (
+            representation_dict, proposals_ = (
                 self.dataset._compute_visual_feature_eval(video_id))
-            num_entries_per_video.append(len(segments_))
+            num_entries_per_video.append(len(proposals_))
             num_clips_i = representation_dict['mask']
             if num_clips_i.ndim != 1:
                 raise ValueError('Dataset setup incorrectly. Disable padding')
@@ -427,33 +427,32 @@ class MomentRetrievalFromClipBasedProposalsTable(
             # torchify
             for key, value in representation_dict.items():
                 if key == 'mask': continue
-                # get representation of all segments -> (S_i * C_j) x D matrix
-                # S_i := num segments in ith-video
-                # Each S_i spans c_j clips of the i-th video.
-                # C_j = \sum_{j=1}^{S_i} c_j := num clips over all S_i
-                # segments in the video
+                # get representation of all proposals
                 representation_dict[key] = torch.from_numpy(value)
-            segments = torch.from_numpy(segments_)
+            proposals = torch.from_numpy(proposals_)
             clips_per_moment.append(torch.from_numpy(num_clips_i))
 
             # Append items to database
-            all_segments.append(segments)
+            all_proposals.append(proposals)
             for key in self.dataset.cues:
                 segment_rep_k = representation_dict[key]
-                # get codes of the segments -> (S_i * C_j) x D matrix
+                # get codes of the proposals -> C_i x D matrix
+                # Given a video i with S_i number of prooposals
+                # Each proposal S_i spans c_ij clips of the i-th video.
+                # C_i = \sum_{j=1}^{S_i} c_ij := num clips over all S_i
+                # proposals in the i-th video
                 codes[key].append(
                     self.models[key].visual_encoder(segment_rep_k))
-        # Form the (M * S * C) x D matrix
-        # M := number of videos, S = \sum_{i=1}^M S_i
-        # C = \sum_{i=1}^M \sum_{j=1}^{S_i} c_j
+        # Form the C x D matrix
+        # M := number of videos, C = \sum_{i=1}^M C_i
         # We have as many tables as visual cues
         self.moments_tables = {key: torch.cat(value)
                                for key, value in codes.items()}
         # TODO (tier-2; design): organize this better
         self.num_videos = len(num_entries_per_video)
         self.entries_per_video = torch.tensor(num_entries_per_video)
-        self.segments = torch.cat(all_segments)
-        self.num_moments = int(self.segments.shape[0])
+        self.proposals = torch.cat(all_proposals)
+        self.num_moments = int(self.proposals.shape[0])
         video_indices = np.repeat(
             np.arange(0, len(self.dataset.videos)),
             num_entries_per_video)

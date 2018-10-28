@@ -211,11 +211,13 @@ class SMCN(MCN):
         """
         clip_distance = self.compare_emdeddings(
             query, table).split(clips_per_segment_list)
-        _, ind = clips_per_segment.sort(descending=True)
-        padded_distance = pad_sequence([clip_distance[i] for i in ind],
-                                       batch_first=True)
-        sorted_segment_distance = (padded_distance.sum(dim=1) /
-                                   clips_per_segment)
+        sorted_clips_per_segment, ind = clips_per_segment.sort(
+            descending=True)
+        # distance >= 0 thus we pad with zeros
+        clip_distance_padded = pad_sequence(
+            [clip_distance[i] for i in ind], batch_first=True)
+        sorted_segment_distance = (clip_distance_padded.sum(dim=1) /
+                                   sorted_clips_per_segment)
         _, original_ind = ind.sort(descending=False)
         segment_distance = sorted_segment_distance[original_ind]
         return segment_distance, False

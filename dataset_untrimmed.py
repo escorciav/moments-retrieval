@@ -24,7 +24,7 @@ class UntrimmedBase(Dataset):
         self.max_clips = None
         self.metadata = None
         self.metadata_per_video = None
-        self.video_list = None
+        self._video_list = None
         self.time_unit = TIME_UNIT
 
     def max_number_of_clips(self):
@@ -37,6 +37,13 @@ class UntrimmedBase(Dataset):
                 max_clips = max(max_clips, vid_metadata.get('num_clips', 0))
             self.max_clips = max_clips
         return self.max_clips
+
+    @property
+    def videos(self):
+        "Iterator over videos in Dataset"
+        if self._video_list is None:
+            self._video_list = list(self.metadata_per_video.keys())
+        return self._video_list
 
     def _load_features(self, cues):
         """Load visual features (coarse chunks) in memory
@@ -69,26 +76,48 @@ class UntrimmedBase(Dataset):
             self.metadata = data['moments']
             self.metadata_per_video = data['videos']
             self.time_unit = data['time_unit']
-            for i, key in enumerate(self.metadata_per_video):
-                self.metadata_per_video[key]['index'] = i
-            for i, moment in enumerate(self.metadata):
-                video_id = self.metadata[i]['video']
-                self.metadata[i]['times'] = np.array(
-                    moment['times'], dtype=np.float32)
-                self.metadata[i]['video_index'] = (
-                    self.metadata_per_video[video_id]['index'])
+            self._update_metadata_per_video()
+            self._update_metadata()
         self._preprocess_descriptions()
 
-    def _update_metadata_per_video(self):
-        "Add keys to each item in attribute:metadata_per_video"
-        pass
+    def _shrink_dataset(self):
+        "Make single video dataset to debug video corpus moment retrieval"
+        # TODO(tier-2;release): log if someone triggers this
+        ind = random.randint(0, len(self.videos) - 1)
+        self._video_list = [self._video_list[ind]]
+        video_id = self._video_list[0]
+        moment_indices = self.metadata_per_video[video_id]['moment_indices']
+        self.metadata = [self.metadata[i] for i in moment_indices]
+        self.metadata_per_video[video_id]['moment_indices'] = list(
+            range(len(self.metadata)))
 
-    @property
-    def videos(self):
-        "Iterator over videos in Dataset"
-        if self.video_list is None:
-            self.video_list = list(self.metadata_per_video.keys())
-        return self.video_list
+    def _update_metadata(self):
+        """Add keys to items in attribute:metadata plus extra update of videos
+
+        `video_index` field corresponds to the unique identifier of the video
+        that contains the moment.
+        Transforms `times` into numpy array for training.
+        """
+        for i, moment in enumerate(self.metadata):
+            video_id = self.metadata[i]['video']
+            self.metadata[i]['times'] = np.array(
+                moment['times'], dtype=np.float32)
+            self.metadata[i]['video_index'] = (
+                self.metadata_per_video[video_id]['index'])
+            self.metadata_per_video[video_id]['moment_indices'].append(i)
+
+    def _update_metadata_per_video(self):
+        """Add keys to items in attribute:metadata_per_video
+
+        `index` field corresponds to a unique identifier for the video in the
+        dataset to evaluate moment retrieval from a corpus.
+        `moment_indices` field corresponds to the indices of the moments that
+        comes from a particular video.
+        """
+        for i, key in enumerate(self.metadata_per_video):
+            self.metadata_per_video[key]['index'] = i
+            # This field is populated by _update_metadata
+            self.metadata_per_video[key]['moment_indices'] = []
 
     def __len__(self):
         return len(self.metadata)

@@ -1,4 +1,4 @@
-"DiDeMo evaluation"
+"Moment retrieval evaluation in a single video or a video corpus"
 import json
 from itertools import product
 
@@ -14,16 +14,19 @@ DEFAULT_TOPK_AND_IOUTHRESHOLDS = tuple(product((1, 5), (0.5, 0.7)))
 
 
 def iou(gt, pred):
+    "Taken from @LisaAnne/LocalizingMoments project"
     intersection = max(0, min(pred[1], gt[1]) + 1 - max(pred[0], gt[0]))
     union = max(pred[1], gt[1]) + 1 - min(pred[0], gt[0])
     return intersection / union
 
 
 def rank(gt, pred):
+    "Taken from @LisaAnne/LocalizingMoments project"
     return pred.index(tuple(gt)) + 1
 
 
 def video_evaluation(gt, predictions, k=(1, 5)):
+    "Single video moment retrieval evaluation with Python data-structures"
     top_segment = predictions[0]
     ious = [iou(top_segment, s) for s in gt]
     average_iou = np.mean(np.sort(ious)[-3:])
@@ -62,7 +65,7 @@ def single_moment_retrieval(true_segments, pred_segments,
 
 
 class CorpusVideoMomentRetrievalEval():
-    """
+    """Evaluation of moments retrieval from a video corpus
 
     Note:
         - method:evaluate change the type of `_rank_iou` and `_hit_iou_k` to

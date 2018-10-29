@@ -380,6 +380,7 @@ class CorpusVideoMomentRetrievalEvalFromMatrix():
 if __name__ == '__main__':
     import argparse
     import logging
+    from datetime import datetime
     from pathlib import Path
 
     from tqdm import tqdm
@@ -403,7 +404,8 @@ if __name__ == '__main__':
     parser.add_argument('--snapshot-args', type=Path, required=True,
                         help='JSON-file file with model parameters')
     # Evaluation parameters
-    parser.add_argument('--topk', nargs='+', default=[1, 10, 100, 1000, 10000],
+    parser.add_argument('--topk', nargs='+', type=int,
+                        default=[1, 10, 100, 1000, 10000],
                         help='top-k values to compute')
     # Extras
     parser.add_argument('--arch', choices=model.MOMENT_RETRIEVAL_MODELS,
@@ -415,12 +417,18 @@ if __name__ == '__main__':
     parser.add_argument('--engine', choices=model.MOMENT_RETRIEVAL_MODELS,
                         default='MomentRetrievalFromProposalsTable',
                         help='Type of engine')
+    # Dump results and logs
+    parser.add_argument('--dump', action='store_true',
+                        help='Save log in text file and json')
     # Debug
     parser.add_argument('--debug', action='store_true',
                     help=('yield incorrect results! to verify we are gluing '
                           'things (dataset, model, eval) correctly'))
     args = parser.parse_args()
     args.logfile = Path('')
+    if args.dump:
+        args.logfile = args.snapshot_args.with_suffix('').with_name(
+            args.snapshot_args.stem + '_corpus-eval.log')
     setup_logging(args)
 
     logging.info('Corpus Retrieval Evaluation for MCN')
@@ -493,6 +501,11 @@ if __name__ == '__main__':
     engine.indexing()
 
     logging.info('Launch evaluation...')
+    # log-scale up to the end of the database
+    if len(args.topk) == 1 and args.topk[0] == 0:
+        exp = int(np.floor(np.log10(engine.num_moments)))
+        args.topk = [10**i for i in range(0, exp + 1)]
+        args.topk.append(engine.num_moments)
     judge = CorpusVideoMomentRetrievalEval(topk=args.topk)
     for query_metadata in tqdm(dataset.metadata):
         vid_indices, segments = engine.query(query_metadata['language_input'])
@@ -500,5 +513,15 @@ if __name__ == '__main__':
             query_metadata, vid_indices, segments)
 
     logging.info('Summarizing results')
+    logging.info(f'Number of queries: {len(judge.map_query)}')
+    logging.info(f'Number of proposals: {engine.num_moments}')
     result = judge.evaluate()
     _ = [logging.info(f'{k}: {v}') for k, v in result.items()]
+    if args.dump:
+        filename = args.logfile.with_suffix('.json')
+        logging.info(f'Dumping results into: {filename}')
+        with open(filename, 'x') as fid:
+            for key, value in result.items():
+                result[key] = float(value)
+            result['date'] = datetime.now().isoformat()
+            json.dump(result, fid)

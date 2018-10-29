@@ -1,4 +1,6 @@
 "Group multiple methods to generate salient temporal windows in a video"
+import itertools
+
 import numpy as np
 
 
@@ -7,6 +9,22 @@ class TemporalProposalsBase():
 
     def __call__(self, video_id, metadata=None, feature_collection=None):
         raise NotImplementedError('Implement with the signature above')
+
+
+class DidemoICCV17SS(TemporalProposalsBase):
+    "Original search space of moments proposed in ICCV-2017"
+    time_unit = 5
+
+    def __init__(self, *args, dtype=np.float32, **kwargs):
+        clips_indices = [(0, 0), (1, 1), (2, 2), (3, 3), (4, 4), (5, 5)]
+        for i in itertools.combinations(range(len(clips_indices)), 2):
+            clips_indices.append(i)
+        self.proposals = np.array(clips_indices, dtype=dtype)
+        self.proposals *= self.time_unit
+        self.proposals[:, 1] += self.time_unit
+
+    def __call__(self, *args, **kwargs):
+        return self.proposals
 
 
 class SlidingWindowMSFS(TemporalProposalsBase):
@@ -46,5 +64,10 @@ class SlidingWindowMSFS(TemporalProposalsBase):
 
 
 if __name__ == '__main__':
-    proposal_fn = SlidingWindowMSFS(3, 5, 3)
-    x = proposal_fn('hola', {'duration': 15})
+    test_fns_args = [(SlidingWindowMSFS, (3, 5, 3)),
+                     (DidemoICCV17SS, ())]
+    for fn_i, args_i in test_fns_args:
+        proposal_fn = fn_i(*args_i)
+        x = proposal_fn('hola', {'duration': 15})
+        if fn_i == DidemoICCV17SS:
+            assert len(x) == 21

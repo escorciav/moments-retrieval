@@ -86,8 +86,8 @@ def make_annotations_df(instances, file_h5):
                                  for i in instances])
     videos_set = {i for i in instances_df['video'].unique()}
     instances_gbv = instances_df.groupby('video')
+    videos_info = []
     with h5py.File(file_h5, 'r') as f:
-        videos_info = []
         for video_id, dataset in f.items():
             if video_id not in videos_set:
                 continue

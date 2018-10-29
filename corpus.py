@@ -383,7 +383,7 @@ class MomentRetrievalFromProposalsTable(CorpusVideoMomentRetrievalBase):
         # assert np.unique(descending_list).shape[0] == 1
         scores, ind = scores.sort(descending=descending_k)
         # TODO (tier-1): enable bell and whistles
-        return self.video_indices[ind], self.segments[ind, :]
+        return self.video_indices[ind], self.proposals[ind, :]
 
 
 class MomentRetrievalFromClipBasedProposalsTable(
@@ -476,7 +476,7 @@ class MomentRetrievalFromClipBasedProposalsTable(
         # assert np.unique(descending_list).shape[0] == 1
         scores, ind = scores.sort(descending=descending_k)
         # TODO (tier-1): enable bell and whistles
-        return self.video_indices[ind], self.segments[ind, :]
+        return self.video_indices[ind], self.proposals[ind, :]
 
 
 if __name__ == '__main__':

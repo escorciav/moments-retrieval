@@ -426,7 +426,9 @@ if __name__ == '__main__':
                           'things (dataset, model, eval) correctly'))
     args = parser.parse_args()
     args.logfile = Path('')
+    args.disable_tqdm = False
     if args.dump:
+        args.disable_tqdm = True
         args.logfile = args.snapshot_args.with_suffix('').with_name(
             args.snapshot_args.stem + '_corpus-eval.log')
     setup_logging(args)
@@ -493,7 +495,9 @@ if __name__ == '__main__':
     )
     models_dict = {model_hp['feat']: model.__dict__[args.arch](**arch_setup)}
     models_dict[model_hp['feat']].load_state_dict(
-        torch.load(args.snapshot)['state_dict'])
+        torch.load(args.snapshot,
+                   map_location=lambda storage, loc: storage)['state_dict']
+    )
     models_dict[model_hp['feat']].eval()
 
     logging.info('Creating database alas indexing corpus')
@@ -507,7 +511,7 @@ if __name__ == '__main__':
         args.topk = [10**i for i in range(0, exp + 1)]
         args.topk.append(engine.num_moments)
     judge = CorpusVideoMomentRetrievalEval(topk=args.topk)
-    for query_metadata in tqdm(dataset.metadata):
+    for query_metadata in tqdm(dataset.metadata, disable=args.disable_tqdm):
         vid_indices, segments = engine.query(query_metadata['language_input'])
         judge.add_single_predicted_moment_info(
             query_metadata, vid_indices, segments)

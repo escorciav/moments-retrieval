@@ -438,7 +438,8 @@ if __name__ == '__main__':
     if args.dump:
         args.disable_tqdm = True
         args.logfile = args.snapshot_args.with_suffix('').with_name(
-            args.snapshot_args.stem + '_corpus-eval.log')
+            args.snapshot_args.stem +
+            f'_corpus-eval_{args.test_list.stem}.log')
     setup_logging(args)
 
     logging.info('Corpus Retrieval Evaluation for MCN')

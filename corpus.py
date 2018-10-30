@@ -331,6 +331,7 @@ class MomentRetrievalFromProposalsTable(CorpusVideoMomentRetrievalBase):
 
     def indexing(self):
         "Create database of moments in videos"
+        torch.set_grad_enabled(False)
         num_entries_per_video = []
         codes = {key: [] for key in self.models}
         all_proposals = []
@@ -371,6 +372,7 @@ class MomentRetrievalFromProposalsTable(CorpusVideoMomentRetrievalBase):
 
     def query(self, description):
         "Search moments based on a text description given as list of words"
+        torch.set_grad_enabled(False)
         lang_feature, len_query = self.preprocess_description(description)
         score_list, descending_list = [], []
         for key, model_k in self.models.items():
@@ -410,6 +412,7 @@ class MomentRetrievalFromClipBasedProposalsTable(
 
     def indexing(self):
         "Create database of moments in videos"
+        torch.set_grad_enabled(False)
         num_entries_per_video = []
         clips_per_moment = []
         codes = {key: [] for key in self.models}
@@ -463,6 +466,7 @@ class MomentRetrievalFromClipBasedProposalsTable(
 
     def query(self, description):
         "Search moments based on a text description given as list of words"
+        torch.set_grad_enabled(False)
         lang_feature, len_query = self.preprocess_description(description)
         score_list, descending_list = [], []
         for key, model_k in self.models.items():

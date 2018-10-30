@@ -3,6 +3,8 @@ import itertools
 
 import numpy as np
 
+PROPOSAL_SCHEMES = ['DidemoICCV17SS', 'SlidingWindowMSFS']
+
 
 class TemporalProposalsBase():
     "Base class (signature) to generate temporal candidate in video"

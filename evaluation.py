@@ -107,13 +107,18 @@ class CorpusVideoMomentRetrievalEval():
         ind = len(self._rank_iou)
         true_video = query_info.get('video_index')
         true_segments = query_info.get('times')
+        concensus_among_annotators = 1
+        if true_segments.shape[0] > 1:
+            concensus_among_annotators = 2
+
         true_segments = torch.from_numpy(true_segments)
         hit_video = video_indices == true_video
         iou_matrix = torch_iou(pred_segments, true_segments)
         for i, iou_threshold in enumerate(self.iou_thresholds):
             # TODO(tier-1): threshold over annotators. We need a fix >= for
             # DiDeMo
-            hit_segment = (iou_matrix >= iou_threshold).sum(dim=1) >= 1
+            hit_segment = ((iou_matrix >= iou_threshold).sum(dim=1) >=
+                           concensus_among_annotators)
             hit_iou = hit_segment & hit_video
             rank_iou = (hit_iou != 0).nonzero()
             if len(rank_iou) == 0:
@@ -388,7 +393,7 @@ if __name__ == '__main__':
     import corpus
     import dataset_untrimmed
     import model
-    from proposals import SlidingWindowMSFS
+    import proposals
     from utils import setup_logging
 
     parser = argparse.ArgumentParser(
@@ -417,6 +422,9 @@ if __name__ == '__main__':
     parser.add_argument('--engine', choices=model.MOMENT_RETRIEVAL_MODELS,
                         default='MomentRetrievalFromProposalsTable',
                         help='Type of engine')
+    parser.add_argument('--proposal-interface', default='SlidingWindowMSFS',
+                        choices=proposals.PROPOSAL_SCHEMES,
+                        help='Type of proposals spanning search space')
     # Dump results and logs
     parser.add_argument('--dump', action='store_true',
                         help='Save log in text file and json')
@@ -460,10 +468,10 @@ if __name__ == '__main__':
         context=model_hp['context'],
         debug=args.debug,
         eval=True,
-        proposals_interface=SlidingWindowMSFS(
-            length=model_hp['min_length'],
-            num_scales=model_hp['num_scales'],
-            stride=model_hp['stride'],
+        proposals_interface=proposals.__dict__[args.proposal_interface](
+            length=model_hp.get('min_length'),
+            num_scales=model_hp.get('num_scales'),
+            stride=model_hp.get('stride'),
             unique=True
         )
     )
@@ -474,6 +482,7 @@ if __name__ == '__main__':
     logging.info('Setting up model')
     if model_hp.get('lang_hidden') is None:
         # Fallback option when we weren't recording arch hyper-parameters
+        # TODO(tier-2;cleanup;release): move this to model or utils
         logging.warning('Inferring model hyper-parameters from snapshot')
         weights = torch.load(args.snapshot)['state_dict']
         model_hp['embedding_size'] = weights['lang_encoder.bias'].shape[0]

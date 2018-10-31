@@ -10,7 +10,9 @@ from dataset import Queries
 from np_segments_ops import iou as numpy_iou
 from np_segments_ops import torch_iou
 
-DEFAULT_TOPK_AND_IOUTHRESHOLDS = tuple(product((1, 5), (0.5, 0.7)))
+IOU_THRESHOLDS = (0.5, 0.7)
+TOPK = (1, 5)
+DEFAULT_TOPK_AND_IOUTHRESHOLDS = tuple(product(TOPK, IOU_THRESHOLDS))
 
 
 def iou(gt, pred):
@@ -37,31 +39,39 @@ def video_evaluation(gt, predictions, k=(1, 5)):
 
 
 def single_moment_retrieval(true_segments, pred_segments,
-                            k_iou=DEFAULT_TOPK_AND_IOUTHRESHOLDS):
+                            iou_thresholds=IOU_THRESHOLDS,
+                            topk=torch.tensor(TOPK)):
     """Compute if a given segment is retrieved in top-k for a given IOU
 
     Args:
-        true_segments (torch tensor) : shape [1, 2] holding 1 segments.
+        true_segments (torch tensor) : shape [N, 2] holding 1 segments.
         pred_segments (torch tensor) : shape [M, 2] holding M segments sorted
             by their scores. pred_segment[0, :] is the most confident segment
             retrieved.
-        k_iou (sequence of pairs) : a pair represents the top-k and iou
-            threshold used for evaluation. It must be sorted in ascending
-            order based on top-k i.e. k_iou[-1][0] is the largest k.
+        iou_thresholds (sequence) : of iou thresholds of length [P] that
+            determine if a prediction matched a true segment.
+        topk (torch tensor) : shape [Q] holding ranks to consider.
     Returns:
-        list of torch tensors indicating if the true segment was found for a
-        given iou_threshold
+        torch tensor of shape [P * Q] indicate if the true segment was found
+        for a given pair of top-k,iou. The first Q elements results correspond
+        to all the topk for the iou[0] and so on.
     """
+    concensus_among_annotators = 1 if len(true_segments) == 1 else 2
+    P, Q = len(iou_thresholds), len(topk)
     iou_matrix = torch_iou(pred_segments, true_segments)
-    max_k = k_iou[-1][0]
-    if iou_matrix.shape[0] < max_k:
-        n_times = round(max_k / iou_matrix.shape[0])
-        iou_matrix = iou_matrix.repeat(n_times, 1)
-    hit_topk_iou = []
-    for top_k, iou_threshold in k_iou:
-        best_iou_topk, _ = iou_matrix[:top_k, :].max(dim=0)
-        hit_topk_iou.append(best_iou_topk >= iou_threshold)
-    return hit_topk_iou
+    # TODO: check type
+    hit_k_iou = torch.empty(P * Q, dtype=torch.uint8,
+                            device=iou_matrix.device)
+    for i, threshold in enumerate(iou_thresholds):
+        hit_iou = ((iou_matrix >= threshold).sum(dim=1) >=
+                    concensus_among_annotators)
+        rank_iou = (hit_iou != 0).nonzero()
+        if len(rank_iou) == 0:
+            hit_k_iou[i * Q:(i + 1) * Q] = 0
+        else:
+            # 0-indexed -> +1
+            hit_k_iou[i * Q:(i + 1) * Q] = topk >= (rank_iou[0] + 1)
+    return hit_k_iou
 
 
 class CorpusVideoMomentRetrievalEval():
@@ -73,7 +83,7 @@ class CorpusVideoMomentRetrievalEval():
           query metrics.
     """
 
-    def __init__(self, topk=(1, 5, 10), iou_thresholds=[0.5, 0.7]):
+    def __init__(self, topk=(1, 5), iou_thresholds=IOU_THRESHOLDS):
         self.topk = topk
         # 0-indexed rank
         self.topk_ = torch.tensor(topk) - 1
@@ -115,8 +125,6 @@ class CorpusVideoMomentRetrievalEval():
         hit_video = video_indices == true_video
         iou_matrix = torch_iou(pred_segments, true_segments)
         for i, iou_threshold in enumerate(self.iou_thresholds):
-            # TODO(tier-1): threshold over annotators. We need a fix >= for
-            # DiDeMo
             hit_segment = ((iou_matrix >= iou_threshold).sum(dim=1) >=
                            concensus_among_annotators)
             hit_iou = hit_segment & hit_video
@@ -397,7 +405,8 @@ if __name__ == '__main__':
     from utils import setup_logging
 
     parser = argparse.ArgumentParser(
-        description='Corpus Retrieval Evaluation for MCN')
+        description='Corpus Retrieval Evaluation',
+        formatter_class=argparse.ArgumentDefaultsHelpFormatter)
     # Data
     parser.add_argument('--test-list', type=Path, required=True,
                         help='JSON-file with corpus instances')

@@ -22,6 +22,10 @@ data_files=(
   data/processed/activitynet-captions/val.json
   data/processed/activitynet-captions/train.json
   data/processed/activitynet-captions/rgb_resnet152_max_cs-5.h5
+  data/processed/didemo/rgb_resnet152_max.h5
+  data/processed/didemo/train.json
+  data/processed/didemo/val.json
+  data/processed/didemo/test.json
 )
 
 if [ ! -d $origin ]; then

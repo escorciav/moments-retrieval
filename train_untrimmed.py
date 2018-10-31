@@ -24,15 +24,17 @@ from np_segments_ops import non_maxima_suppresion
 
 OPTIMIZER = ['sgd', 'sgd_caffe']
 EVAL_BATCH_SIZE = 1
-TOPK_IOU_POINTS = tuple(product((1, 5), (0.5, 0.7)))
-TOPK = 5  # the maximum in the first tuple on the line above :)
-METRICS = [f'r@{k},{iou}' for k, iou in TOPK_IOU_POINTS]
-HIT_K_IOU = [f'hit@{k},{iou}' for k, iou in TOPK_IOU_POINTS]
-VARS_TO_RECORD = ['id'] + HIT_K_IOU + ['scores', 'topk_segments']
+TOPK, IOU_THRESHOLDS = (1, 5), (0.5, 0.7)
+MAX_TOPK = max(TOPK)
+METRICS = [f'r@{k},{iou}' for iou, k in product(IOU_THRESHOLDS, TOPK)]
+VARS_TO_RECORD = ['id', 'hit@iou,k', 'scores', 'topk_segments']
 TRACK = 'r@1,0.7'
 BEST_RESULT = 0.0
 
-parser = argparse.ArgumentParser(description='*MCN training')
+parser = argparse.ArgumentParser(
+    description='*MCN training',
+    formatter_class=argparse.ArgumentDefaultsHelpFormatter
+)
 # Data
 parser.add_argument('--train-list', type=Path, default='non-existent',
                     help='JSON-file with training instances')
@@ -79,6 +81,9 @@ parser.add_argument('--w-intra', type=float, default=0.5,
 parser.add_argument('--original-setup', action='store_true',
                     help='Enable original optimization policy')
 # Hyper-parameters to explore search space (inference)
+parser.add_argument('--proposal-interface', default='SlidingWindowMSFS',
+                    choices=proposals.PROPOSAL_SCHEMES,
+                    help='Type of proposals spanning search space')
 parser.add_argument('--min-length', type=float, default=3,
                     help='Minimum length of slidding windows (seconds)')
 parser.add_argument('--num-scales', type=int, default=8,
@@ -131,9 +136,10 @@ parser.add_argument('--hps', action='store_true',
 parser.add_argument('--debug', action='store_true',
                     help=('yield incorrect results! only to verify things '
                           '(loaders, ops) can run well'))
-# TODO: HPS
 
 args = parser.parse_args()
+args.topk = torch.tensor(TOPK)
+args.iou_thresholds = IOU_THRESHOLDS
 
 
 def main(args):
@@ -145,6 +151,7 @@ def main(args):
     if args.gpu_id >= 0 and torch.cuda.is_available():
         args.device = torch.device(f'cuda:{args.gpu_id}')
         device_name = torch.cuda.get_device_name(args.gpu_id)
+        args.topk = args.topk.cuda(device=args.device,  non_blocking=True)
     logging.info(f'Git revision hash:  {get_git_revision_hash()}')
     logging.info(f'{args.arch} in untrimmed videos')
     logging.info(args)
@@ -272,28 +279,29 @@ def validation(args, net, loader):
 
             gt_segment, segments = minibatch[-2:]
             if args.nms_threshold < 1:
-                segments, scores = segments.cpu(), results.cpu()
+                # TODO(tier-1): port to torch
+                gt_segment, segments = minibatch_[-2:]
+                scores = results.cpu()
                 idx = non_maxima_suppresion(
                     segments.numpy(), -scores.numpy(), args.nms_threshold)
                 sorted_segments = segments[idx]
-                gt_segment = gt_segment.cpu()
             else:
                 scores, idx = results.sort(descending=descending)
                 sorted_segments = segments[idx, :]
 
-            # Note: these next two lines look a bit slower and stupid, #sorry
             hit_k_iou = single_moment_retrieval(
-                gt_segment, sorted_segments, TOPK_IOU_POINTS)
+                gt_segment, sorted_segments, topk=args.topk)
+            # TODO(tier-2;profile): seems a bit slow
             meters.update([i.item() for i in hit_k_iou])
             time_meters.update([batch_time, time.time() - end])
             if tracker:
                 # artifact to ease Tracker job for few number of segments
-                if scores.shape[0] < TOPK:
-                    n_times = round(TOPK / scores.shape[0])
+                if scores.shape[0] < MAX_TOPK:
+                    n_times = round(MAX_TOPK / scores.shape[0])
                     scores = scores.repeat(n_times)
                     sorted_segments = sorted_segments.repeat(n_times, 1)
-                tracker.append(it, *hit_k_iou, scores[: TOPK],
-                               sorted_segments[:TOPK, :])
+                tracker.append(it, hit_k_iou, scores[: MAX_TOPK],
+                               sorted_segments[:MAX_TOPK, :])
             end = time.time()
     logging.info(f'{time_meters.report()}\t{meters.report()}')
     if tracker:
@@ -330,7 +338,7 @@ def setup_dataset(args):
     if args.h5_path.exists():
         no_visual = False
         cues = {args.feat: {'file': args.h5_path}}
-    proposal_generator = proposals.SlidingWindowMSFS(
+    proposal_generator = proposals.__dict__[args.proposal_interface](
         args.min_length, args.num_scales, args.stride, unique=True)
     extras_dataset_configs = [
         # Training

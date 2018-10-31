@@ -70,12 +70,13 @@ def dumping_arguments(args, val_performance=None, test_performance=None,
                       perf_per_sample_val=None, perf_per_sample_test=None):
     """Quick-and-dirty way to save args and results
 
-    Note: next time we put this inside the torch.save and khalas!
+    TODO: put this inside torch.save and khalas!
     """
     if len(args.logfile.name) == 0:
         return
     result_file = args.logfile.with_suffix('.json')
     device = args.device
+    topk = args.topk
     # Update dict with performance and remove non-serializable stuff
     args.logfile = str(args.logfile)
     args.h5_path = str(args.h5_path) if args.h5_path.exists() else None
@@ -84,6 +85,7 @@ def dumping_arguments(args, val_performance=None, test_performance=None,
     args.test_list = str(args.test_list) if args.test_list.exists() else None
     args.snapshot = str(args.snapshot) if args.snapshot.exists() else None
     args.device = None
+    args.topk = args.topk.tolist()
     args_dict = vars(args)
     if val_performance is not None:
         args_dict.update({f'val_{k}': v for k, v in val_performance.items()})
@@ -98,6 +100,7 @@ def dumping_arguments(args, val_performance=None, test_performance=None,
         dump_tensors_as_hdf5(args.logfile + '_instances_rst_test.h5',
                              perf_per_sample_test)
     args.device = device
+    args.topk = topk
 
 
 def dump_tensors_as_hdf5(filename, tensors_as_dict_values):

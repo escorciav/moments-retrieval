@@ -391,6 +391,8 @@ class UntrimmedSMCN(UntrimmedBasedMCNStyle):
             as TEF. In practice, if you can decompose your model/features
             it's more efficient to re-write the final pooling.
         """
+        if self.no_visual:
+            return self._only_tef(video_id, moment_loc)
         video_duration = self._video_duration(video_id)
         num_clips = self._video_num_clips(video_id)
         feature_collection = {}
@@ -436,6 +438,22 @@ class UntrimmedSMCN(UntrimmedBasedMCNStyle):
         "Change padding mode"
         self.padding = padding
         self.visual_interface.padding = padding
+        
+    def _only_tef(self, video_id, moment_loc):
+        video_duration = self._video_duration(video_id)
+        time_unit = self.time_unit
+        num_clips = self._video_num_clips(video_id)
+        if not self.eval:
+            num_clips = self.max_number_of_clips()
+        padded_data = np.zeros((num_clips, 2), dtype=np.float32)
+        mask = np.zeros(num_clips, dtype=np.float32)
+        im_start = int(moment_loc[0] // time_unit)
+        im_end = int((moment_loc[1] - 1e-6) // time_unit)
+        T = im_end - im_start + 1
+        padded_data[:T, :] = self.tef_interface(moment_loc, video_duration)
+        mask[:T] = 1
+        feature_collection = {'tef': padded_data, 'mask': mask}
+        return feature_collection
 
 
 class TemporalEndpointFeature():

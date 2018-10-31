@@ -119,6 +119,14 @@ class UntrimmedBase(Dataset):
             # This field is populated by _update_metadata
             self.metadata_per_video[key]['moment_indices'] = []
 
+    def _video_duration(self, video_id):
+        "Return duration of a given video"
+        return self.metadata_per_video[video_id]['duration']
+
+    def _video_num_clips(self, video_id):
+        "Return number of clips of a given video"
+        return self.metadata_per_video[video_id]['num_clips']
+
     def __len__(self):
         return len(self.metadata)
 
@@ -188,7 +196,7 @@ class UntrimmedBasedMCNStyle(UntrimmedBase):
         len_query = min(len(query), self.max_words)
         return feature, len_query
 
-    def _compute_visual_feature(self, video_id, moment_loc, video_duration):
+    def _compute_visual_feature(self, video_id, moment_loc):
         raise NotImplementedError
 
     def _compute_visual_feature_eval(self, video_id):
@@ -229,7 +237,7 @@ class UntrimmedBasedMCNStyle(UntrimmedBase):
         "Sample another moment inside the video"
         moment_i = self.metadata[idx]
         video_id = moment_i['video']
-        video_duration = self.metadata_per_video[video_id]['duration']
+        video_duration = self._video_duration(video_id)
         tiou = 1
         while tiou >= self.MAGIC_TIOU:
             # sample segment
@@ -247,39 +255,38 @@ class UntrimmedBasedMCNStyle(UntrimmedBase):
             union = u_end - u_start
 
             tiou = intersection / union
-        return self._compute_visual_feature(
-            video_id, sampled_loc, video_duration)
+        return self._compute_visual_feature(video_id, sampled_loc)
 
     def _negative_inter_sampling(self, idx, moment_loc):
         "Sample another moment from other video as in original MCN paper"
         moment_i = self.metadata[idx]
         video_id = moment_i['video']
-        video_duration = self.metadata_per_video[video_id]['duration']
+        video_duration = self._video_duration(video_id)
         other_video = video_id
         while other_video == video_id:
-            idx = int(random.random()*len(self.metadata))
+            idx = int(random.random() * len(self.metadata))
             other_video = self.metadata[idx]['video']
         # MCN-strategy as close as possible
-        other_video_duration = self.metadata_per_video[other_video]['duration']
+        other_video_duration = self._video_duration(other_video)
         sampled_loc = moment_loc
         if other_video_duration < video_duration:
             sampled_loc = [random.random() * other_video_duration,
                            random.random() * other_video_duration]
             sampled_loc = [min(sampled_loc), max(sampled_loc)]
-        return self._compute_visual_feature(
-            other_video, sampled_loc, other_video_duration)
+        return self._compute_visual_feature(other_video, sampled_loc)
 
     def _train_item(self, idx):
         "Return anchor, positive, negatives"
         moment_i = self.metadata[idx]
-        time = moment_i['time']
         query = moment_i['language_input']
         video_id = moment_i['video']
-        video_i = self.metadata_per_video[video_id]
-        video_duration = video_i['duration']
+        time = moment_i['time']
+        # Sample a positive annotations if there are multiple
+        if time is None:
+            ind_t = random.randint(0, len(moment_i['times']) - 1)
+            time = moment_i['times'][ind_t, :]
 
-        pos_visual_feature = self._compute_visual_feature(
-            video_id, time, video_duration)
+        pos_visual_feature = self._compute_visual_feature(video_id, time)
         # Sample negatives
         neg_intra_visual_feature = self._negative_intra_sampling(idx, time)
         neg_inter_visual_feature = self._negative_inter_sampling(idx, time)
@@ -314,15 +321,18 @@ class UntrimmedMCN(UntrimmedBasedMCNStyle):
         self.visual_interface = VisualRepresentationMCN(context=self.context)
         self._set_feat_dim()
 
-    def _compute_visual_feature(self, video_id, moment_loc, video_duration):
+    def _compute_visual_feature(self, video_id, moment_loc):
         "Return visual features plus TEF for a given segment in the video"
+        video_duration = self._video_duration(video_id)
+        num_clips = self._video_num_clips(video_id)
         if self.no_visual:
             return self._only_tef(video_id, moment_loc, video_duration)
         feature_collection = {}
         for key, feat_db in self.features.items():
             feature_video = feat_db[video_id]
             moment_feat_k = self.visual_interface(
-                feature_video, moment_loc, time_unit=self.time_unit)
+                feature_video, moment_loc, time_unit=self.time_unit,
+                num_clips=num_clips)
             if self.tef_interface:
                 moment_feat_k = np.concatenate(
                     [moment_feat_k,
@@ -341,8 +351,7 @@ class UntrimmedMCN(UntrimmedBasedMCNStyle):
         candidates = self.proposals_interface(
             video_id, metadata=metadata, feature_collection=self.features)
         candidates_rep = dict_of_lists(
-            [self._compute_visual_feature(video_id, t, metadata['duration'])
-             for t in candidates]
+            [self._compute_visual_feature(video_id, t) for t in candidates]
         )
         num_segments = len(candidates)
         for k, v in candidates_rep.items():
@@ -374,7 +383,7 @@ class UntrimmedSMCN(UntrimmedBasedMCNStyle):
             context=self.context, max_clips=max_clips)
         self._set_feat_dim()
 
-    def _compute_visual_feature(self, video_id, moment_loc, video_duration):
+    def _compute_visual_feature(self, video_id, moment_loc):
         """Return visual features plus TEF for a given segment in the video
 
         Note:
@@ -382,11 +391,14 @@ class UntrimmedSMCN(UntrimmedBasedMCNStyle):
             as TEF. In practice, if you can decompose your model/features
             it's more efficient to re-write the final pooling.
         """
+        video_duration = self._video_duration(video_id)
+        num_clips = self._video_num_clips(video_id)
         feature_collection = {}
         for key, feat_db in self.features.items():
             feature_video = feat_db[video_id]
             moment_feat_k, mask = self.visual_interface(
-                feature_video, moment_loc, time_unit=self.time_unit)
+                feature_video, moment_loc, time_unit=self.time_unit,
+                num_clips=num_clips)
             if self.tef_interface:
                 T, N = mask.sum().astype(np.int), len(moment_feat_k)
                 tef_feature = np.zeros((N, 2), dtype=self.tef_interface.dtype)
@@ -405,14 +417,13 @@ class UntrimmedSMCN(UntrimmedBasedMCNStyle):
 
     def _compute_visual_feature_eval(self, video_id):
         "Return visual features plus TEF for all candidate segments in video"
-        metadata = self.metadata_per_video[video_id]
         # We care about corpus video moment retrieval thus our
         # `proposals_interface` does not receive language queries.
+        metadata = self.metadata_per_video[video_id]
         candidates = self.proposals_interface(
             video_id, metadata=metadata, feature_collection=self.features)
         candidates_rep = dict_of_lists(
-            [self._compute_visual_feature(video_id, t, metadata['duration'])
-             for t in candidates]
+            [self._compute_visual_feature(video_id, t) for t in candidates]
         )
         for k, v in candidates_rep.items():
             if self.padding:
@@ -470,7 +481,7 @@ class VisualRepresentationMCN():
         self.dtype = dtype
         self.eps = eps
 
-    def __call__(self, features, moment_loc, time_unit=TIME_UNIT):
+    def __call__(self, features, moment_loc, time_unit, num_clips=None):
         f_dim = features.shape[1]
         data = np.empty(f_dim * self.size_factor, dtype=self.dtype)
         # From time to units of time
@@ -482,6 +493,8 @@ class VisualRepresentationMCN():
         data[0:f_dim] = normalization1d(im_start, im_end, features)
         if self.context:
             ic_start, ic_end = 0, len(features) - 1
+            if num_clips is not None:
+                ic_end = num_clips - 1
             data[f_dim:2 * f_dim] = normalization1d(
                 ic_start, ic_end, features)
         return data
@@ -510,7 +523,7 @@ class VisualRepresentationSMCN():
         self.max_clips = max_clips
         self.padding = padding
 
-    def __call__(self, features, moment_loc, time_unit=TIME_UNIT):
+    def __call__(self, features, moment_loc, time_unit, num_clips=None):
         n_feat, f_dim = features.shape
         if self.max_clips is not None:
             n_feat = self.max_clips
@@ -534,6 +547,8 @@ class VisualRepresentationSMCN():
         mask[:T] = 1
         if self.context:
             ic_start, ic_end = 0, len(features) - 1
+            if num_clips is not None:
+                ic_end = num_clips - 1
             padded_data[:T, f_dim:2 * f_dim] = normalization1d(
                 ic_start, ic_end, features)
         if self.padding:

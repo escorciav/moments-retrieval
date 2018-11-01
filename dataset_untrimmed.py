@@ -8,8 +8,8 @@ from torch.utils.data import Dataset
 
 from didemo import LanguageRepresentationMCN, FakeLanguageRepresentation
 from didemo import sentences_to_words, normalization1d
+from np_segments_ops import iou as segment_iou
 from utils import dict_of_lists
-from utils import timeit
 
 TIME_UNIT = 3  # 3 seconds due to psychological evidence
 
@@ -105,6 +105,8 @@ class UntrimmedBase(Dataset):
             self.metadata[i]['video_index'] = (
                 self.metadata_per_video[video_id]['index'])
             self.metadata_per_video[video_id]['moment_indices'].append(i)
+            # `time` field may get deprecated
+            self.metadata[i]['time'] = None
 
     def _update_metadata_per_video(self):
         """Add keys to items in attribute:metadata_per_video
@@ -156,7 +158,7 @@ class UntrimmedBasedMCNStyle(UntrimmedBase):
         self.no_visual = no_visual
         self.visual_interface = None
         self.tef_interface = None
-        self.proposals_interface = None
+        self.proposals_interface = proposals_interface
         # clean this, glove of original MCN is really slow, it kills fast
         # iteration during debugging :) (yes, I could cache but dahh)
         self.lang_interface = FakeLanguageRepresentation(
@@ -170,7 +172,6 @@ class UntrimmedBasedMCNStyle(UntrimmedBase):
             assert not no_visual
         if self.eval:
             self.eval = True
-            self.proposals_interface = proposals_interface
             assert self.proposals_interface is not None
 
     @property
@@ -237,7 +238,40 @@ class UntrimmedBasedMCNStyle(UntrimmedBase):
         "Sample another moment inside the video"
         moment_i = self.metadata[idx]
         video_id = moment_i['video']
+        if self.proposals_interface is None:
+            video_duration = self._video_duration(video_id)
+            sampled_loc = self._random_proposal_sampling(
+                video_duration, moment_loc)
+        else:
+            metadata = self.metadata_per_video[video_id]
+            proposals = self.proposals_interface(video_id, metadata)
+            iou_matrix = segment_iou(proposals, moment_loc[None, :])
+            indices = (iou_matrix < self.MAGIC_TIOU).nonzero()[0]
+            assert len(indices) > 0
+            ind = indices[random.randint(0, len(indices) - 1)]
+            sampled_loc = proposals[ind, :]
+
+        return self._compute_visual_feature(video_id, sampled_loc)
+
+    def _negative_inter_sampling(self, idx, moment_loc):
+        "Sample another moment from other video as in original MCN paper"
+        moment_i = self.metadata[idx]
+        video_id = moment_i['video']
+        other_video = video_id
+        while other_video == video_id:
+            idx = int(random.random() * len(self.metadata))
+            other_video = self.metadata[idx]['video']
+
+        # MCN-ICCV2017 strategy as close as possible
         video_duration = self._video_duration(video_id)
+        other_video_duration = self._video_duration(other_video)
+        sampled_loc = moment_loc
+        if other_video_duration < video_duration:
+            sampled_loc = self._random_proposal_sampling(other_video_duration)
+        return self._compute_visual_feature(other_video, sampled_loc)
+
+    def _random_proposal_sampling(self, video_duration, moment_loc=None):
+        "Sample a random proposal such its IoU with moment_loc < MAGIC_TIOU"
         tiou = 1
         while tiou >= self.MAGIC_TIOU:
             # sample segment
@@ -245,7 +279,8 @@ class UntrimmedBasedMCNStyle(UntrimmedBase):
                            random.random() * video_duration]
             sampled_loc = [min(sampled_loc), max(sampled_loc)]
 
-            # compute tIOU
+            if moment_loc is None:
+                break
             i_end = min(sampled_loc[1], moment_loc[1])
             i_start = max(sampled_loc[0], moment_loc[0])
             intersection = max(0, i_end - i_start)
@@ -255,50 +290,7 @@ class UntrimmedBasedMCNStyle(UntrimmedBase):
             union = u_end - u_start
 
             tiou = intersection / union
-        return self._compute_visual_feature(video_id, sampled_loc)
-
-    def _negative_inter_sampling(self, idx, moment_loc):
-        "Sample another moment from other video as in original MCN paper"
-        moment_i = self.metadata[idx]
-        video_id = moment_i['video']
-        video_duration = self._video_duration(video_id)
-        other_video = video_id
-        while other_video == video_id:
-            idx = int(random.random() * len(self.metadata))
-            other_video = self.metadata[idx]['video']
-        # MCN-strategy as close as possible
-        other_video_duration = self._video_duration(other_video)
-        sampled_loc = moment_loc
-        if other_video_duration < video_duration:
-            sampled_loc = [random.random() * other_video_duration,
-                           random.random() * other_video_duration]
-            sampled_loc = [min(sampled_loc), max(sampled_loc)]
-        return self._compute_visual_feature(other_video, sampled_loc)
-
-    def _train_item(self, idx):
-        "Return anchor, positive, negatives"
-        moment_i = self.metadata[idx]
-        query = moment_i['language_input']
-        video_id = moment_i['video']
-        time = moment_i['time']
-        # Sample a positive annotations if there are multiple
-        if time is None:
-            ind_t = random.randint(0, len(moment_i['times']) - 1)
-            time = moment_i['times'][ind_t, :]
-
-        pos_visual_feature = self._compute_visual_feature(video_id, time)
-        # Sample negatives
-        neg_intra_visual_feature = self._negative_intra_sampling(idx, time)
-        neg_inter_visual_feature = self._negative_inter_sampling(idx, time)
-        words_feature, len_query = self._compute_language_feature(query)
-
-        argout = (words_feature, len_query, pos_visual_feature,
-                  neg_intra_visual_feature, neg_inter_visual_feature)
-        if self.debug:
-            # TODO: deprecate source_id
-            source_id = moment_i.get('source', float('nan'))
-            return (idx, source_id) + argout
-        return argout
+        return sampled_loc
 
     def _set_feat_dim(self):
         "Set visual and language size"
@@ -311,6 +303,34 @@ class UntrimmedBasedMCNStyle(UntrimmedBase):
         self.feat_dim = {'language_size': instance[0 + ind].shape[1]}
         _ = [self.feat_dim.update({f'visual_size_{k}': v.shape[-1]})
              for k, v in instance[2 + ind].items() if 'mask' not in k]
+
+    def _train_item(self, idx):
+        "Return anchor, positive, negatives"
+        moment_i = self.metadata[idx]
+        query = moment_i['language_input']
+        video_id = moment_i['video']
+        # Sample a positive annotations if there are multiple
+        t_start_end = moment_i['times'][0, :]
+        if len(moment_i['times']) > 1:
+            ind_t = random.randint(0, len(moment_i['times']) - 1)
+            t_start_end = moment_i['times'][ind_t, :]
+
+        pos_visual_feature = self._compute_visual_feature(
+            video_id, t_start_end)
+        # Sample negatives
+        neg_intra_visual_feature = self._negative_intra_sampling(
+            idx, t_start_end)
+        neg_inter_visual_feature = self._negative_inter_sampling(
+            idx, t_start_end)
+        words_feature, len_query = self._compute_language_feature(query)
+
+        argout = (words_feature, len_query, pos_visual_feature,
+                  neg_intra_visual_feature, neg_inter_visual_feature)
+        if self.debug:
+            # TODO: deprecate source_id
+            source_id = moment_i.get('source', float('nan'))
+            return (idx, source_id) + argout
+        return argout
 
 
 class UntrimmedMCN(UntrimmedBasedMCNStyle):

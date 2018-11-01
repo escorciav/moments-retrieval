@@ -221,12 +221,12 @@ class DidemoMCN(Didemo):
 
     def _set_feat_dim(self):
         "Set visual and language size"
-        if self.eval:
-            pass
-        instance_feature = self[0]
-        self.feat_dim = {'language_size': instance_feature[2].shape[1]}
+        # TODO(tier-2;test): we edit this to enable evaluation post-training.
+        # Maybe, an odd of 10%, training is broken.
+        instance = self[0]
+        self.feat_dim = {'language_size': instance[2].shape[-1]}
         status = [self.feat_dim.update({f'visual_size_{k}': v.shape[-1]})
-                  for k, v in instance_feature[4].items() if 'mask' not in k]
+                  for k, v in instance[4].items() if 'mask' not in k]
 
     @property
     def language_size(self):

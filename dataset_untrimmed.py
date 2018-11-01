@@ -438,7 +438,7 @@ class UntrimmedSMCN(UntrimmedBasedMCNStyle):
         "Change padding mode"
         self.padding = padding
         self.visual_interface.padding = padding
-        
+
     def _only_tef(self, video_id, moment_loc):
         video_duration = self._video_duration(video_id)
         time_unit = self.time_unit
@@ -469,6 +469,21 @@ class TemporalEndpointFeature():
 
     def __call__(self, moment_loc, duration):
         return np.array(moment_loc, dtype=self.dtype) / duration
+
+
+class TemporalStartpointFeature():
+    """Compute TSF i.e. only starting point
+
+    TODO:
+        documentation
+        force input to be numpy darray
+    """
+
+    def __init__(self, dtype=np.float32):
+        self.dtype = dtype
+
+    def __call__(self, moment_loc, duration):
+        return np.array(moment_loc[0], dtype=self.dtype) / duration
 
 
 class VisualRepresentationMCN():

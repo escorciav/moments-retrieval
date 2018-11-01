@@ -38,6 +38,21 @@ def video_evaluation(gt, predictions, k=(1, 5)):
     return [average_iou] + r_at_k
 
 
+def didemo_evaluation(true_segments, pred_segments, topk):
+    "DiDeMo single video moment retrieval evaluation in torch"
+    result = torch.empty(1 + len(topk), dtype=true_segments.dtype,
+                         device=true_segments.device)
+    iou_matrix = torch_iou(pred_segments, true_segments)
+    average_iou = iou_matrix[0, :].sort()[0][-3:].mean()
+    ranks = ((iou_matrix == 1).nonzero()[:, 0] + 1).float()
+    average_rank = ranks.sort()[0][:3].mean().to(topk)
+    rank_at_k = average_rank <= topk
+
+    result[0] = average_iou
+    result[1:] = rank_at_k
+    return result
+
+
 def single_moment_retrieval(true_segments, pred_segments,
                             iou_thresholds=IOU_THRESHOLDS,
                             topk=torch.tensor(TOPK)):

@@ -78,6 +78,7 @@ def dumping_arguments(args, val_performance=None, test_performance=None,
     device = args.device
     topk = args.topk
     # Update dict with performance and remove non-serializable stuff
+    if hasattr(args, 'topk_'): delattr(args, 'topk_')
     args.logfile = str(args.logfile)
     args.h5_path = str(args.h5_path) if args.h5_path.exists() else None
     args.train_list = str(args.train_list) if args.train_list.exists() else None

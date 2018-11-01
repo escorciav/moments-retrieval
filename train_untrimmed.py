@@ -14,7 +14,7 @@ import dataset_untrimmed
 import model
 import proposals
 from loss import IntraInterMarginLoss
-from evaluation import single_moment_retrieval
+from evaluation import single_moment_retrieval, didemo_evaluation
 from utils import Multimeter, Tracker
 from utils import collate_data, collate_data_eval, ship_to
 from utils import setup_hyperparameters, setup_logging, setup_rng
@@ -27,9 +27,11 @@ EVAL_BATCH_SIZE = 1
 TOPK, IOU_THRESHOLDS = (1, 5), (0.5, 0.7)
 MAX_TOPK = max(TOPK)
 METRICS = [f'r@{k},{iou}' for iou, k in product(IOU_THRESHOLDS, TOPK)]
+METRICS_OLD = ['iou', 'r@1', 'r@5']
 VARS_TO_RECORD = ['id', 'hit@iou,k', 'scores', 'topk_segments']
 TRACK = 'r@1,0.7'
 BEST_RESULT = 0.0
+TOPK_DIDEMO = torch.tensor([1, 5])
 
 parser = argparse.ArgumentParser(
     description='*MCN training',
@@ -140,6 +142,7 @@ parser.add_argument('--debug', action='store_true',
 args = parser.parse_args()
 args.topk = torch.tensor(TOPK)
 args.iou_thresholds = IOU_THRESHOLDS
+args.topk_ = TOPK_DIDEMO
 
 
 def main(args):
@@ -151,7 +154,10 @@ def main(args):
     if args.gpu_id >= 0 and torch.cuda.is_available():
         args.device = torch.device(f'cuda:{args.gpu_id}')
         device_name = torch.cuda.get_device_name(args.gpu_id)
-        args.topk = args.topk.cuda(device=args.device,  non_blocking=True)
+        if args.nms_threshold >= 1:
+            args.topk = args.topk.cuda(device=args.device, non_blocking=True)
+            args.topk_ = args.topk_.cuda(
+                device=args.device, non_blocking=True)
     logging.info(f'Git revision hash:  {get_git_revision_hash()}')
     logging.info(f'{args.arch} in untrimmed videos')
     logging.info(args)
@@ -262,7 +268,9 @@ def validation(args, net, loader):
     "Eval model"
     ind = 2 if args.debug else 0
     time_meters = Multimeter(keys=['Batch', 'Eval'])
-    meters = Multimeter(keys=METRICS)
+    meters_1, meters_2 = Multimeter(keys=METRICS), None
+    if args.proposal_interface == 'DidemoICCV17SS':
+        meters_2 = Multimeter(keys=METRICS_OLD)
     tracker = Tracker(keys=VARS_TO_RECORD) if args.dump_results else None
     logging.info(f'* Evaluation')
     net.eval()
@@ -291,8 +299,13 @@ def validation(args, net, loader):
 
             hit_k_iou = single_moment_retrieval(
                 gt_segment, sorted_segments, topk=args.topk)
+            if meters_2:
+                iou_r_at_ks = didemo_evaluation(
+                    gt_segment, segments, args.topk_)
+                meters_2.update([i.item() for i in iou_r_at_ks])
+
             # TODO(tier-2;profile): seems a bit slow
-            meters.update([i.item() for i in hit_k_iou])
+            meters_1.update([i.item() for i in hit_k_iou])
             time_meters.update([batch_time, time.time() - end])
             if tracker:
                 # artifact to ease Tracker job for few number of segments
@@ -303,13 +316,15 @@ def validation(args, net, loader):
                 tracker.append(it, hit_k_iou, scores[: MAX_TOPK],
                                sorted_segments[:MAX_TOPK, :])
             end = time.time()
-    logging.info(f'{time_meters.report()}\t{meters.report()}')
+    logging.info(f'{time_meters.report()}\t{meters_1.report()}')
+    if meters_2:
+        logging.info(f'DiDeMo metrics: {meters_2.report()}')
     if tracker:
         tracker.freeze()
-        performance = (meters.dump(), tracker.data)
+        performance = (meters_1.dump(), tracker.data)
         logging.info(f'Results aggregation completed')
         return performance
-    return meters.dump(), None
+    return meters_1.dump(), None
 
 
 def evaluate(args, net, loader):

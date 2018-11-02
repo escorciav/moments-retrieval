@@ -301,7 +301,7 @@ def validation(args, net, loader):
                 gt_segment, sorted_segments, topk=args.topk)
             if meters_2:
                 iou_r_at_ks = didemo_evaluation(
-                    gt_segment, segments, args.topk_)
+                    gt_segment, sorted_segments, args.topk_)
                 meters_2.update([i.item() for i in iou_r_at_ks])
 
             # TODO(tier-2;profile): seems a bit slow

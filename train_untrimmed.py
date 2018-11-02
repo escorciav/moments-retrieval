@@ -85,6 +85,8 @@ parser.add_argument('--w-intra', type=float, default=0.5,
                     help='Intra-loss weight')
 parser.add_argument('--original-setup', action='store_true',
                     help='Enable original optimization policy')
+parser.add_argument('--proposals-in-train', action='store_true',
+                    help='Sample negative from proposals during training')
 # Hyper-parameters to explore search space (inference)
 parser.add_argument('--proposal-interface', default='SlidingWindowMSFS',
                     choices=proposals.PROPOSAL_SCHEMES,
@@ -358,9 +360,12 @@ def setup_dataset(args):
         cues = {args.feat: {'file': args.h5_path}}
     proposal_generator = proposals.__dict__[args.proposal_interface](
         args.min_length, args.num_scales, args.stride, unique=True)
+    proposal_generator_train = None
+    if args.proposals_in_train:
+        proposal_generator_train = proposal_generator
     extras_dataset_configs = [
         # Training
-        {},
+        {'proposals_interface': proposal_generator_train},
         # Validation or Testing
         {'eval': True, 'proposals_interface': proposal_generator}
     ]

@@ -15,6 +15,7 @@ import model
 import proposals
 from loss import IntraInterMarginLoss
 from evaluation import single_moment_retrieval, didemo_evaluation
+from dataset_untrimmed import TemporalFeatures
 from utils import Multimeter, Tracker
 from utils import collate_data, collate_data_eval, ship_to
 from utils import setup_hyperparameters, setup_logging, setup_rng
@@ -69,8 +70,10 @@ parser.add_argument('--feat', default='rgb',
 parser.add_argument('--h5-path', type=Path, default='non-existent',
                     help='HDF5-file with features')
 # Model features
-parser.add_argument('--no-loc', action='store_false', dest='loc',
-                    help='Remove TEF features')
+parser.add_argument('--loc', type=TemporalFeatures.from_string,
+                    default=TemporalFeatures.TEMPORAL_ENDPOINT,
+                    choices=list(TemporalFeatures),
+                    help='Kind of temporal moment feature')
 parser.add_argument('--no-context', action='store_false', dest='context',
                     help='Remove global video representation')
 # Model
@@ -349,7 +352,7 @@ def setup_dataset(args):
 
     subset_files = [('train', args.train_list), ('val', args.val_list),
                     ('test', args.test_list)]
-    cues, no_visual = None, True
+    cues, no_visual = {args.feat: None}, True
     if args.h5_path.exists():
         no_visual = False
         cues = {args.feat: {'file': args.h5_path}}

@@ -1,6 +1,7 @@
 "Dataset abstractions to deal with data of various length"
 import json
 import random
+from enum import IntEnum, unique
 
 import h5py
 import numpy as np
@@ -12,6 +13,23 @@ from np_segments_ops import iou as segment_iou
 from utils import dict_of_lists
 
 TIME_UNIT = 3  # 3 seconds due to psychological evidence
+
+
+
+@unique
+class TemporalFeatures(IntEnum):
+    NONE = 0
+    TEMPORAL_ENDPOINT = 1
+    TEMPORALLY_AWARE = 2
+    START_POINT = 3
+
+    @staticmethod
+    def from_string(s):
+        # credits to https://bit.ly/2Mvu9bz
+        try:
+            return TemporalFeatures[s]
+        except KeyError:
+            raise ValueError()
 
 
 class UntrimmedBase(Dataset):
@@ -52,10 +70,10 @@ class UntrimmedBase(Dataset):
             - refactor duplicated code with Didemo
         """
         self.cues = cues
-        if cues is None:
-            return
         self.features = dict.fromkeys(cues.keys())
         for key, params in cues.items():
+            if params is None:
+                continue
             with h5py.File(params.get('file', 'NO-filename'), 'r') as fid:
                 self.features[key] = {}
                 for video_id in self.metadata_per_video:
@@ -145,9 +163,10 @@ class UntrimmedBasedMCNStyle(UntrimmedBase):
     """
     MAGIC_TIOU = 0.3
 
-    def __init__(self, json_file, cues=None, loc=True, max_words=50,
-                 eval=False, context=True, proposals_interface=None,
-                 no_visual=False, debug=False):
+    def __init__(self, json_file, cues=None,
+                 loc=TemporalFeatures.TEMPORAL_ENDPOINT,
+                 max_words=50, eval=False, context=True,
+                 proposals_interface=None, no_visual=False, debug=False):
         super(UntrimmedBasedMCNStyle, self).__init__()
         self._setup_list(json_file)
         self._load_features(cues)
@@ -157,7 +176,7 @@ class UntrimmedBasedMCNStyle(UntrimmedBase):
         self.debug = debug
         self.no_visual = no_visual
         self.visual_interface = None
-        self.tef_interface = None
+        self._set_tef_interface(loc)
         self.proposals_interface = proposals_interface
         # clean this, glove of original MCN is really slow, it kills fast
         # iteration during debugging :) (yes, I could cache but dahh)
@@ -165,11 +184,6 @@ class UntrimmedBasedMCNStyle(UntrimmedBase):
             max_words=max_words)
         if not debug:
             self.lang_interface = LanguageRepresentationMCN(max_words)
-        if self.loc:
-            self.tef_interface = TemporalEndpointFeature()
-        else:
-            # we need features to align with language
-            assert not no_visual
         if self.eval:
             self.eval = True
             assert self.proposals_interface is not None
@@ -301,8 +315,23 @@ class UntrimmedBasedMCNStyle(UntrimmedBase):
                         instance[1 + ind:3 + ind])
             ind = 0
         self.feat_dim = {'language_size': instance[0 + ind].shape[1]}
-        _ = [self.feat_dim.update({f'visual_size_{k}': v.shape[-1]})
-             for k, v in instance[2 + ind].items() if 'mask' not in k]
+        for key in self.features:
+            self.feat_dim.update(
+                {f'visual_size_{key}': instance[2 + ind][key].shape[-1]}
+            )
+
+    def _set_tef_interface(self, loc):
+        "Setup interface to get moment location feature"
+        # TODO(tier-2;enhacement). Is there a nicer way to do this?
+        if loc == TemporalFeatures.NONE:
+            self.tef_interface = None
+            assert not self.no_visual
+        elif loc == TemporalFeatures.TEMPORAL_ENDPOINT:
+            self.tef_interface = TemporalEndpointFeature()
+        elif loc == TemporalFeatures.TEMPORALLY_AWARE:
+            self.tef_interface = TemporallyAwareFeature()
+        else:
+            raise ValueError('Unsupported')
 
     def _train_item(self, idx):
         "Return anchor, positive, negatives"
@@ -343,11 +372,12 @@ class UntrimmedMCN(UntrimmedBasedMCNStyle):
 
     def _compute_visual_feature(self, video_id, moment_loc):
         "Return visual features plus TEF for a given segment in the video"
+        if self.no_visual:
+            return self._only_tef(video_id, moment_loc)
+
+        feature_collection = {}
         video_duration = self._video_duration(video_id)
         num_clips = self._video_num_clips(video_id)
-        if self.no_visual:
-            return self._only_tef(video_id, moment_loc, video_duration)
-        feature_collection = {}
         for key, feat_db in self.features.items():
             feature_video = feat_db[video_id]
             moment_feat_k = self.visual_interface(
@@ -356,7 +386,8 @@ class UntrimmedMCN(UntrimmedBasedMCNStyle):
             if self.tef_interface:
                 moment_feat_k = np.concatenate(
                     [moment_feat_k,
-                     self.tef_interface(moment_loc, video_duration)]
+                     self.tef_interface(moment_loc, video_duration,
+                                        time_unit=self.time_unit)]
                 )
 
             feature_collection[key] = moment_feat_k.astype(
@@ -378,12 +409,13 @@ class UntrimmedMCN(UntrimmedBasedMCNStyle):
             candidates_rep[k] = np.concatenate(v).reshape((num_segments, -1))
         return candidates_rep, candidates
 
-    def _only_tef(self, video_id, moment_loc, video_duration):
-        feature_collection = {
-            'tef': self.tef_interface(moment_loc, video_duration)
-        }
-        feature_collection['tef'] = feature_collection['tef'].astype(
-            np.float32, copy=False)
+    def _only_tef(self, video_id, moment_loc):
+        "Return the feature collection with only any of the temporal features"
+        video_duration = self._video_duration(video_id)
+        feature_collection = {}
+        for i, key in enumerate(self.features):
+            feature_collection[key] = self.tef_interface(
+                moment_loc, video_duration, time_unit=self.time_unit)
         return feature_collection
 
 
@@ -413,19 +445,21 @@ class UntrimmedSMCN(UntrimmedBasedMCNStyle):
         """
         if self.no_visual:
             return self._only_tef(video_id, moment_loc)
+
+        feature_collection = {}
         video_duration = self._video_duration(video_id)
         num_clips = self._video_num_clips(video_id)
-        feature_collection = {}
+        time_unit = self.time_unit
         for key, feat_db in self.features.items():
             feature_video = feat_db[video_id]
             moment_feat_k, mask = self.visual_interface(
-                feature_video, moment_loc, time_unit=self.time_unit,
+                feature_video, moment_loc, time_unit=time_unit,
                 num_clips=num_clips)
             if self.tef_interface:
                 T, N = mask.sum().astype(np.int), len(moment_feat_k)
                 tef_feature = np.zeros((N, 2), dtype=self.tef_interface.dtype)
                 tef_feature[:T, :] = self.tef_interface(
-                    moment_loc, video_duration)
+                    moment_loc, video_duration, time_unit=time_unit)
                 moment_feat_k = np.concatenate(
                     [moment_feat_k, tef_feature], axis=1)
 
@@ -460,50 +494,80 @@ class UntrimmedSMCN(UntrimmedBasedMCNStyle):
         self.visual_interface.padding = padding
 
     def _only_tef(self, video_id, moment_loc):
+        "Return the feature collection with only any of the temporal features"
         video_duration = self._video_duration(video_id)
         time_unit = self.time_unit
         num_clips = self._video_num_clips(video_id)
         if not self.eval:
             num_clips = self.max_number_of_clips()
+
+        # Padding and info about extend of the moment on it
         padded_data = np.zeros((num_clips, 2), dtype=np.float32)
         mask = np.zeros(num_clips, dtype=np.float32)
         im_start = int(moment_loc[0] // time_unit)
         im_end = int((moment_loc[1] - 1e-6) // time_unit)
         T = im_end - im_start + 1
-        padded_data[:T, :] = self.tef_interface(moment_loc, video_duration)
+
+        # Actual features and mask
+        padded_data[:T, :] = self.tef_interface(
+            moment_loc, video_duration, time_unit=time_unit)
         mask[:T] = 1
-        feature_collection = {'tef': padded_data, 'mask': mask}
+
+        # Packing
+        feature_collection = {}
+        for i, key in enumerate(self.features):
+            feature_collection[key] = padded_data
+        feature_collection['mask'] = mask
         return feature_collection
 
 
 class TemporalEndpointFeature():
-    """Compute TEF for MCN model
+    """Encode the span of moment in terms of the relative start and end points
 
-    TODO:
-        documentation
-        force input to be numpy darray
+    Given that we deal with untrimmed video, we divide by the video duration.
+    This class returns the TEF described by MCN paper @ ICCV-2017.
+
+    TODO: force input to be numpy darray
     """
 
     def __init__(self, dtype=np.float32):
         self.dtype = dtype
 
-    def __call__(self, moment_loc, duration):
-        return np.array(moment_loc, dtype=self.dtype) / duration
+    def __call__(self, start_end, duration, **kwargs):
+        return np.array(start_end, dtype=self.dtype) / duration
 
 
 class TemporalStartpointFeature():
-    """Compute TSF i.e. only starting point
+    """Similar to TEF but only take sinto account start point
 
     TODO:
-        documentation
         force input to be numpy darray
     """
 
     def __init__(self, dtype=np.float32):
         self.dtype = dtype
 
-    def __call__(self, moment_loc, duration):
-        return np.array(moment_loc[0], dtype=self.dtype) / duration
+    def __call__(self, start_end, duration, **kwargs):
+        return np.array(start_end[0], dtype=self.dtype) / duration
+
+
+class TemporallyAwareFeature():
+    "Encodes the temporal range of a moment in the video"
+
+    def __init__(self, dtype=np.float32, eps=1e-6):
+        self.dtype = dtype
+        self.eps = eps
+
+    def __call__(self, start_end, duration, time_unit, **kwargs):
+        im_start = int(start_end[0] // time_unit)
+        im_end = int((start_end[1] - self.eps) // time_unit)
+        T = im_end - im_start + 1
+        feat = np.empty((T, 2), dtype=self.dtype)
+        feat[:, 0] = np.arange(im_start * time_unit,
+                               im_end * time_unit + self.eps,
+                               time_unit)
+        feat[:, 1] = feat[:, 0] + time_unit
+        return feat / duration
 
 
 class VisualRepresentationMCN():

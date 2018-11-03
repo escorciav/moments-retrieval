@@ -87,6 +87,8 @@ parser.add_argument('--original-setup', action='store_true',
                     help='Enable original optimization policy')
 parser.add_argument('--proposals-in-train', action='store_true',
                     help='Sample negative from proposals during training')
+parser.add_argument('--negative-sampling-iou', type=float, default=0.35,
+                    help='Amount of IoU to consider proposals as negatives')
 # Hyper-parameters to explore search space (inference)
 parser.add_argument('--proposal-interface', default='SlidingWindowMSFS',
                     choices=proposals.PROPOSAL_SCHEMES,
@@ -365,7 +367,8 @@ def setup_dataset(args):
         proposal_generator_train = proposal_generator
     extras_dataset_configs = [
         # Training
-        {'proposals_interface': proposal_generator_train},
+        {'proposals_interface': proposal_generator_train,
+         'sampling_iou': args.negative_sampling_iou},
         # Validation or Testing
         {'eval': True, 'proposals_interface': proposal_generator}
     ]

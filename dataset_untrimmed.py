@@ -161,12 +161,12 @@ class UntrimmedBasedMCNStyle(UntrimmedBase):
         batch during evaluation
         negative mining and batch negative sampling
     """
-    MAGIC_TIOU = 0.3
 
     def __init__(self, json_file, cues=None,
                  loc=TemporalFeatures.TEMPORAL_ENDPOINT,
                  max_words=50, eval=False, context=True,
-                 proposals_interface=None, no_visual=False, debug=False):
+                 proposals_interface=None, no_visual=False, sampling_iou=0.35,
+                 debug=False):
         super(UntrimmedBasedMCNStyle, self).__init__()
         self._setup_list(json_file)
         self._load_features(cues)
@@ -177,6 +177,7 @@ class UntrimmedBasedMCNStyle(UntrimmedBase):
         self.no_visual = no_visual
         self.visual_interface = None
         self._set_tef_interface(loc)
+        self._sampling_iou = sampling_iou
         self.proposals_interface = proposals_interface
         # clean this, glove of original MCN is really slow, it kills fast
         # iteration during debugging :) (yes, I could cache but dahh)
@@ -194,15 +195,21 @@ class UntrimmedBasedMCNStyle(UntrimmedBase):
         return self.feat_dim['language_size']
 
     @property
+    def max_words(self):
+        "max number of words per description"
+        return self.lang_interface.max_words
+
+    @property
+    def sampling_iou(self):
+        "IoU value used to sample negative during training"
+        # TODO: add setter to implement mining scheme?
+        return self._sampling_iou
+
+    @property
     def visual_size(self):
         "dimension of visual features"
         return {k[12:]: v for k, v in self.feat_dim.items()
                 if 'visual_size' in k}
-
-    @property
-    def max_words(self):
-        "max number of words per description"
-        return self.lang_interface.max_words
 
     def _compute_language_feature(self, query):
         "Get language representation of words in query"
@@ -260,7 +267,7 @@ class UntrimmedBasedMCNStyle(UntrimmedBase):
             metadata = self.metadata_per_video[video_id]
             proposals = self.proposals_interface(video_id, metadata)
             iou_matrix = segment_iou(proposals, moment_loc[None, :])
-            indices = (iou_matrix < self.MAGIC_TIOU).nonzero()[0]
+            indices = (iou_matrix < self.sampling_iou).nonzero()[0]
             assert len(indices) > 0
             ind = indices[random.randint(0, len(indices) - 1)]
             sampled_loc = proposals[ind, :]
@@ -285,9 +292,9 @@ class UntrimmedBasedMCNStyle(UntrimmedBase):
         return self._compute_visual_feature(other_video, sampled_loc)
 
     def _random_proposal_sampling(self, video_duration, moment_loc=None):
-        "Sample a random proposal such its IoU with moment_loc < MAGIC_TIOU"
+        "Sample a proposal with random start and end point"
         tiou = 1
-        while tiou >= self.MAGIC_TIOU:
+        while tiou >= self.sampling_iou:
             # sample segment
             sampled_loc = [random.random() * video_duration,
                            random.random() * video_duration]

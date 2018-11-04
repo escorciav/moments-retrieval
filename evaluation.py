@@ -24,7 +24,9 @@ def iou(gt, pred):
 
 def rank(gt, pred):
     "Taken from @LisaAnne/LocalizingMoments project"
-    return pred.index(tuple(gt)) + 1
+    if isinstance(pred[0], tuple) and not isinstance(gt, tuple):
+        gt = tuple(gt)
+    return pred.index(gt) + 1
 
 
 def video_evaluation(gt, predictions, k=(1, 5)):
@@ -39,7 +41,13 @@ def video_evaluation(gt, predictions, k=(1, 5)):
 
 
 def didemo_evaluation(true_segments, pred_segments, topk):
-    "DiDeMo single video moment retrieval evaluation in torch"
+    """DiDeMo single video moment retrieval evaluation in torch
+
+    Args:
+        true_segments (tensor): of shape [N, 2]
+        pred_segments (tensor): of shape [M, 2] with sorted predictions
+        topk (float tensor): of shape [k] with all the ranks to compute.
+    """
     result = torch.empty(1 + len(topk), dtype=true_segments.dtype,
                          device=true_segments.device)
     iou_matrix = torch_iou(pred_segments, true_segments)

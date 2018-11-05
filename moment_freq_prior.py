@@ -106,9 +106,10 @@ def main(args):
         # Details are provided in help
         args.nms_threshold = 1.0
     for i, data in enumerate(test_dataset):
-        duration_i = video_duration(train_dataset, i)
+        duration_i = video_duration(test_dataset, i)
         gt_moments = torch.from_numpy(data[-2])
         proposals_i = data[-1]
+        
         prob = moment_freq_prior.predict(proposals_i, duration_i)
 
         if args.nms_threshold < 1:
@@ -188,9 +189,11 @@ class DiscretizedFrequencyPrior(BaseFrequencyPrior):
     def predict(self, pred_segments=None, duration=None):
         "Return prob that a proposal belongs to the dataset"
         assert self.model is not None
-        normalized_proposals = pred_segments / duration
+        normalized_proposals = pred_segments / duration        
         ind_x = np.digitize(normalized_proposals[:, 0], self._x_edges, True)
         ind_y = np.digitize(normalized_proposals[:, 1], self._y_edges, True)
+        ind_x = np.clip(ind_x, 0, self.model.shape[0] - 1)
+        ind_y = np.clip(ind_y, 0, self.model.shape[1] - 1)
         return self.model[ind_x, ind_y]
 
 

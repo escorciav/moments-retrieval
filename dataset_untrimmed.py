@@ -268,10 +268,13 @@ class UntrimmedBasedMCNStyle(UntrimmedBase):
             proposals = self.proposals_interface(video_id, metadata)
             iou_matrix = segment_iou(proposals, moment_loc[None, :])
             indices = (iou_matrix < self.sampling_iou).nonzero()[0]
-            assert len(indices) > 0
-            ind = indices[random.randint(0, len(indices) - 1)]
-            sampled_loc = proposals[ind, :]
-
+            if len(indices) > 0:
+                ind = indices[random.randint(0, len(indices) - 1)]
+                sampled_loc = proposals[ind, :]
+            else:
+                video_duration = self._video_duration(video_id)
+                sampled_loc = self._random_proposal_sampling(
+                    video_duration, moment_loc)
         return self._compute_visual_feature(video_id, sampled_loc)
 
     def _negative_inter_sampling(self, idx, moment_loc):

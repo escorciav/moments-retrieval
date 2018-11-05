@@ -46,6 +46,13 @@ parser.add_argument('--val-list', type=Path, default=Path('non-existent'),
                     help='JSON-file with validation instances')
 parser.add_argument('--test-list', type=Path, default=Path('non-existent'),
                     help='JSON-file with testing instances')
+# Language features
+parser.add_argument('--train-lang', type=Path, default='non-existent',
+                    help='HDF5-file with training instances')
+parser.add_argument('--val-lang', type=Path, default='non-existent',
+                    help='HDF5-file with validation instances')
+parser.add_argument('--test-lang', type=Path, default='non-existent',
+                    help='HDF5-file with testing instances')
 # Architecture
 parser.add_argument('--arch', choices=model.MOMENT_RETRIEVAL_MODELS,
                     default='MCN', help='model architecture')
@@ -70,7 +77,7 @@ parser.add_argument('--unit-vector', action='store_true',
 # Program control
 parser.add_argument('--evaluate', action='store_true',
                     help='only run the model in the val set')
-# Features
+# Visual features
 parser.add_argument('--feat', default='rgb',
                     help='Record the type of feature used (modality)')
 parser_visual_info_grp = parser.add_mutually_exclusive_group()
@@ -485,8 +492,9 @@ def setup_dataset(args):
         args.train_list = Path('non-existent')
         args.val_list = Path('non-existent')
 
-    subset_files = [('train', args.train_list), ('val', args.val_list),
-                    ('test', args.test_list)]
+    subset_files = [('train', (args.train_list, args.train_lang)),
+                    ('val', (args.val_list, args.val_lang)),
+                    ('test', (args.test_list, args.test_lang))]
     cues, no_visual = {args.feat: None}, True
     if args.h5_path.exists():
         no_visual = False
@@ -521,7 +529,8 @@ def setup_dataset(args):
     logging.info('Pre-loading features... '
                  'It may take a couple of minutes (Glove!)')
     loaders = []
-    for i, (subset, filename) in enumerate(subset_files):
+    for i, (subset, files) in enumerate(subset_files):
+        filename, lang_h5 = files
         index_config = 0 if i == 0 else -1
         extras_dataset = extras_dataset_configs[index_config]
         if dataset_name == 'UntrimmedSMCN':
@@ -537,6 +546,7 @@ def setup_dataset(args):
             filename, cues=cues, loc=args.loc, context=args.context,
             no_visual=no_visual, debug=args.debug,
             clip_length=args.clip_length,
+            lang_h5=lang_h5,
             **extras_dataset)
         logging.info(f'Setting loader')
         if subset == 'train' and args.bias_to_single_clips > 0:

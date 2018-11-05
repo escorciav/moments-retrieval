@@ -146,7 +146,7 @@ class UntrimmedBase(Dataset):
             self.metadata_per_video = data['videos']
             self._update_metadata_per_video()
             self._update_metadata()
-        self._preprocess_descriptions()
+        # self._preprocess_descriptions()
 
     def _shrink_dataset(self):
         "Make single video dataset to debug video corpus moment retrieval"
@@ -221,7 +221,8 @@ class UntrimmedBasedMCNStyle(UntrimmedBase):
                  max_words=50, eval=False, context=True,
                  proposals_interface=None, no_visual=False, sampling_iou=0.35,
                  ground_truth_rate=1, prob_nproposal_nextto=-1,
-                 clip_length=None, h5_nis=None, nis_k=None, debug=False):
+                 clip_length=None, h5_nis=None, nis_k=None, debug=False,
+                 lang_h5=None):
         super(UntrimmedBasedMCNStyle, self).__init__()
         self._setup_list(json_file)
         self._load_features(cues)
@@ -239,12 +240,14 @@ class UntrimmedBasedMCNStyle(UntrimmedBase):
         self.h5_nis = h5_nis
         self.nis_k = nis_k
         self._prob_querytovideo = None
+        self.lang_interface = WordVectorsOfDescriptions(
+            lang_h5, max_words=max_words)
         # clean this, glove of original MCN is really slow, it kills fast
         # iteration during debugging :) (yes, I could cache but dahh)
-        self.lang_interface = FakeLanguageRepresentation(
-            max_words=max_words)
-        if not debug:
-            self.lang_interface = LanguageRepresentationMCN(max_words)
+        # self.lang_interface = FakeLanguageRepresentation(
+        #     max_words=max_words)
+        # if not debug:
+        #     self.lang_interface = LanguageRepresentationMCN(max_words)
         if self.eval:
             self.eval = True
             assert self.proposals_interface is not None
@@ -302,8 +305,9 @@ class UntrimmedBasedMCNStyle(UntrimmedBase):
     def _compute_language_feature(self, query):
         "Get language representation of words in query"
         # TODO: pack next two vars into a dict
-        feature = self.lang_interface(query)
-        len_query = min(len(query), self.max_words)
+        # feature = self.lang_interface(query)
+        # len_query = min(len(query), self.max_words)
+        feature, len_query = self.lang_interface(query)
         return feature, len_query
 
     def _compute_visual_feature(self, video_id, moment_loc):
@@ -316,14 +320,16 @@ class UntrimmedBasedMCNStyle(UntrimmedBase):
         "Return anchor, positive, None*2, gt_segments, candidate_segments"
         moment_i = self.metadata[idx]
         gt_segments = moment_i['times']
-        query = moment_i['language_input']
+        # query = moment_i['language_input']
+        query = moment_i['description']
         video_id = moment_i['video']
 
         pos_visual_feature, segments = self._compute_visual_feature_eval(
             video_id)
         neg_intra_visual_feature = None
         neg_inter_visual_feature = None
-        words_feature, len_query = self._compute_language_feature(query)
+        # words_feature, len_query = self._compute_language_feature(query)
+        words_feature, len_query = self._compute_language_feature(idx)
         num_segments = len(segments)
         len_query = [len_query] * num_segments
         words_feature = np.tile(words_feature, (num_segments, 1, 1))
@@ -560,7 +566,8 @@ class UntrimmedBasedMCNStyle(UntrimmedBase):
     def _train_item(self, idx):
         "Return anchor, positive, negatives"
         moment_i = self.metadata[idx]
-        query = moment_i['language_input']
+        # query = moment_i['language_input']
+        query = moment_i['description']
         video_id = moment_i['video']
         # Sample a positive annotations if there are multiple
         t_start_end = moment_i['times'][0, :]
@@ -576,7 +583,8 @@ class UntrimmedBasedMCNStyle(UntrimmedBase):
             idx, t_start_end)
         neg_inter_visual_feature = self._negative_inter_sampling(
             idx, t_start_end)
-        words_feature, len_query = self._compute_language_feature(query)
+        # words_feature, len_query = self._compute_language_feature(query)
+        words_feature, len_query = self._compute_language_feature(idx)
 
         argout = (words_feature, len_query, pos_visual_feature,
                   neg_intra_visual_feature, neg_inter_visual_feature)
@@ -1214,6 +1222,37 @@ def word_tokenize(s):
     sent = re.sub('[^A-Za-z0-9\s]+', ' ', sent)
     return sent.split()
 
+
+class WordVectorsOfDescriptions():
+    "Store word vector of descriptions in dataset"
+
+    def __init__(self, filename, max_words=50):
+        self.filename = filename
+        self.max_words = max_words
+        self.lookup_table = None
+        self._load_file()
+
+    def __call__(self, moment_index):
+        "Return padded word-vectors"
+        return (self.lookup_table[moment_index]['vectors'],
+                self.lookup_table[moment_index]['num_words'])
+
+    def _load_file(self):
+        "Load word vectors from HDF5"
+        self.lookup_table = {}
+        with h5py.File(self.filename, 'r') as fid:
+            for name, item in fid.items():
+                array = np.zeros((self.max_words, item.shape[-1]),
+                                 dtype=np.float32)
+                array[:len(item), :] = item[:]
+                # This will break `UntrimmedBase._shrink_dataset`, but that
+                # method is for debugging AFAIK. It will force us to dump
+                # different HDF5 for Charades-STA & AcitivityNet-Captions if
+                # HPS is needed.
+                self.lookup_table[int(name)] = {
+                    'vectors': array,
+                    'num_words': len(item)
+                }
 
 
 if __name__ == '__main__':

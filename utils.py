@@ -120,7 +120,7 @@ def logfile_from_snapshot(args):
 
 
 def setup_hyperparameters(args):
-    "Update Namescope with random hyper-paramters according to a YAML-file"
+    "Update Namescope with random hyper-parameters according to a YAML-file"
     if not args.hps:
         return
     filename = args.logfile.parent / 'hps.yml'
@@ -131,12 +131,22 @@ def setup_hyperparameters(args):
         config = yaml.load(fid)
     logging.info('Proceeding to perform random HPS')
     args_dview = vars(args)
+    
+    # Random search over single parameter of tied variables
+    tied, slack = 'w_inter', 'w_intra'
+    if tied in config:
+        if isinstance(config.get(slack), list):
+            logging.warning(f'Ignoring {tied}')
+            del config[tied]
+    
     for k, v in config.items():
         if not isinstance(v, list):
             args_dview[k] = v
             continue
         random.shuffle(v)
         args_dview[k] = v[0]
+        if k == 'w_intra':
+            args_dview['w_inter'] = 1 - v[0]
 
 
 def setup_logging(args):

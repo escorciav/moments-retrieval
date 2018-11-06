@@ -67,6 +67,7 @@ class MCN(nn.Module):
             embedded_neg_intra = self.visual_encoder(neg_intra)
         if neg_inter is not None:
             embedded_neg_inter = self.visual_encoder(neg_inter)
+
         return embedded_pos, embedded_neg_intra, embedded_neg_inter
 
     def encode_query(self, padded_query, query_length):
@@ -78,7 +79,8 @@ class MCN(nn.Module):
                                         total_length=self.max_length)
         # TODO: try max-pooling
         last_output = output[range(B), query_length - 1, :]
-        return self.lang_encoder(last_output)
+        embedded_lang = self.lang_encoder(last_output)
+        return embedded_lang
 
     def compare_emdeddings(self, anchor, x, dim=-1):
         # TODO: generalize to other similarities
@@ -143,8 +145,9 @@ class MCN(nn.Module):
 class SMCN(MCN):
     "SMCN model"
 
-    def __init__(self, *args, **kwargs):
+    def __init__(self, *args, unit_vector=False, **kwargs):
         super(SMCN, self).__init__(*args, **kwargs)
+        self.unit_vector = unit_vector
 
     def forward(self, padded_query, query_length, visual_pos,
                 visual_neg_intra=None, visual_neg_inter=None):
@@ -156,6 +159,8 @@ class SMCN(MCN):
         l_embedded = self.encode_query(padded_query, query_length)
         # transform l_emdedded into a tensor of shape [B, 1, D]
         l_embedded = l_embedded.unsqueeze(1)
+        if self.unit_vector:
+            l_embedded = F.normalize(l_embedded, dim=-1)
 
         # meta-comparison
         c_pos, c_neg_intra, c_neg_inter = self.compare_emdedded_snippets(
@@ -178,7 +183,10 @@ class SMCN(MCN):
     def fwd_visual_snippets(self, x):
         B, N, D = x.shape
         x_ = x.view(-1, D)
-        return self.visual_encoder(x_).view((B, N, -1))
+        x_ = self.visual_encoder(x_)
+        if self.unit_vector:
+            x_ = F.normalize(x_)
+        return x_.view((B, N, -1))
 
     def pool_compared_snippets(self, x, mask):
         masked_x = x * mask

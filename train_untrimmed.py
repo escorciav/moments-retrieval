@@ -61,6 +61,8 @@ parser.add_argument('--lang-hidden', type=int, default=1000,
                     help='Dimensionality of sentence representation')
 parser.add_argument('--visual-layers', type=int, default=1,
                     help='Number of layers in visual encoder')
+parser.add_argument('--unit-vector', action='store_true',
+                    help='Enable embedding normalization')
 # Program control
 parser.add_argument('--evaluate', action='store_true',
                     help='only run the model in the val set')
@@ -423,6 +425,8 @@ def setup_model(args, train_loader=None, val_loader=None):
                       visual_hidden=args.visual_hidden,
                       lang_hidden=args.lang_hidden,
                       visual_layers=args.visual_layers)
+    if args.arch == 'SMCN':
+        arch_setup['unit_vector'] = args.unit_vector
     net = model.__dict__[args.arch](**arch_setup)
 
     opt_parameters, criterion = None, None

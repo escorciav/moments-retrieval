@@ -424,9 +424,9 @@ def setup_model(args, train_loader=None, val_loader=None):
                       dropout=args.dropout,
                       visual_hidden=args.visual_hidden,
                       lang_hidden=args.lang_hidden,
-                      visual_layers=args.visual_layers)
-    if args.arch == 'SMCN':
-        arch_setup['unit_vector'] = args.unit_vector
+                      visual_layers=args.visual_layers,
+                      unit_vector=args.unit_vector
+                      )
     net = model.__dict__[args.arch](**arch_setup)
 
     opt_parameters, criterion = None, None

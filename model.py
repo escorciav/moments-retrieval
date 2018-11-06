@@ -16,10 +16,11 @@ class MCN(nn.Module):
 
     def __init__(self, visual_size=4096, lang_size=300, embedding_size=100,
                  dropout=0.3, max_length=None, visual_hidden=500,
-                 lang_hidden=1000, visual_layers=1):
+                 lang_hidden=1000, visual_layers=1, unit_vector=False):
         super(MCN, self).__init__()
         self.embedding_size = embedding_size
         self.max_length = max_length
+        self.unit_vector = unit_vector
 
         visual_encoder = [nn.Linear(visual_size, visual_hidden),
                           nn.ReLU(inplace=True)]
@@ -46,7 +47,6 @@ class MCN(nn.Module):
              visual_pos, visual_neg_intra, visual_neg_inter)
 
         l_embedded = self.encode_query(padded_query, query_length)
-
         c_pos = self.compare_emdeddings(l_embedded, v_embedded_pos)
         c_neg_intra, c_neg_inter = None, None
         if v_embedded_neg_intra is not None:
@@ -63,10 +63,16 @@ class MCN(nn.Module):
         embedded_neg_intra, embedded_neg_inter = None, None
 
         embedded_pos = self.visual_encoder(pos)
+        if self.unit_vector:
+            embedded_pos = F.normalize(embedded_pos, dim=-1)
         if neg_intra is not None:
             embedded_neg_intra = self.visual_encoder(neg_intra)
+            if self.unit_vector:
+                embedded_neg_intra = F.normalize(embedded_neg_intra, dim=-1)
         if neg_inter is not None:
             embedded_neg_inter = self.visual_encoder(neg_inter)
+            if self.unit_vector:
+                embedded_neg_inter = F.normalize(embedded_neg_inter, dim=-1)
 
         return embedded_pos, embedded_neg_intra, embedded_neg_inter
 
@@ -80,6 +86,8 @@ class MCN(nn.Module):
         # TODO: try max-pooling
         last_output = output[range(B), query_length - 1, :]
         embedded_lang = self.lang_encoder(last_output)
+        if self.unit_vector:
+            embedded_lang = F.normalize(embedded_lang, dim=-1)
         return embedded_lang
 
     def compare_emdeddings(self, anchor, x, dim=-1):
@@ -145,9 +153,8 @@ class MCN(nn.Module):
 class SMCN(MCN):
     "SMCN model"
 
-    def __init__(self, *args, unit_vector=False, **kwargs):
+    def __init__(self, *args, **kwargs):
         super(SMCN, self).__init__(*args, **kwargs)
-        self.unit_vector = unit_vector
 
     def forward(self, padded_query, query_length, visual_pos,
                 visual_neg_intra=None, visual_neg_inter=None):
@@ -159,8 +166,6 @@ class SMCN(MCN):
         l_embedded = self.encode_query(padded_query, query_length)
         # transform l_emdedded into a tensor of shape [B, 1, D]
         l_embedded = l_embedded.unsqueeze(1)
-        if self.unit_vector:
-            l_embedded = F.normalize(l_embedded, dim=-1)
 
         # meta-comparison
         c_pos, c_neg_intra, c_neg_inter = self.compare_emdedded_snippets(

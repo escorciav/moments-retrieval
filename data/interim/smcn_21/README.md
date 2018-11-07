@@ -55,3 +55,7 @@ TAF := clip-based TEF
 ### g
 
 Local+Global+TAF
+
+## Notes
+
+- `.BAK` files were the original JSON files dumped by our program.

@@ -5,6 +5,7 @@ from enum import IntEnum, unique
 
 import h5py
 import numpy as np
+from scipy.signal import convolve
 from torch.utils.data import Dataset
 
 from didemo import LanguageRepresentationMCN, FakeLanguageRepresentation
@@ -12,8 +13,7 @@ from didemo import sentences_to_words, normalization1d
 from np_segments_ops import iou as segment_iou
 from utils import dict_of_lists
 
-TIME_UNIT = 3  # 3 seconds due to psychological evidence
-
+TIME_UNIT = 3
 
 
 @unique
@@ -436,13 +436,14 @@ class UntrimmedSMCN(UntrimmedBasedMCNStyle):
         padding (bool): if True the representation is padded with zeros.
     """
 
-    def __init__(self, *args, max_clips=None, padding=True, **kwargs):
+    def __init__(self, *args, max_clips=None, padding=True, w_size=None,
+                 **kwargs):
         super(UntrimmedSMCN, self).__init__(*args, **kwargs)
         self.padding = padding
         if not self.eval:
             max_clips = self.max_number_of_clips()
         self.visual_interface = VisualRepresentationSMCN(
-            context=self.context, max_clips=max_clips)
+            context=self.context, max_clips=max_clips, w_size=w_size)
         self._set_feat_dim()
 
     def _compute_visual_feature(self, video_id, moment_loc):
@@ -642,13 +643,20 @@ class VisualRepresentationSMCN():
     """
 
     def __init__(self, context=True, dtype=np.float32, eps=1e-6,
-                 max_clips=None, padding=True):
+                 max_clips=None, padding=True, w_size=None):
         self.context = context
         self.size_factor = context + 1
         self.dtype = dtype
         self.eps = eps
         self.max_clips = max_clips
         self.padding = padding
+        self.context_fn = global_context
+        self._w_half = None
+        self._box = None
+        if w_size is not None:
+            self.context_fn = self._local_context
+            self._w_half = w_size // 2
+            self._box = np.ones((w_size, 1), dtype=dtype) / w_size
 
     def __call__(self, features, moment_loc, time_unit, num_clips=None):
         n_feat, f_dim = features.shape
@@ -673,20 +681,53 @@ class VisualRepresentationSMCN():
             im_start, im_end, features)
         mask[:T] = 1
         if self.context:
-            ic_start, ic_end = 0, len(features) - 1
-            if num_clips is not None:
-                ic_end = num_clips - 1
-            padded_data[:T, f_dim:2 * f_dim] = normalization1d(
-                ic_start, ic_end, features)
+
+            if self._w_half is None:
+                context_info = self.context_fn(features, num_clips)
+            else:
+                context_info = self.context_fn(
+                    im_start, im_end, features, num_clips)
+            padded_data[:T, f_dim:2 * f_dim] = context_info
         if self.padding:
             return padded_data, mask
         return padded_data, np.array([T])
+
+    def _local_context(self, start, end, x_t, num_clips=None):
+        "Context around clips"
+        if num_clips is None:
+            num_clips = x_t.shape[0]
+        ind_start = start - self._w_half
+        pad_left = -1 * min(ind_start, 0)
+        ind_start = max(ind_start, 0)
+        ind_end = end + self._w_half + 1
+        pad_right = max(ind_end - num_clips, 0)
+
+        x_t = x_t[ind_start:ind_end, :]
+        if pad_right > 0 or pad_left > 0:
+            x_t = np.pad(x_t, ((pad_left, pad_right), (0, 0)), 'edge')
+        y_t = convolve(x_t, self._box, 'valid')
+        return y_t
 
     def _local_feature(self, start, end, x):
         "Return normalized representation of each clip/chunk"
         y = x[start:end + 1, :]
         scaling_factor = np.linalg.norm(y, axis=1, keepdims=True) + self.eps
         return y / scaling_factor
+
+
+def global_context(x_t, num_clips=None):
+    """Context over the entire video
+
+    Args:
+        x_t (numpy array): of shape [N, D]. D:= feature dimension
+        num_clips (int): valid features. If `None` then `num_clips = N`.
+    Returns:
+        numpy array of shape [D].
+    """
+    ic_start, ic_end = 0, len(x_t) - 1
+    if num_clips is not None:
+        ic_end = num_clips - 1
+    return normalization1d(ic_start, ic_end, x_t)
 
 
 if __name__ == '__main__':

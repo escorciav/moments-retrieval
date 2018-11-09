@@ -91,6 +91,9 @@ parser.add_argument('--proposals-in-train', action='store_true',
                     help='Sample negative from proposals during training')
 parser.add_argument('--negative-sampling-iou', type=float, default=0.35,
                     help='Amount of IoU to consider proposals as negatives')
+parser.add_argument('--freeze-visual', action='store_true')
+parser.add_argument('--freeze-visual-encoder', action='store_true')
+parser.add_argument('--freeze-lang', action='store_true')
 # Hyper-parameters to explore search space (inference)
 parser.add_argument('--proposal-interface', default='SlidingWindowMSFS',
                     choices=proposals.PROPOSAL_SCHEMES,
@@ -433,7 +436,9 @@ def setup_model(args, train_loader=None, val_loader=None):
     if train_loader is not None:
         logging.info('Setting-up criterion')
         opt_parameters = net.optimization_parameters(
-            args.lr, args.original_setup)
+            args.lr, args.original_setup, freeze_visual=args.freeze_visual,
+            freeze_lang=args.freeze_lang,
+            freeze_visual_encoder=args.freeze_visual_encoder)
         criterion = IntraInterMarginLoss(
             margin=args.margin, w_inter=args.w_inter,
             w_intra=args.w_intra)

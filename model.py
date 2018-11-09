@@ -28,10 +28,10 @@ class MCN(nn.Module):
         for i in  range(visual_layers - 1):
             visual_encoder += [nn.Linear(visual_hidden, visual_hidden),
                                nn.ReLU(inplace=True)]
-        self.visual_encoder = nn.Sequential(
-          *visual_encoder,
-          nn.Linear(visual_hidden, embedding_size),
-          nn.Dropout(dropout)
+        self.visual_encoder = nn.Sequential(*visual_encoder)
+        self.visual_embedding = nn.Sequential(
+            nn.Linear(visual_hidden, embedding_size),
+            nn.Dropout(dropout)
         )
 
         self.sentence_encoder = nn.LSTM(
@@ -62,15 +62,18 @@ class MCN(nn.Module):
             pos, neg_intra, neg_inter)
         embedded_neg_intra, embedded_neg_inter = None, None
 
-        embedded_pos = self.visual_encoder(pos)
+        pos_encoded = self.visual_encoder(pos)
+        embedded_pos = self.visual_embedding(pos_encoded)
         if self.unit_vector:
             embedded_pos = F.normalize(embedded_pos, dim=-1)
         if neg_intra is not None:
-            embedded_neg_intra = self.visual_encoder(neg_intra)
+            neg_intra_encoded = self.visual_encoder(neg_intra)
+            embedded_neg_intra = self.visual_embedding(neg_intra_encoded)
             if self.unit_vector:
                 embedded_neg_intra = F.normalize(embedded_neg_intra, dim=-1)
         if neg_inter is not None:
-            embedded_neg_inter = self.visual_encoder(neg_inter)
+            neg_inter_encoded = self.visual_encoder(neg_inter)
+            embedded_neg_inter = self.visual_embedding(neg_inter_encoded)
             if self.unit_vector:
                 embedded_neg_inter = F.normalize(embedded_neg_inter, dim=-1)
 
@@ -104,9 +107,12 @@ class MCN(nn.Module):
             else:
                 prm.data.uniform_(-0.08, 0.08)
 
-    def optimization_parameters(self, initial_lr=1e-2, caffe_setup=False):
+    def optimization_parameters(
+            self, initial_lr=1e-2, caffe_setup=False, freeze_visual=False,
+            freeze_lang=False, freeze_visual_encoder=True):
         if caffe_setup:
-            return self.optimization_parameters_original(initial_lr)
+            return self.optimization_parameters_original(
+                initial_lr, freeze_visual, freeze_lang, freeze_visual_encoder)
         prm_policy = [
             {'params': self.sentence_encoder.parameters(),
              'lr': initial_lr * 10},
@@ -115,10 +121,23 @@ class MCN(nn.Module):
         ]
         return prm_policy
 
-    def optimization_parameters_original(self, initial_lr):
+    def optimization_parameters_original(
+            self, initial_lr, freeze_visual, freeze_lang,
+            freeze_visual_encoder):
         prm_policy = []
+
         for name, prm in self.named_parameters():
-            if 'sentence_encoder' in name and 'bias_ih_l' in name:
+            is_lang_tower = ('sentence_encoder' in name or
+                             'lang_encoder' in name)
+            is_visual_tower = ('visual_encoder' in name or
+                               'visual_embedding' in name)
+            if freeze_visual and is_visual_tower:
+                continue
+            elif freeze_lang and is_lang_tower:
+                continue
+            elif freeze_visual_encoder and 'visual_encoder' in name:
+                continue
+            elif 'sentence_encoder' in name and 'bias_ih_l' in name:
                 continue
             elif 'sentence_encoder' in name:
                 prm_policy.append({'params': prm, 'lr': initial_lr * 10})
@@ -189,6 +208,7 @@ class SMCN(MCN):
         B, N, D = x.shape
         x_ = x.view(-1, D)
         x_ = self.visual_encoder(x_)
+        x_ = self.visual_embedding(x_)
         if self.unit_vector:
             x_ = F.normalize(x_)
         return x_.view((B, N, -1))

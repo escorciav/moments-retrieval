@@ -527,7 +527,7 @@ if __name__ == '__main__':
                           if layer_name.startswith('visual_encoder')]) // 2
         model_hp['visual_layers'] = num_layers - 1
     arch_setup = dict(
-        visual_size=dataset.visual_size['rgb'],
+        visual_size=dataset.visual_size[model_hp['feat']],
         lang_size=dataset.language_size,
         max_length=dataset.max_words,
         embedding_size=model_hp['embedding_size'],

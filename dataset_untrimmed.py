@@ -166,7 +166,7 @@ class UntrimmedBasedMCNStyle(UntrimmedBase):
                  loc=TemporalFeatures.TEMPORAL_ENDPOINT,
                  max_words=50, eval=False, context=True,
                  proposals_interface=None, no_visual=False, sampling_iou=0.35,
-                 debug=False):
+                 ground_truth_rate=1, debug=False):
         super(UntrimmedBasedMCNStyle, self).__init__()
         self._setup_list(json_file)
         self._load_features(cues)
@@ -179,6 +179,7 @@ class UntrimmedBasedMCNStyle(UntrimmedBase):
         self._set_tef_interface(loc)
         self._sampling_iou = sampling_iou
         self.proposals_interface = proposals_interface
+        self._ground_truth_rate = ground_truth_rate
         # clean this, glove of original MCN is really slow, it kills fast
         # iteration during debugging :) (yes, I could cache but dahh)
         self.lang_interface = FakeLanguageRepresentation(
@@ -294,6 +295,20 @@ class UntrimmedBasedMCNStyle(UntrimmedBase):
             sampled_loc = self._random_proposal_sampling(other_video_duration)
         return self._compute_visual_feature(other_video, sampled_loc)
 
+    def _proposal_augmentation(self, moment_loc, video_id):
+        "positive data augmentation"
+        if random.random() > self._ground_truth_rate:
+            metadata = self.metadata_per_video[video_id]
+            proposals = self.proposals_interface(video_id, metadata)
+            iou_matrix = segment_iou(proposals, moment_loc[None, :])
+            # 0.6 is the mean btw 0.5 and 0.7 :sweat_smile:
+            indices = (iou_matrix > 0.6).nonzero()[0]
+            if len(indices) > 0:
+                ind = indices[random.randint(0, len(indices) - 1)]
+                sampled_loc = proposals[ind, :]
+                return sampled_loc
+        return moment_loc
+
     def _random_proposal_sampling(self, video_duration, moment_loc=None):
         "Sample a proposal with random start and end point"
         tiou = 1
@@ -354,6 +369,7 @@ class UntrimmedBasedMCNStyle(UntrimmedBase):
             ind_t = random.randint(0, len(moment_i['times']) - 1)
             t_start_end = moment_i['times'][ind_t, :]
 
+        t_start_end = self._proposal_augmentation(t_start_end, video_id)
         pos_visual_feature = self._compute_visual_feature(
             video_id, t_start_end)
         # Sample negatives

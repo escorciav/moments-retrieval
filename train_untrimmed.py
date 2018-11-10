@@ -103,9 +103,14 @@ parser.add_argument('--freeze-lang', action='store_true')
 parser.add_argument('--context-window', type=int, default=None,
                     help=('Size of context windows around each clip. '
                           'Valid only for SMCN.'))
+<<<<<<< HEAD
 parser.add_argument('--bias-to-single-clips', type=float, default=0,
                     help='Upsample single clip moments, 0 means no bias.')
 parser.add_argument('--clip-loss', action='store_true')
+=======
+parser.add_argument('--ground-truth-rate', type=float, default=1.0,
+                    help='Pos moment augmentation if its lower than 1')
+>>>>>>> [cherry-pick] Enhacement during training
 # Hyper-parameters to explore search space (inference)
 parser.add_argument('--proposal-interface', default='SlidingWindowMSFS',
                     choices=proposals.PROPOSAL_SCHEMES,
@@ -140,6 +145,8 @@ parser.add_argument('--lr-step', type=float, default=30,
                     help='Learning rate epoch to decay')
 parser.add_argument('--clip-grad', type=float, default=10,
                     help='clip gradients')
+parser.add_argument('--weight-decay', type=float, default=0.0,
+                    help='weight decay')
 parser.add_argument('--patience', type=int, default=-1,
                     help='stop optimization if there is no improvements')
 parser.add_argument('--no-shuffle', action='store_false', dest='shuffle',
@@ -409,6 +416,7 @@ def setup_dataset(args):
     extras_dataset_configs = [
         # Training
         {'proposals_interface': proposal_generator_train,
+         'ground_truth_rate': args.ground_truth_rate,
          'sampling_iou': args.negative_sampling_iou},
         # Validation or Testing
         {'eval': True, 'proposals_interface': proposal_generator}
@@ -512,10 +520,12 @@ def setup_model(args, train_loader=None, val_loader=None):
         return net, None, None
     if args.optimizer == 'sgd':
         optimizer = optim.SGD(opt_parameters, lr=args.lr,
-                              momentum=args.momentum)
+                              momentum=args.momentum,
+                              weight_decay=args.weight_decay)
     elif args.optimizer == 'sgd_caffe':
         optimizer = SGDCaffe(opt_parameters, lr=args.lr,
-                             momentum=args.momentum)
+                             momentum=args.momentum,
+                             weight_decay=args.weight_decay)
     else:
         raise ValueError(f'Unknow optimizer {args.optimizer}')
     return net, criterion, optimizer

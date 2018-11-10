@@ -94,6 +94,9 @@ parser.add_argument('--negative-sampling-iou', type=float, default=0.35,
 parser.add_argument('--freeze-visual', action='store_true')
 parser.add_argument('--freeze-visual-encoder', action='store_true')
 parser.add_argument('--freeze-lang', action='store_true')
+parser.add_argument('--context-window', type=int, default=None,
+                    help=('Size of context windows around each clip. '
+                          'Valid only for SMCN.'))
 # Hyper-parameters to explore search space (inference)
 parser.add_argument('--proposal-interface', default='SlidingWindowMSFS',
                     choices=proposals.PROPOSAL_SCHEMES,
@@ -401,7 +404,8 @@ def setup_dataset(args):
         logging.info(f'Found {subset}-list: {filename}')
         dataset = dataset_untrimmed.__dict__[dataset_name](
             filename, cues=cues, loc=args.loc, context=args.context,
-            no_visual=no_visual, debug=args.debug, **extras_dataset)
+            w_size=args.context_window, no_visual=no_visual,
+            debug=args.debug, **extras_dataset)
         logging.info(f'Setting loader')
         loaders.append(
             DataLoader(dataset, **extras_loader)

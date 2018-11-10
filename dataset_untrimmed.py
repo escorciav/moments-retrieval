@@ -706,7 +706,8 @@ class VisualRepresentationSMCN():
         if pad_right > 0 or pad_left > 0:
             x_t = np.pad(x_t, ((pad_left, pad_right), (0, 0)), 'edge')
         y_t = convolve(x_t, self._box, 'valid')
-        return y_t
+        scaling_factor = np.linalg.norm(y_t, axis=1, keepdims=True) + self.eps
+        return y_t / scaling_factor
 
     def _local_feature(self, start, end, x):
         "Return normalized representation of each clip/chunk"

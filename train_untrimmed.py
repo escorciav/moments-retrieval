@@ -396,6 +396,8 @@ def setup_dataset(args):
     for i, (subset, filename) in enumerate(subset_files):
         index_config = 0 if i == 0 else -1
         extras_dataset = extras_dataset_configs[index_config]
+        if dataset_name == 'UntrimmedSMCN':
+            extras_dataset['w_size'] = args.context_window
         extras_loader = extras_loaders_configs[index_config]
         if not filename.exists():
             logging.info(f'Not found {subset}-list: {filename}')
@@ -404,8 +406,7 @@ def setup_dataset(args):
         logging.info(f'Found {subset}-list: {filename}')
         dataset = dataset_untrimmed.__dict__[dataset_name](
             filename, cues=cues, loc=args.loc, context=args.context,
-            w_size=args.context_window, no_visual=no_visual,
-            debug=args.debug, **extras_dataset)
+            no_visual=no_visual, debug=args.debug, **extras_dataset)
         logging.info(f'Setting loader')
         loaders.append(
             DataLoader(dataset, **extras_loader)

@@ -92,7 +92,7 @@ parser.add_argument('--proposals-in-train', action='store_true',
 parser.add_argument('--negative-sampling-iou', type=float, default=0.35,
                     help='Amount of IoU to consider proposals as negatives')
 parser.add_argument('--freeze-visual', action='store_true')
-parser.add_argument('--freeze-visual-encoder', action='store_true')
+# parser.add_argument('--freeze-visual-encoder', action='store_true')
 parser.add_argument('--freeze-lang', action='store_true')
 parser.add_argument('--context-window', type=int, default=None,
                     help=('Size of context windows around each clip. '
@@ -442,7 +442,8 @@ def setup_model(args, train_loader=None, val_loader=None):
         opt_parameters = net.optimization_parameters(
             args.lr, args.original_setup, freeze_visual=args.freeze_visual,
             freeze_lang=args.freeze_lang,
-            freeze_visual_encoder=args.freeze_visual_encoder)
+            # freeze_visual_encoder=args.freeze_visual_encoder)
+        )
         criterion = IntraInterMarginLoss(
             margin=args.margin, w_inter=args.w_inter,
             w_intra=args.w_intra)

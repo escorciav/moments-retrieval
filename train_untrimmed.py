@@ -21,6 +21,7 @@ from utils import collate_data, collate_data_eval, ship_to
 from utils import setup_hyperparameters, setup_logging, setup_rng
 from utils import dumping_arguments, logfile_from_snapshot, save_checkpoint
 from utils import get_git_revision_hash
+from utils import MutableSampler
 from np_segments_ops import non_maxima_suppresion
 
 OPTIMIZER = ['sgd', 'sgd_caffe']
@@ -97,6 +98,8 @@ parser.add_argument('--freeze-lang', action='store_true')
 parser.add_argument('--context-window', type=int, default=None,
                     help=('Size of context windows around each clip. '
                           'Valid only for SMCN.'))
+parser.add_argument('--bias-to-single-clips', type=float, default=0,
+                    help='Upsample single clip moments, 0 means no bias.')
 # Hyper-parameters to explore search space (inference)
 parser.add_argument('--proposal-interface', default='SlidingWindowMSFS',
                     choices=proposals.PROPOSAL_SCHEMES,
@@ -352,6 +355,30 @@ def evaluate(args, net, loader):
     return validation(args, net, loader)
 
 
+def sampler_biased_single_clip_moment(dataset, rate):
+    """Bias sampling towards single clip moments
+
+    TODO: experimental feature. Remove if it's useless.
+    """
+    if 'didemo' in str(dataset.json_file):
+        return None
+    time_unit = dataset.proposals_interface.stride
+    ind_per_length = {}
+    for it, moment_data in enumerate(dataset.metadata):
+        moment = moment_data['times'][0]
+        length = moment[1] - moment[0]
+        num_clips = int(length // time_unit)
+        if num_clips not in ind_per_length:
+            ind_per_length[num_clips] = []
+        ind_per_length[num_clips].append(it)
+    max_instances_in_bucket = max([len(i) for i in ind_per_length.values()])
+    num_instances_single_clip = len(ind_per_length[0])
+    upsample_rate = int(rate * max_instances_in_bucket //
+                        num_instances_single_clip)
+    ind_per_length[0] = ind_per_length[0] * upsample_rate
+    return MutableSampler(sum(ind_per_length.values(), []))
+
+
 def setup_dataset(args):
     "Setup dataset and loader"
     # model dependend part
@@ -408,6 +435,10 @@ def setup_dataset(args):
             filename, cues=cues, loc=args.loc, context=args.context,
             no_visual=no_visual, debug=args.debug, **extras_dataset)
         logging.info(f'Setting loader')
+        if subset == 'train' and args.bias_to_single_clips > 0:
+            extras_loader['shuffle'] = False
+            extras_loader['sampler'] = sampler_biased_single_clip_moment(
+                dataset, args.bias_to_single_clips)
         loaders.append(
             DataLoader(dataset, **extras_loader)
         )

@@ -280,6 +280,96 @@ class SMCN(MCN):
         return argout
 
 
+class SMCNCL(SMCN):
+    "SMCN model plus single clip score"
+
+    def __init__(self, *args, **kwargs):
+        super(SMCNCL, self).__init__(*args, **kwargs)
+
+    def forward(self, padded_query, query_length, visual_pos,
+                visual_neg_intra=None, visual_neg_inter=None):
+        # v_v_embedded_* are tensors of shape [B, N, D]
+        (v_embedded_pos, v_embedded_neg_intra,
+         v_embedded_neg_inter) = self.encode_visual(
+             visual_pos, visual_neg_intra, visual_neg_inter)
+
+        l_embedded = self.encode_query(padded_query, query_length)
+        # transform l_emdedded into a tensor of shape [B, 1, D]
+        l_embedded = l_embedded.unsqueeze(1)
+
+        # meta-comparison
+        # sorry this is a mega empanada. Yes, it's deadline time!
+        argout = self.compare_emdedded_snippets(
+            v_embedded_pos, v_embedded_neg_intra, v_embedded_neg_inter,
+            l_embedded, visual_pos, visual_neg_intra, visual_neg_inter)
+        return argout
+
+    def compare_emdedded_snippets(self, embedded_p, embedded_n_intra,
+                                  embedded_n_inter, embedded_a,
+                                  pos, neg_intra, neg_inter):
+        all_masks = self._get_masks(pos, neg_intra, neg_inter)
+        c_neg_intra, c_neg_inter = None, None
+        c_neg_intra_clip, c_neg_inter_clip = None, None
+
+        mask_p, mask_p_clip = all_masks[:2]
+        c_pos = self.pool_compared_snippets(
+            self.compare_emdeddings(embedded_a, embedded_p), mask_p)
+        c_pos_clip = self.pool_compared_snippets(
+            self.compare_emdeddings(embedded_a, embedded_p), mask_p_clip)
+        if embedded_n_intra is not None:
+            mask_n_intra, mask_n_intra_clip = all_masks[2:4]
+            c_neg_intra = self.pool_compared_snippets(
+                self.compare_emdeddings(embedded_a, embedded_n_intra),
+                mask_n_intra)
+            c_neg_intra_clip = self.pool_compared_snippets(
+                self.compare_emdeddings(embedded_a, embedded_n_intra),
+                mask_n_intra_clip)
+        if embedded_n_inter is not None:
+            mask_n_inter, mask_n_inter_clip = all_masks[4:]
+            c_neg_inter = self.pool_compared_snippets(
+                self.compare_emdeddings(embedded_a, embedded_n_inter),
+                mask_n_inter)
+            c_neg_inter_clip = self.pool_compared_snippets(
+                self.compare_emdeddings(embedded_a, embedded_n_inter),
+                mask_n_inter_clip)
+        return (c_pos, c_neg_intra, c_neg_inter,
+                c_pos_clip, c_neg_intra_clip, c_neg_inter_clip)
+
+    def _unpack_visual(self, *args):
+        """Get visual feature and mask inside a dict
+
+        You must add the keys into the dict such that you respect the order
+        feat, mask, ...
+
+        Note:
+            - Assumes cpython >= 3.6
+        """
+        argout = ()
+        for i in args:
+            if isinstance(i, dict):
+                # only works in cpython >= 3.6
+                # TODO: hotspot, cuando se parten los pistones.
+                argout += tuple(i.values())[:2]
+            elif i is None:
+                argout += (None, None)
+            else:
+                argout += (i,)
+        return argout
+
+    def _get_masks(self, *args):
+        "Get masks inside a dict. similar to `_unpack_visual`"
+        argout = ()
+        for i in args:
+            if isinstance(i, dict):
+                # only works in
+                argout += tuple(i.values())[1:]
+            elif i is None:
+                argout += (None, None)
+            else:
+                argout += (i,)
+        return argout
+
+
 class SMCNTalcv1(SMCN):
     "SMCNTalc model version 1"
 

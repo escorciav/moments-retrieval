@@ -41,6 +41,28 @@ class IntraInterMarginLoss(nn.Module):
         return loss, intra_loss, inter_loss
 
 
+class IntraInterMarginLossPlusClip(IntraInterMarginLoss):
+    "Intra-Inter Margin Loss (distance based)"
+
+    def __init__(self, *args, c_intra=0.5, c_inter=0.2, **kwargs):
+        super(IntraInterMarginLossPlusClip, self).__init__(*args, **kwargs)
+        self.c_intra = c_intra
+        self.c_inter = c_inter
+
+    def forward(self, *args):
+        p, n_intra, n_inter = args[:3]
+        c_p, c_n_intra, c_n_inter = args[3:]
+        intra_loss = F.relu(self.margin + (p - n_intra))
+        inter_loss = F.relu(self.margin + (p - n_inter))
+        c_intra_loss = F.relu(self.margin + (c_p - c_n_intra))
+        c_inter_loss = F.relu(self.margin + (c_p - c_n_inter))
+        loss = (self.w_intra * intra_loss.mean() +
+                self.w_inter * inter_loss.mean() +
+                self.c_intra * c_intra_loss.mean() +
+                self.c_inter * c_inter_loss.mean())
+        return loss, intra_loss, inter_loss
+
+
 if __name__ == '__main__':
     import torch
 

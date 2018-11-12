@@ -13,7 +13,7 @@ import torch.optim as optim
 import dataset_untrimmed
 import model
 import proposals
-from loss import IntraInterMarginLoss
+import loss
 from evaluation import single_moment_retrieval, didemo_evaluation
 from dataset_untrimmed import TemporalFeatures
 from utils import Multimeter, Tracker
@@ -86,6 +86,11 @@ parser.add_argument('--w-inter', type=float, default=0.2,
                     help='Inter-loss weight')
 parser.add_argument('--w-intra', type=float, default=0.5,
                     help='Intra-loss weight')
+# TODO: add weight for clip loss
+parser.add_argument('--c-inter', type=float, default=0.2,
+                    help='Clip-inter-loss weight')
+parser.add_argument('--c-intra', type=float, default=0.5,
+                    help='Clip-intra-loss weight')
 parser.add_argument('--original-setup', action='store_true',
                     help='Enable original optimization policy')
 parser.add_argument('--proposals-in-train', action='store_true',
@@ -100,6 +105,7 @@ parser.add_argument('--context-window', type=int, default=None,
                           'Valid only for SMCN.'))
 parser.add_argument('--bias-to-single-clips', type=float, default=0,
                     help='Upsample single clip moments, 0 means no bias.')
+parser.add_argument('--clip-loss', action='store_true')
 # Hyper-parameters to explore search space (inference)
 parser.add_argument('--proposal-interface', default='SlidingWindowMSFS',
                     choices=proposals.PROPOSAL_SCHEMES,
@@ -425,6 +431,7 @@ def setup_dataset(args):
         extras_dataset = extras_dataset_configs[index_config]
         if dataset_name == 'UntrimmedSMCN':
             extras_dataset['w_size'] = args.context_window
+            extras_dataset['clip_mask'] = args.clip_loss
         extras_loader = extras_loaders_configs[index_config]
         if not filename.exists():
             logging.info(f'Not found {subset}-list: {filename}')
@@ -456,16 +463,19 @@ def setup_model(args, train_loader=None, val_loader=None):
     else:
         raise ValueError('either train or val list must exists')
     logging.info('Setting-up model')
-    arch_setup = dict(visual_size=dataset.visual_size[args.feat],
-                      lang_size=dataset.language_size,
-                      max_length=dataset.max_words,
-                      embedding_size=args.embedding_size,
-                      dropout=args.dropout,
-                      visual_hidden=args.visual_hidden,
-                      lang_hidden=args.lang_hidden,
-                      visual_layers=args.visual_layers,
-                      unit_vector=args.unit_vector
-                      )
+    arch_setup = dict(
+        visual_size=dataset.visual_size[args.feat],
+        lang_size=dataset.language_size,
+        max_length=dataset.max_words,
+        embedding_size=args.embedding_size,
+        dropout=args.dropout,
+        visual_hidden=args.visual_hidden,
+        lang_hidden=args.lang_hidden,
+        visual_layers=args.visual_layers,
+        unit_vector=args.unit_vector
+    )
+    if args.clip_loss:
+        args.arch = 'SMCNCL'
     net = model.__dict__[args.arch](**arch_setup)
 
     opt_parameters, criterion = None, None
@@ -476,9 +486,15 @@ def setup_model(args, train_loader=None, val_loader=None):
             freeze_lang=args.freeze_lang,
             # freeze_visual_encoder=args.freeze_visual_encoder)
         )
-        criterion = IntraInterMarginLoss(
-            margin=args.margin, w_inter=args.w_inter,
-            w_intra=args.w_intra)
+
+        criterion_ = 'IntraInterMarginLoss'
+        criterion_prm = dict(margin=args.margin, w_inter=args.w_inter,
+                             w_intra=args.w_intra)
+        if args.clip_loss:
+            criterion_ = 'IntraInterMarginLossPlusClip'
+            criterion_prm['c_inter'] = args.c_inter
+            criterion_prm['c_intra'] = args.c_intra
+        criterion = loss.__dict__[criterion_](**criterion_prm)
 
     logging.info('Setting-up model mode')
     net.train()

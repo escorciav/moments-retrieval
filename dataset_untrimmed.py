@@ -437,9 +437,10 @@ class UntrimmedSMCN(UntrimmedBasedMCNStyle):
     """
 
     def __init__(self, *args, max_clips=None, padding=True, w_size=None,
-                 **kwargs):
+                 clip_mask=False, **kwargs):
         super(UntrimmedSMCN, self).__init__(*args, **kwargs)
         self.padding = padding
+        self.clip_mask = clip_mask
         if not self.eval:
             max_clips = self.max_number_of_clips()
         self.visual_interface = VisualRepresentationSMCN(
@@ -479,7 +480,13 @@ class UntrimmedSMCN(UntrimmedBasedMCNStyle):
         # whatever masks is fine given that we don't consider time responsive
         # features yet?
         dtype = np.float32 if self.padding else np.int64
-        feature_collection['mask'] = mask.astype(dtype, copy=False)
+        moment_mask = mask.astype(dtype, copy=False)
+        feature_collection['mask'] = moment_mask
+        if self.clip_mask:
+            clip_mask = np.zeros_like(moment_mask)
+            T = int(moment_mask.sum())
+            clip_mask[random.randint(0, T - 1)] = 1
+            feature_collection['mask_c'] = clip_mask
         return feature_collection
 
     def _compute_visual_feature_eval(self, video_id):
@@ -681,7 +688,6 @@ class VisualRepresentationSMCN():
             im_start, im_end, features)
         mask[:T] = 1
         if self.context:
-
             if self._w_half is None:
                 context_info = self.context_fn(features, num_clips)
             else:

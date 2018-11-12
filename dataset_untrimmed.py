@@ -166,7 +166,7 @@ class UntrimmedBasedMCNStyle(UntrimmedBase):
                  loc=TemporalFeatures.TEMPORAL_ENDPOINT,
                  max_words=50, eval=False, context=True,
                  proposals_interface=None, no_visual=False, sampling_iou=0.35,
-                 ground_truth_rate=1, debug=False):
+                 ground_truth_rate=1, prob_nproposal_nextto=-1, debug=False):
         super(UntrimmedBasedMCNStyle, self).__init__()
         self._setup_list(json_file)
         self._load_features(cues)
@@ -180,6 +180,7 @@ class UntrimmedBasedMCNStyle(UntrimmedBase):
         self._sampling_iou = sampling_iou
         self.proposals_interface = proposals_interface
         self._ground_truth_rate = ground_truth_rate
+        self._prob_neg_proposal_next_to = prob_nproposal_nextto
         # clean this, glove of original MCN is really slow, it kills fast
         # iteration during debugging :) (yes, I could cache but dahh)
         self.lang_interface = FakeLanguageRepresentation(
@@ -260,7 +261,9 @@ class UntrimmedBasedMCNStyle(UntrimmedBase):
         "Sample another moment inside the video"
         moment_i = self.metadata[idx]
         video_id = moment_i['video']
-        if self.proposals_interface is None:
+        if random.random() <= self._prob_neg_proposal_next_to:
+            sampled_loc = self._proposal_next_to_moment(idx, moment_loc)
+        elif self.proposals_interface is None:
             video_duration = self._video_duration(video_id)
             sampled_loc = self._random_proposal_sampling(
                 video_duration, moment_loc)
@@ -277,6 +280,33 @@ class UntrimmedBasedMCNStyle(UntrimmedBase):
                 sampled_loc = self._random_proposal_sampling(
                     video_duration, moment_loc)
         return self._compute_visual_feature(video_id, sampled_loc)
+
+    def _proposal_next_to_moment(self, idx, moment_loc):
+        "Return a proposal next to moment_loc of length <= moment length"
+        if not hasattr(self.proposals_interface, 'stride'):
+            raise ValueError('Unsupported proposal interface')
+        t_start, t_end = moment_loc[1], moment_loc[1]
+        time_unit = self.proposals_interface.stride
+        moment_i = self.metadata[idx]
+        video_id = moment_i['video']
+        duration = self._video_duration(video_id)
+        sampled_loc = np.empty_like(moment_loc)
+
+        # sample duration at random
+        moment_num_clips = max(int((t_end - t_start) // time_unit), 1)
+        sample_num_clips = random.randint(1, moment_num_clips)
+        sample_length = sample_num_clips * time_unit
+        if random.random() >= 0.5:
+            if t_start - sample_length >= 0:
+                sampled_loc[1] = t_start
+                sampled_loc[0] = t_start - sample_length
+                return sampled_loc
+        else:
+            if t_end + sample_length <= duration:
+                sampled_loc[0] = t_end
+                sampled_loc[1] = t_end + sample_length
+                return sampled_loc
+        return self._random_proposal_sampling(duration, moment_loc)
 
     def _negative_inter_sampling(self, idx, moment_loc):
         "Sample another moment from other video as in original MCN paper"

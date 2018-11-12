@@ -108,6 +108,9 @@ parser.add_argument('--bias-to-single-clips', type=float, default=0,
 parser.add_argument('--clip-loss', action='store_true')
 parser.add_argument('--ground-truth-rate', type=float, default=1.0,
                     help='Pos moment augmentation if its lower than 1')
+parser.add_argument('--prob-proposal-nextto', type=float, default=-1.0,
+                    help=('Prob to sample negatives next to moments. -1'
+                          'means disabled. Increase it to sample often.'))
 # Hyper-parameters to explore search space (inference)
 parser.add_argument('--proposal-interface', default='SlidingWindowMSFS',
                     choices=proposals.PROPOSAL_SCHEMES,
@@ -414,6 +417,7 @@ def setup_dataset(args):
         # Training
         {'proposals_interface': proposal_generator_train,
          'ground_truth_rate': args.ground_truth_rate,
+         'prob_nproposal_nextto': args.prob_proposal_nextto,
          'sampling_iou': args.negative_sampling_iou},
         # Validation or Testing
         {'eval': True, 'proposals_interface': proposal_generator}

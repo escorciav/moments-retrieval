@@ -103,14 +103,11 @@ parser.add_argument('--freeze-lang', action='store_true')
 parser.add_argument('--context-window', type=int, default=None,
                     help=('Size of context windows around each clip. '
                           'Valid only for SMCN.'))
-<<<<<<< HEAD
 parser.add_argument('--bias-to-single-clips', type=float, default=0,
                     help='Upsample single clip moments, 0 means no bias.')
 parser.add_argument('--clip-loss', action='store_true')
-=======
 parser.add_argument('--ground-truth-rate', type=float, default=1.0,
                     help='Pos moment augmentation if its lower than 1')
->>>>>>> [cherry-pick] Enhacement during training
 # Hyper-parameters to explore search space (inference)
 parser.add_argument('--proposal-interface', default='SlidingWindowMSFS',
                     choices=proposals.PROPOSAL_SCHEMES,

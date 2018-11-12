@@ -131,22 +131,29 @@ def setup_hyperparameters(args):
         config = yaml.load(fid)
     logging.info('Proceeding to perform random HPS')
     args_dview = vars(args)
-    
+
     # Random search over single parameter of tied variables
-    tied, slack = 'w_inter', 'w_intra'
-    if tied in config:
-        if isinstance(config.get(slack), list):
-            logging.warning(f'Ignoring {tied}')
-            del config[tied]
-    
+    slack_tied = {'w_intra': 'w_inter',
+                  'c_intra': 'c_inter'}
+    for slack, tied in slack_tied.items():
+        if tied in config:
+            if isinstance(config.get(slack), list):
+                logging.warning(f'Ignoring {tied}')
+                del config[tied]
+
     for k, v in config.items():
         if not isinstance(v, list):
             args_dview[k] = v
             continue
         random.shuffle(v)
         args_dview[k] = v[0]
-        if k == 'w_intra':
-            args_dview['w_inter'] = 1 - v[0]
+        if k == slack_tied:
+            args_dview[slack_tied[k]] = 1 - v[0]
+
+    # Note: only available in YAML
+    if args.clip_loss and args.only_clip_loss:
+        args_dview['w_intra'] = 0.0
+        args_dview['w_inter'] = 0.0
 
 
 def setup_logging(args):

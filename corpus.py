@@ -483,6 +483,161 @@ class MomentRetrievalFromClipBasedProposalsTable(
         return self.video_indices[ind], self.proposals[ind, :]
 
 
+class GreedyMomentRetrievalFromClipBasedProposalsTable(
+        CorpusVideoMomentRetrievalBase):
+    "TODO: Retrieve Moments using a clip based model"
+
+    def __init__(self, *args, **kwargs):
+        super(GreedyMomentRetrievalFromClipBasedProposalsTable,
+              self).__init__(*args, **kwargs)
+        self.clips_per_moment = None
+        self.clips_per_moment_list = None
+        self.video_clip2proposals = {}
+        self.clips_tables = None
+        self.clip_indices = None
+        assert self.dataset.decomposable
+
+    def indexing(self):
+        "Create database of moments in videos"
+        torch.set_grad_enabled(False)
+        num_entries_per_video, clips_per_moment = [], []
+        clips_per_video, clip_indices = [], []
+        all_proposals = []
+        codes = {key: [] for key in self.models}
+        clip_codes = {key: [] for key in self.models}
+        sample_key = list(self.models.keys())[0]
+        moment_ind_runner = 0
+        # TODO (tier-2;design): define method in dataset to do this?
+        # batchify the fwd-pass
+        for video_index, video_id in enumerate(self.dataset.videos):
+            representation_dict, proposals_ = (
+                self.dataset._compute_visual_feature_eval(video_id))
+            num_entries_per_video.append(len(proposals_))
+            num_clips_i = representation_dict['mask']
+            if num_clips_i.ndim != 1:
+                raise ValueError('Dataset setup incorrectly. Disable padding')
+            # TODO(tier-2;refactor): this could be cleaner.
+            # We resort in our implementation of non-decomposable SMCN while
+            # this could be implemented much efficiently. Given that the
+            # features were packed like [Mi0; Mi1;...; MiS_i] where
+            # Mij := c_ij x D tensor (lines above), it's meassy to select the
+            # features of the unique clips. Thus, we prefer to request them
+            # again for a proposal spanning the entire video duration.
+            all_video_moment = np.array(
+                [0, self.dataset._video_duration(video_id)])
+            clips_representation_dict = self.dataset._compute_visual_feature(
+                video_id, all_video_moment)
+
+            clips_per_video.append(len(clips_representation_dict[sample_key]))
+            clip_indices.append(
+                torch.arange(0, clips_per_video[-1], 1, dtype=torch.long))
+
+            # Update mapping from (video_index, clip_index_at_video) to
+            # proposal_index_at_corpus
+            time_unit = self.dataset.time_unit
+            for proposal_ind_v, proposal_i in enumerate(proposals_):
+                proposal_index = moment_ind_runner + proposal_ind_v
+                c_start = int(proposal_i[0] // time_unit)
+                c_end = int((proposal_i[1] - 1e-6) // time_unit)
+                for c_index in range(c_start, c_end + 1):
+                    video_clip_index = (video_index, c_index)
+                    if video_clip_index not in self.video_clip2proposals:
+                        self.video_clip2proposals[video_clip_index] = []
+                    self.video_clip2proposals[video_clip_index].append(
+                        proposal_index)
+            moment_ind_runner += num_entries_per_video[-1]
+
+            # torchify
+            for key, value in representation_dict.items():
+                if key == 'mask': continue
+                # get representation of all proposals
+                representation_dict[key] = torch.from_numpy(value)
+                clips_rep_k = clips_representation_dict[key]
+                clips_representation_dict[key] = torch.from_numpy(clips_rep_k)
+            proposals = torch.from_numpy(proposals_)
+            clips_per_moment.append(torch.from_numpy(num_clips_i))
+
+            # Append items to database
+            all_proposals.append(proposals)
+            for key in self.dataset.cues:
+                segment_rep_k = representation_dict[key]
+                # get codes of the proposals -> C_i x D matrix
+                # Given The i-th video with S_i number of proposals
+                # Each proposal S_i spans c_ij clips of the i-th video.
+                # C_i = \sum_{j=1}^{S_i} c_ij := num clips over all S_i
+                # proposals in the i-th video
+                codes[key].append(
+                    self.models[key].visual_encoder(segment_rep_k))
+
+                # similar to codes of proposals but of clips in video
+                clips_rep_k = clips_representation_dict[key]
+                clip_codes[key].append(
+                    self.models[key].visual_encoder(clips_rep_k))
+        # Form the C x D matrix
+        # M := number of videos, C = \sum_{i=1}^M C_i
+        # We have as many tables as visual cues
+        self.moments_tables = {key: torch.cat(value)
+                               for key, value in codes.items()}
+        self.clips_tables = {key: torch.cat(value)
+                             for key, value in clip_codes.items()}
+        clip_table_entries = sum(clips_per_video)
+        for key, value in self.clips_tables.items():
+            assert value.shape[0] == clip_table_entries
+
+        # TODO (tier-2; design): organize this better
+        self.num_videos = len(num_entries_per_video)
+        self.entries_per_video = torch.tensor(num_entries_per_video)
+        self.proposals = torch.cat(all_proposals)
+        self.num_moments = int(self.proposals.shape[0])
+        video_indices = np.repeat(
+            np.arange(0, len(self.dataset.videos)), num_entries_per_video)
+        self.video_indices = torch.from_numpy(video_indices)
+        self.clips_per_moment = torch.cat(clips_per_moment)
+        self.clips_per_moment_list = self.clips_per_moment.tolist()
+        self.clips_per_moment = self.clips_per_moment.float()
+        self.clips_indices = torch.cat(clip_indices)
+        video_indices_clip = np.repeat(
+            np.arange(0, len(self.dataset.videos)), clips_per_video)
+        self.video_indices_clip = torch.from_numpy(video_indices_clip)
+
+    def query(self, description):
+        "Search moments based on a text description given as list of words"
+        # This is test-bed using a double search scheme resembling our greedy
+        # scheme. For fair comparison, we append the results of the exhaustive
+        # search such that they are equivalent at infinity time search.
+        torch.set_grad_enabled(False)
+        lang_feature, len_query = self.preprocess_description(description)
+        moment_score_list, clip_score_list, descending_list = [], [], []
+        for key, model_k in self.models.items():
+            # Search over moments
+            lang_code = model_k.encode_query(lang_feature, len_query)
+            scores_k, descending_k = model_k.search(
+                lang_code, self.moments_tables[key], self.clips_per_moment,
+                self.clips_per_moment_list)
+            moment_score_list.append(scores_k * self.alpha[key])
+            descending_list.append(descending_k)
+
+            # Search over clips
+            clips_score_k = model_k.compare_emdeddings(
+                lang_code, self.clips_tables[key])
+            clip_score_list.append(clips_score_k * self.alpha[key])
+        moments_score = sum(moment_score_list)
+        clips_score = sum(clip_score_list)
+        # assert np.unique(descending_list).shape[0] == 1
+        sorted_moments_score, ind_moments = moments_score.sort(
+            descending=descending_k)
+        _, ind_clips = clips_score.sort(descending=descending_k)
+        # TODO (tier-1): enable bell and whistles
+        raise NotImplementedError
+        # TODO: loop over top-k clips and collect all moment_index_global
+        # TODO: remove duplicate moments
+        # TODO: take score of those moment from moments_score
+        # TODO: sort that chunks
+        # TODO: remove moment_index_global from `ind_moments`
+        # TODO: put that chunk as it's
+        return self.video_indices[ind_moments], self.proposals[ind_moments, :]
+
+
 if __name__ == '__main__':
     _filename = 'data/interim/mcn/corpus_val_rgb.hdf5'
     _corpus = Corpus(_filename)

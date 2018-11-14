@@ -192,6 +192,11 @@ class UntrimmedBasedMCNStyle(UntrimmedBase):
             assert self.proposals_interface is not None
 
     @property
+    def decomposable(self):
+        "If True -> model can be decomposed into clips"
+        raise NotImplementedError('Class property')
+
+    @property
     def language_size(self):
         "dimension of word embeddings"
         return self.feat_dim['language_size']
@@ -426,6 +431,10 @@ class UntrimmedMCN(UntrimmedBasedMCNStyle):
         self.visual_interface = VisualRepresentationMCN(context=self.context)
         self._set_feat_dim()
 
+    @property
+    def decomposable(self):
+        return False
+
     def _compute_visual_feature(self, video_id, moment_loc):
         "Return visual features plus TEF for a given segment in the video"
         if self.no_visual:
@@ -492,6 +501,16 @@ class UntrimmedSMCN(UntrimmedBasedMCNStyle):
         self.visual_interface = VisualRepresentationSMCN(
             context=self.context, max_clips=max_clips, w_size=w_size)
         self._set_feat_dim()
+
+    @property
+    def decomposable(self):
+        decomposable_time_features = (
+            self.loc == TemporalFeatures.NONE or
+            self.loc == TemporalFeatures.TEMPORALLY_AWARE
+        )
+        if decomposable_time_features:
+            return True
+        return False
 
     def _compute_visual_feature(self, video_id, moment_loc):
         """Return visual features plus TEF for a given segment in the video

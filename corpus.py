@@ -487,7 +487,7 @@ class GreedyMomentRetrievalFromClipBasedProposalsTable(
         CorpusVideoMomentRetrievalBase):
     "TODO: Retrieve Moments using a clip based model"
 
-    def __init__(self, *args, **kwargs):
+    def __init__(self, *args, topk=None, **kwargs):
         super(GreedyMomentRetrievalFromClipBasedProposalsTable,
               self).__init__(*args, **kwargs)
         self.clips_per_moment = None
@@ -495,6 +495,7 @@ class GreedyMomentRetrievalFromClipBasedProposalsTable(
         self.video_clip2proposals = {}
         self.clips_tables = None
         self.clip_indices = None
+        self.topk = topk
         assert self.dataset.decomposable
 
     def indexing(self):
@@ -595,6 +596,8 @@ class GreedyMomentRetrievalFromClipBasedProposalsTable(
         self.clips_per_moment = torch.cat(clips_per_moment)
         self.clips_per_moment_list = self.clips_per_moment.tolist()
         self.clips_per_moment = self.clips_per_moment.float()
+        self.cumsum_clips_per_moment_np = np.cumsum(
+            self.clips_per_moment_list)
         self.clips_indices = torch.cat(clip_indices)
         video_indices_clip = np.repeat(
             np.arange(0, len(self.dataset.videos)), clips_per_video)
@@ -602,40 +605,64 @@ class GreedyMomentRetrievalFromClipBasedProposalsTable(
 
     def query(self, description):
         "Search moments based on a text description given as list of words"
-        # This is test-bed using a double search scheme resembling our greedy
-        # scheme. For fair comparison, we append the results of the exhaustive
-        # search such that they are equivalent at infinity time search.
         torch.set_grad_enabled(False)
         lang_feature, len_query = self.preprocess_description(description)
-        moment_score_list, clip_score_list, descending_list = [], [], []
-        for key, model_k in self.models.items():
-            # Search over moments
-            lang_code = model_k.encode_query(lang_feature, len_query)
-            scores_k, descending_k = model_k.search(
-                lang_code, self.moments_tables[key], self.clips_per_moment,
-                self.clips_per_moment_list)
-            moment_score_list.append(scores_k * self.alpha[key])
-            descending_list.append(descending_k)
 
-            # Search over clips
+        # Search over clips
+        clip_score_list = []
+        for key, model_k in self.models.items():
+            lang_code = model_k.encode_query(lang_feature, len_query)
             clips_score_k = model_k.compare_emdeddings(
                 lang_code, self.clips_tables[key])
             clip_score_list.append(clips_score_k * self.alpha[key])
-        moments_score = sum(moment_score_list)
         clips_score = sum(clip_score_list)
-        # assert np.unique(descending_list).shape[0] == 1
+        # TODO (tier-2;release): not hard-code False
+        _, ind_clips = clips_score.sort(descending=False)
+
+        # TODO (tier-1): enable bell and whistles
+        # TODO(tier-2;performance?): allocate tensor of size topk
+        greedy_global_moment_indices = [
+            self.video_clip2proposals.get(
+                (self.video_indices_clip[i].item(),
+                 self.clips_indices[i].item())
+            )
+            for i in ind_clips[:self.topk]
+        ]
+        greedy_global_moment_indices = sum(greedy_global_moment_indices, [])
+        greedy_global_moment_indices = np.unique(greedy_global_moment_indices)
+
+        # Search over moments, only over moments containing clips above
+        clips_per_moment = self.clips_per_moment[greedy_global_moment_indices]
+        video_indices = self.video_indices[greedy_global_moment_indices]
+        proposals = self.proposals[greedy_global_moment_indices, :]
+        clips_per_moment_list, indices_for_moments_table = [], []
+        for i in greedy_global_moment_indices:
+            clips_per_moment_list.append(self.clips_per_moment_list[i])
+            # We need this hack because we are using the general
+            # non-decomposable indexing of SMCN. This is a realistic test bed
+            # to compare accuracy.
+            ind_start_moment_i = 0
+            if i > 0:
+                ind_start_moment_i = self.cumsum_clips_per_moment_np[i - 1]
+            ind_end_moment_i = self.cumsum_clips_per_moment_np[i]
+            indices_for_moments_table.append(
+                list(range(ind_start_moment_i, ind_end_moment_i)))
+        indices_for_moments_table = sum(indices_for_moments_table, [])
+
+        moment_score_list, descending_list = [], []
+        for key, model_k in self.models.items():
+            moments_table_k = self.moments_tables[key][
+                indices_for_moments_table, :]
+            scores_k, descending_k = model_k.search(
+                lang_code, moments_table_k, clips_per_moment,
+                clips_per_moment_list)
+            moment_score_list.append(scores_k * self.alpha[key])
+            descending_list.append(descending_k)
+        assert descending_k == False
+        moments_score = sum(moment_score_list)
         sorted_moments_score, ind_moments = moments_score.sort(
             descending=descending_k)
-        _, ind_clips = clips_score.sort(descending=descending_k)
-        # TODO (tier-1): enable bell and whistles
-        raise NotImplementedError
-        # TODO: loop over top-k clips and collect all moment_index_global
-        # TODO: remove duplicate moments
-        # TODO: take score of those moment from moments_score
-        # TODO: sort that chunks
-        # TODO: remove moment_index_global from `ind_moments`
-        # TODO: put that chunk as it's
-        return self.video_indices[ind_moments], self.proposals[ind_moments, :]
+        return video_indices[ind_moments], proposals[ind_moments, :]
 
 
 if __name__ == '__main__':
@@ -687,3 +714,6 @@ if __name__ == '__main__':
     subject.indexing()
     ind = np.random.randint(0, len(dataset))
     subject.query(dataset.metadata[ind]['language_input'])
+    # TODO: check that video indices are correct
+    # TODO: unit-test for MomentRetrievalFromClipBasedProposalsTable
+    # TODO: unit-test for GreedyMomentRetrievalFromClipBasedProposalsTable

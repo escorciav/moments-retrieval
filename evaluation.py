@@ -467,27 +467,28 @@ if __name__ == '__main__':
                         help='Save log in text file and json')
     parser.add_argument('--logfile', type=Path, default='',
                         help='Logging file')
+    parser.add_argument('--n-display', type=float, default=0.2,
+                        help='logging rate during epoch')
+    parser.add_argument('--disable-tqdm', action='store_true',
+                        help='Disable progress-bar')
     # Debug
     parser.add_argument('--debug', action='store_true',
                     help=('yield incorrect results! to verify we are gluing '
                           'things (dataset, model, eval) correctly'))
     args = parser.parse_args()
-    args.logfile = Path('')
-    args.disable_tqdm = False
+
     if args.dump:
         args.disable_tqdm = True
         if len(args.logfile.name) == 0:
-            suffix = f'_corpus-eval.log'
             args.logfile = args.snapshot_args.with_suffix('').with_name(
-                args.snapshot_args.stem + suffix)
-            if args.logfile.exists():
-                raise ValueError(
-                    f'{args.logfile} already exists. Please provide a logfile'
-                    'or backup existing results.')
+                args.snapshot_args.stem + '_corpus-eval')
+        if args.logfile.exists():
+            raise ValueError(
+                f'{args.logfile} already exists. Please provide a logfile or'
+                'backup existing results.')
     setup_logging(args)
 
-    logging.info('Corpus Retrieval Evaluation for MCN')
-    logging.info(args)
+    logging.info('Corpus Retrieval Evaluation for *MCN')
     logging.info('Parsing JSON file with hyper-parameters')
     with open(args.snapshot_args, 'r') as fid:
         model_hp = json.load(fid)
@@ -572,11 +573,15 @@ if __name__ == '__main__':
         args.topk.append(engine.num_moments)
     num_instances_retrieved = []
     judge = CorpusVideoMomentRetrievalEval(topk=args.topk)
-    for query_metadata in tqdm(dataset.metadata, disable=args.disable_tqdm):
+    args.n_display = max(int(args.n_display * len(dataset.metadata)), 1)
+    for it, query_metadata in tqdm(enumerate(dataset.metadata),
+                                   disable=args.disable_tqdm):
         vid_indices, segments = engine.query(query_metadata['language_input'])
         judge.add_single_predicted_moment_info(
             query_metadata, vid_indices, segments, max_rank=engine.num_moments)
         num_instances_retrieved.append(len(vid_indices))
+        if args.disable_tqdm and (it + 1) % args.n_display == 0:
+            logging.info(f'Processed queries [{it}/{len(dataset.metadata)}]')
 
     logging.info('Summarizing results')
     moments_scanned_median = np.median(num_instances_retrieved)

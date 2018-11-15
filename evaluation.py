@@ -449,19 +449,21 @@ if __name__ == '__main__':
     # Extra
     parser.add_argument('--greedy', type=int, default=0,
                         help='Top-k seed clips for greedy search over clips')
-    # Extras for old models to type more things that could be ignored
-    parser.add_argument('--arch', choices=model.MOMENT_RETRIEVAL_MODELS,
-                        default='MCN',
-                        help='model architecture, only for old JSON files')
-    parser.add_argument('--dataset', choices=model.MOMENT_RETRIEVAL_MODELS,
-                        default='UntrimmedMCN',
-                        help='model architecture, only for old JSON files')
-    parser.add_argument('--engine', choices=model.MOMENT_RETRIEVAL_MODELS,
-                        default='MomentRetrievalFromProposalsTable',
-                        help='Type of engine')
-    parser.add_argument('--proposal-interface', default='SlidingWindowMSFS',
-                        choices=proposals.PROPOSAL_SCHEMES,
-                        help='Type of proposals spanning search space')
+    # TODO: enable this to evaluate miss-match without introducing bugs
+    # Additional stuff when we werue using old models that did not expose many
+    # hyper-parameters config in the JSON
+    # parser.add_argument('--arch', default=None,
+    #                     choices=model.MOMENT_RETRIEVAL_MODELS,
+    #                     help='model architecture, only for old JSON files')
+    # parser.add_argument('--dataset', default=None,
+    #                     choices=model.MOMENT_RETRIEVAL_MODELS,
+    #                     help='model architecture, only for old JSON files')
+    # parser.add_argument('--engine', default=None,
+    #                     choices=model.MOMENT_RETRIEVAL_MODELS,
+    #                     help='Type of engine')
+    # parser.add_argument('--proposal-interface', default=None,
+    #                     choices=proposals.PROPOSAL_SCHEMES,
+    #                     help='Type of proposals spanning search space')
     # Dump results and logs
     parser.add_argument('--dump', action='store_true',
                         help='Save log in text file and json')
@@ -473,8 +475,8 @@ if __name__ == '__main__':
                         help='Disable progress-bar')
     # Debug
     parser.add_argument('--debug', action='store_true',
-                    help=('yield incorrect results! to verify we are gluing '
-                          'things (dataset, model, eval) correctly'))
+                        help=('yield incorrect results! to verify things are'
+                              'glued correctly (dataset, model, eval)'))
     args = parser.parse_args()
 
     if args.dump:
@@ -513,19 +515,23 @@ if __name__ == '__main__':
         logging.warning('Ignore greedy search. Unsupported model')
 
     logging.info('Loading dataset')
+    dataset_cues, dataset_novisual = {model_hp['feat']: None}, True
+    proposals_interface = proposals.__dict__[model_hp['proposal_interface']]
+    proposals_prm = dict(
+        length=model_hp.get('min_length'), stride=model_hp.get('stride'),
+        num_scales=model_hp.get('num_scales'), unique=True)
+    if args.h5_path.exists():
+        dataset_cues = {model_hp['feat']: {'file': args.h5_path}}
+        dataset_novisual = False
     dataset_setup = dict(
         json_file=args.test_list,
-        cues={model_hp['feat']: {'file': args.h5_path}},
+        cues=dataset_cues,
         loc=model_hp['loc'],
         context=model_hp['context'],
         debug=args.debug,
         eval=True,
-        proposals_interface=proposals.__dict__[args.proposal_interface](
-            length=model_hp.get('min_length'),
-            num_scales=model_hp.get('num_scales'),
-            stride=model_hp.get('stride'),
-            unique=True
-        )
+        no_visual=dataset_novisual,
+        proposals_interface=proposals_interface(**proposals_prm)
     )
     dataset = dataset_untrimmed.__dict__[args.dataset](**dataset_setup)
     if args.arch == 'SMCN':

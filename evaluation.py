@@ -119,8 +119,8 @@ class CorpusVideoMomentRetrievalEval():
         self.recall_iou_k = [None] * len(iou_thresholds)
         self.performance = None
 
-    def add_single_predicted_moment_info(self, query_info, video_indices,
-                                         pred_segments):
+    def add_single_predicted_moment_info(
+            self, query_info, video_indices, pred_segments, max_rank=None):
         """Compute rank@IOU and hit@IOU,k per query
 
         Args:
@@ -134,6 +134,8 @@ class CorpusVideoMomentRetrievalEval():
                 representing segments inside the videos associated with
                 query_info.
         """
+        if max_rank is None:
+            max_rank = len(pred_segments)
         query_id = query_info.get('annotation_id')
         if query_id in self.map_query:
             raise ValueError('query was already added to the list')
@@ -155,7 +157,7 @@ class CorpusVideoMomentRetrievalEval():
             if len(rank_iou) == 0:
                 # shall we use nan? study localization vs retrieval errors
                 rank_iou = torch.tensor(
-                    [len(pred_segments)], device=video_indices.device)
+                    [max_rank], device=video_indices.device)
             else:
                 rank_iou = rank_iou[0]
             self._rank_iou[i].append(rank_iou)
@@ -444,7 +446,10 @@ if __name__ == '__main__':
     parser.add_argument('--topk', nargs='+', type=int,
                         default=[1, 10, 100, 1000, 10000],
                         help='top-k values to compute')
-    # Extras
+    # Extra
+    parser.add_argument('--greedy', type=int, default=0,
+                        help='Top-k seed clips for greedy search over clips')
+    # Extras for old models to type more things that could be ignored
     parser.add_argument('--arch', choices=model.MOMENT_RETRIEVAL_MODELS,
                         default='MCN',
                         help='model architecture, only for old JSON files')
@@ -460,6 +465,8 @@ if __name__ == '__main__':
     # Dump results and logs
     parser.add_argument('--dump', action='store_true',
                         help='Save log in text file and json')
+    parser.add_argument('--logfile', type=Path, default='',
+                        help='Logging file')
     # Debug
     parser.add_argument('--debug', action='store_true',
                     help=('yield incorrect results! to verify we are gluing '
@@ -469,9 +476,14 @@ if __name__ == '__main__':
     args.disable_tqdm = False
     if args.dump:
         args.disable_tqdm = True
-        args.logfile = args.snapshot_args.with_suffix('').with_name(
-            args.snapshot_args.stem +
-            f'_corpus-eval_{args.test_list.stem}.log')
+        if len(args.logfile.name) == 0:
+            suffix = f'_corpus-eval.log'
+            args.logfile = args.snapshot_args.with_suffix('').with_name(
+                args.snapshot_args.stem + suffix)
+            if args.logfile.exists():
+                raise ValueError(
+                    f'{args.logfile} already exists. Please provide a logfile'
+                    'or backup existing results.')
     setup_logging(args)
 
     logging.info('Corpus Retrieval Evaluation for MCN')
@@ -484,14 +496,20 @@ if __name__ == '__main__':
             model_hp['arch'] = args.arch
         args.arch = model_hp['arch']
 
+    engine_prm = {}
     if args.arch == 'MCN':
         args.dataset = 'UntrimmedMCN'
         args.engine = 'MomentRetrievalFromProposalsTable'
     elif args.arch == 'SMCN':
         args.dataset = 'UntrimmedSMCN'
         args.engine = 'MomentRetrievalFromClipBasedProposalsTable'
+        if args.greedy > 0:
+            args.engine = 'GreedyMomentRetrievalFromClipBasedProposalsTable'
+            engine_prm['topk'] = args.greedy
     else:
         logging.warning('Using `dataset` and `engine` classes given by user')
+    if args.greedy > 0 and args.arch != 'SMCN':
+        logging.warning('Ignore greedy search. Unsupported model')
 
     logging.info('Loading dataset')
     dataset_setup = dict(
@@ -543,7 +561,7 @@ if __name__ == '__main__':
     models_dict[model_hp['feat']].eval()
 
     logging.info('Creating database alas indexing corpus')
-    engine = corpus.__dict__[args.engine](dataset, models_dict)
+    engine = corpus.__dict__[args.engine](dataset, models_dict, **engine_prm)
     engine.indexing()
 
     logging.info('Launch evaluation...')
@@ -552,15 +570,20 @@ if __name__ == '__main__':
         exp = int(np.floor(np.log10(engine.num_moments)))
         args.topk = [10**i for i in range(0, exp + 1)]
         args.topk.append(engine.num_moments)
+    num_instances_retrieved = []
     judge = CorpusVideoMomentRetrievalEval(topk=args.topk)
     for query_metadata in tqdm(dataset.metadata, disable=args.disable_tqdm):
         vid_indices, segments = engine.query(query_metadata['language_input'])
         judge.add_single_predicted_moment_info(
-            query_metadata, vid_indices, segments)
+            query_metadata, vid_indices, segments, max_rank=engine.num_moments)
+        num_instances_retrieved.append(len(vid_indices))
 
     logging.info('Summarizing results')
+    moments_scanned_median = np.median(num_instances_retrieved)
     logging.info(f'Number of queries: {len(judge.map_query)}')
     logging.info(f'Number of proposals: {engine.num_moments}')
+    logging.info('Median numbers of moments scanned: '
+                 f'{int(moments_scanned_median):d}')
     result = judge.evaluate()
     _ = [logging.info(f'{k}: {v}') for k, v in result.items()]
     if args.dump:
@@ -569,5 +592,10 @@ if __name__ == '__main__':
         with open(filename, 'x') as fid:
             for key, value in result.items():
                 result[key] = float(value)
+            result['median_moments_scanned'] = moments_scanned_median
+            result['snapshot'] = str(args.snapshot)
+            result['snapshot_args'] = str(args.snapshot_args)
+            result['corpus'] = str(args.test_list)
+            result['greedy'] = args.greedy
             result['date'] = datetime.now().isoformat()
-            json.dump(result, fid)
+            json.dump(result, fid, indent=1)

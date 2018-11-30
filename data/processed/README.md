@@ -9,6 +9,7 @@ Files used to ensure packing/shipping went well (our dummy ContinousIntegration 
 - 0b38083c32be4dcbf2671d02d245dcca  didemo/test.json
 - a2a9317c98f94cc638996cc4ee4eb95e  didemo/train.json
 - e9fcb12660724678730c29089ce902bb  didemo/val.json
+- 740f0eb910621394edd65bef486b5d33  didemo/freq_prior.npz
 
 ```
 Subset: train
@@ -30,12 +31,14 @@ Subset: test
 - c1bf2714950bf07203bdcf6d6a74dbea  charades-sta/test.json
 - 948b539a6ad9df44b9d43e4f99261068  charades-sta/train.json
 - abe8f49c395484353e40122cf04005e3  charades-sta/rgb_resnet152_max_cs-3.h5
+- 7394efa0a2e94e9bdc870287766b0d67  charades-sta/freq_prior.npz
 
 # activitynet-captions
 
 - c06ca1a238b78b4e777ac1ba5258f1dc  activitynet-captions/rgb_resnet152_max_cs-5.h5
 - 194699da03d1ce870efb135f577c77e8  activitynet-captions/train.json
 - 8da5db5ae56f43cecc15939c87ccbb2b  activitynet-captions/val.json
+- fb770c4de666485d7535acb865da2561  activitynet-captions/freq_prior.npz
 
 ```
 Subset: train

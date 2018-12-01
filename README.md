@@ -1,56 +1,84 @@
-# Corpus Video Moment Retrieval
+# Temporal Localization of Moments in Video Collections with Natural Language
 
-Welcome to the Corpus Video Moment Retrieval porject!
+TODO: add teaser and overview images
 
-## Setup
+## Introduction
 
-Let's say you wanna run our codebase. You will need the following requirements:
+TODO: layman explanation of the content in the repo
 
-- Linux box, x64.
+In case you find this work relevant for your research please cite
 
-- conda.
+```
+TODO
+```
 
-    In case, it's your first time with conda. You can do the following:
+## Getting started
 
+1. Install all the required dependencies:
+
+    The main requirements of this project are Python==3.6, numpy, matplotlib, jupyter, pytorch and unity-agents. To ease its installation, I recommend the following procedure:
+
+    - [Install miniconda](https://conda.io/docs/user-guide/install/index.html).
+
+  > Feel free to skip this step, if you already have anaconda or miniconda installed in your machine.
+
+    - Creating the environment.
+
+      `conda env create -n moments-retrieval -f environment-devel.yml`
+
+    - Activate the environment
+
+      `conda activate moments-retrieval-devel`
+      
+2. Download data
+
+  A snapshot of the processed data ready to train new models is available [here](https://drive.google.com/open?id=1hblwPxeI3u9w1VMZH-ZtD6J-Qnl6Q3xt)
+  
+  - Download it and unzip it. You should see a single directory called `data`.
+  
+    Let's assume that you place this folder in `[path]/data`.
+  
+  - Copy it into the data folder of the repo.
+  
+    ```bash
+    cd moments-retrieval
+    `cp -r [path]/data data`
     ```
-    wget https://repo.continuum.io/miniconda/Miniconda3-latest-Linux-x86_64.sh
-    sh Miniconda3-latest-Linux-x86_64.sh -b -p $HOME/miniconda3
-    ```
+    
+  > Please remember to replace `[path]` with the actual folder of the downloaded data in your machine.
+  
+  TODO: write a bash script to do this.
 
-    __Note__: This will install miniconda3 in your $HOME folder. Edit the last part as u prefer 😉.
+## Instructions
 
-Once, you are ready just type:
+### Training a new model
 
-`conda env create -n pytorch -f environment-devel.yml`
+- The following line will launch the training of CAL in Charades-STA dataset.
 
-In case you wanna do experiments involving `spacy` e.g. intersecting YFCC100M and DiDemo, You may also need the following packages <sup>1</sup>.
+  ```bash
+  dataset_dir=data/processed/charades-sta
+  parameters="--arch SMCN --feat rgb --train-list $dataset_dir/train.json --val-list $dataset_dir/val-01.json --test-list $dataset_dir/test.json --h5-path $dataset_dir/rgb_resnet152_max_cs-3.h5"
+  python train.py --gpu-id 0 $parameters
+  ```
+  
+  In case you want to save the logs into a file, add `--logfile [filename]` to the parameters as follows.
+  
+  `TODO`
 
-`python -m spacy download en_core_web_sm`
+> In case you close the terminal, don't forget to activate the environment (`conda activate moments-retrieval`).
 
-That's all. You have all requirements to run the code.
+### TODO: corpus video retrieval evaluation
 
-> <sup>1</sup> Sorry, I could not find a way to pack spacy models inside conda.
+### TODO: single video retrieval evaluation
 
-### Testing
+### TODO: dashboards
 
-We have a full test-suite in case you want to double check that everything is placed correctly.
+## Do you like the project?
 
-First, let's copy the same repo of data to ensure the algorithm look at the same trend.
+Please give us ⭐️ in the GitHub banner 😉. We are also open for discussions especially accompany with ☕,🍺 or 🍸 (preferably spritz).
 
-`bash scripts/setup_data.sh`
+## LICENSE
 
-I hope it wasn't difficult to reach this point. Now, you are ready to run a full test suite.
+[MIT](https://choosealicense.com/licenses/mit/)
 
-`bash scripts/test_all.sh`
-
-__FAQs__
-
-- unable to find conda
-
-    Ensure that you install conda properly. Once, you are confident, check out the comment related to the setup of conda in `scripts/test_all.sh`.
-
-- Memory error
-
-    The models and batch-size are low by default. Maybe, you are trying to use the GPU of someone else 🙂. Edit the `gpu_device` in the file `scripts/test_all.sh`.
-
-Finally, if you are struggling and have spend a couple of hours without seeing the light, drop a line to @escorcia (victor.escorcia@kaust.edu.sa) and @brussel (brussel@adobe.com).
+We highly appreciate that you leave attribution notes when you copy portions of our codebase in yours.

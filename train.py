@@ -33,7 +33,7 @@ METRICS_OLD = ['iou', 'r@1', 'r@5']
 VARS_TO_RECORD = ['id', 'hit@iou,k', 'scores', 'topk_segments']
 TRACK = 'r@1,0.7'
 BEST_RESULT = 0.0
-TOPK_DIDEMO = torch.tensor([1, 5])
+TOPK_DIDEMO = torch.tensor([1, 5]).float()
 
 parser = argparse.ArgumentParser(
     description='*MCN training',

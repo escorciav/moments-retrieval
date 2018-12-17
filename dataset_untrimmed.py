@@ -71,6 +71,7 @@ class UntrimmedBase(Dataset):
         """
         self.cues = cues
         self.features = dict.fromkeys(cues.keys())
+        time_units = []
         for key, params in cues.items():
             if params is None:
                 continue
@@ -78,6 +79,18 @@ class UntrimmedBase(Dataset):
                 self.features[key] = {}
                 for video_id in self.metadata_per_video:
                     self.features[key][video_id] = fid[video_id][:]
+                time_unit = fid.get('metadata/time_unit')
+                if time_unit is not None:
+                    time_unit = time_unit.value
+                time_units.append(time_unit)
+                raise NotImplementedError
+                # We must set `self.metadata_per_video[video_id]['num_clips']`
+                # based on info in HDF5 'cause we can't assume
+        if len(set(time_units)) > 1:
+            raise ValueError(
+                'Handling multiple features with different time_unit is '
+                'tricky. Do it at your own discretion.')
+        self.time_unit = time_units[0]
 
     def _preprocess_descriptions(self):
         "Tokenize descriptions into words"
@@ -93,7 +106,6 @@ class UntrimmedBase(Dataset):
             data = json.load(fid)
             self.metadata = data['moments']
             self.metadata_per_video = data['videos']
-            self.time_unit = data['time_unit']
             self._update_metadata_per_video()
             self._update_metadata()
         self._preprocess_descriptions()

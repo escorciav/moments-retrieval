@@ -1,0 +1,100 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="UTF-8" name="viewport" content="width=device-width, initial-scale=1">
+  <!-- Bootstrap core CSS -->  
+  <link rel="stylesheet" href="https://vjs.zencdn.net/7.2.3/video-js.css" rel="stylesheet">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/noUiSlider/12.0.0/nouislider.min.css" rel="stylesheet">
+  <link rel="stylesheet" href="https://cdn.datatables.net/1.10.19/css/jquery.dataTables.min.css">
+  <link rel="stylesheet" href="https://maxcdn.bootstrapcdn.com/bootstrap/3.3.7/css/bootstrap.min.css">
+  <link rel="stylesheet" href={{url_for("static", filename="corpus_moment_player.css")}}>
+  <!-- Bootstrap core JavaScript -->
+  <script src="https://code.jquery.com/jquery-3.3.1.js"></script>
+  <script src="https://vjs.zencdn.net/7.2.3/video.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/noUiSlider/12.0.0/nouislider.min.js"></script>
+  <script src="https://ajax.googleapis.com/ajax/libs/jquery/3.3.1/jquery.min.js"></script>
+  <script src="https://maxcdn.bootstrapcdn.com/bootstrap/3.3.7/js/bootstrap.min.js"></script>
+  <script src="https://cdn.datatables.net/1.10.19/js/jquery.dataTables.min.js"></script>
+  <!-- Custom JS for this template -->
+  <script type="text/javascript" src={{url_for("static", filename="corpus_moment_player.js")}}></script>
+  <!-- To make it responsive -->
+  <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+  <meta http-equiv="X-UA-Compatible" content="IE=edge,chrome=1">
+  <meta name="HandheldFriendly" content="true">
+  <!-- Page title -->
+  <title>Moment Explorer</title>
+</head>
+<body> 
+  <!-- Exchange info -->
+  <div id="DataExchange" hidden>
+    <p id="num_predictions">{{num_predictions}}</p>
+    <p id="durations">{{durations}}</p>
+    <p id="video_names">{{video_names}}</p>
+  </div>
+  <!-- Exchange info -->
+  <center>
+  <div class="container-fluid" >
+    <!-- Display query -->
+    <hr class="hr">
+    <h2 class="h2">Text query: {{description}}</h2>
+    <hr class="hr">
+    <!-- Display query -->
+    <!-- Cycle to create the video list -->
+    {% for row in get_table_by_rows(moment_id) %}
+    <div id="div_{{row[0]+1}}" class="col-sm-12">
+        <div class="col-lg-4"></div>
+        <div class="col-lg-1" align="right">
+          <br>
+          <h3> Rank {{row[0]+1}}:</h3>
+        </div>
+        <div class="col-lg-2">
+          <asp:button type="button" class="button button7" onclick="open_modal({{row[0]+1}})" data-toggle="modal" data-target="#modal_{{row[0]+1}}" >
+            <video id="player_{{row[0]+1}}_fake" class="video-js no-play" preload="metadata" width="320" height="240" data-setup="{}">
+              <source src={{row[4]}} type="video/mp4" type="video/mkv"/>
+            </video>
+          </asp:button> 
+        </div>
+        <div class="col-lg-1"></div>
+        <div class="col-lg-4"></div>
+        <!-- Modal -->
+        <div id="modal_{{row[0]+1}}" class="modal fade" role="dialog">
+          <div class="modal-dialog modal-lg">
+            <!-- Modal content-->
+            <div class="modal-content">
+              <div class="modal-header">
+                <button type="button" class="close" data-dismiss="modal">&times;</button>
+                <h4 class="modal-title"><b>Text query:</b> {{description}}</h4>
+              </div>
+              <div class="modal-body">
+                  <button class="button button2" onclick="play_video({{row[0]+1}})">      PLAY  </button>
+                  <button class="button button3" onclick="pause_video({{row[0]+1}})">     PAUSE </button>
+                  <button class="button button4" onclick="trigger_loop()">                LOOP  </button> 
+                  <button class="button button5" onclick="speed_change({{row[0]+1}},0)">  <<    </button>
+                  <button class="button button5" onclick="speed_change({{row[0]+1}},1)">  >>    </button>
+                  <button class="button button6" onclick="reset({{row[0]+1}})">           RESET </button>
+                  <br><br>
+                  <video id="player_{{row[0]+1}}" class="video-js" preload="metadata" muted autoplay width="640" height="360" data-setup="{}">
+                    <source src={{row[4]}} type="video/mp4" type="video/mkv"/>
+                  </video>
+                  <br>
+                  <div id=Predictions_{{row[0]+1}} >
+                      <p id=prediction-show-{{row[0]+1}}></p>
+                      <br>
+                      <p id="prediction{{loop.index}}-0" hidden>{{row[2]}} </p>
+                      <p id="prediction{{loop.index}}-1" hidden>{{row[3]}}</p>
+                  </div>
+              </div>
+              <div class="modal-footer">
+                <button type="button" class="btn btn-default" data-dismiss="modal">Close</button>
+              </div>
+            </div>
+            <!-- Modal content-->
+          </div>
+        </div>
+        <!-- Modal -->
+    </div>
+    {% endfor %}
+    <!-- Cycle to create the video list -->
+  </div>
+  </center>
+</body>

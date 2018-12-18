@@ -1,0 +1,94 @@
+/* Tablet Landscape */
+@media screen and (max-width: 1060px) {
+    #primary { width:67%; }
+    #secondary { width:30%; margin-left:3%;}  
+}
+
+/* Tabled Portrait */
+@media screen and (max-width: 768px) {
+    #primary { width:100%; }
+    #secondary { width:100%; margin:0; border:none; }
+}
+
+.body{
+    font-size: 20px;
+    font:'Helvetica'; 
+}
+
+.modal-body {
+    font-size: 20px;
+    font:'Helvetica'; 
+}
+
+.hr{
+    height: 5px;
+    width: 35%;
+    background-color: #000000;
+}
+
+.h2 {
+    text-align: center;
+    width: 35%;
+}
+
+.button {
+    background-color: #4CAF50; /* Green */
+    border: none;
+    color: white;
+    padding: 15px 32px;
+    text-align: center;
+    text-decoration: none;
+    display: inline-block;
+    font-size: 16px;
+    margin: 4px 2px;
+    cursor: pointer;
+    padding: 10px 28px;
+}
+.button2 {background-color: #008CBA;padding: 10px 28px;} /* Blue */
+.button3 {background-color: #f44336;padding: 10px 28px;} /* Red */
+.button4 {background-color: #e7e7e7; color: black;padding: 10px 28px;} /* Gray */
+.button5 {background-color: #e6e600;padding: 10px 15px;} /* Black */
+.button6 {background-color: #555555;padding: 10px 28px;} /* Black */
+.button7 {background-color: transparent; z-index:100;} /* Black */
+
+.no-play {
+    z-index:-100
+}
+
+.noUi-horizontal {
+    height: 18px;
+    width: 650px;
+}
+
+.noUi-horizontal .noUi-tooltip {
+  bottom:-30px;
+  bottom: initial;
+  background-color: transparent;
+  border-color: transparent;
+  font-size: 0px;
+}
+
+.noUi-handle {
+    background: transparent; 
+    border: transparent; 
+    box-shadow: none;
+}
+
+.noUi-handle:before,
+.noUi-handle:after { 
+    width: 5px;
+    height: 16px;
+    background-color:#555555;
+    border: transparent; 
+    box-shadow: none;
+}
+/* .noUi-handle:before{ 
+    content: none; 
+}
+.noUi-handle:after { 
+    content: none; 
+} */
+
+.noUi-color-progress {
+  background: #f44336;
+}

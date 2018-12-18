@@ -38,7 +38,7 @@ Move the two folders *METADATA* and *duration_metadata* to the folder `./static/
 
 To launch a server execute the following command:
 
-```python
+```
 python server.py --dataset-index [DATASET-INDEX] --number-videos [NUMBER-VIDEOS]
 ```
 
@@ -52,7 +52,9 @@ and `[NUMBER-VIDEOS]` is the number of videos displayed by the web page.
 
 The server will make available the web pages for the three datasets in different port numbers (which depend on the selected index), such that three instances of the same server can independently coexist on the same machine. 
 
-To reach those web pages open a browser (Chrome is recommended) and type on the address bar the IP address of the machine followed by `:[PORT-NUMBER]` (i.e. `192.168.0.1:60000`). The values are:
+To reach those web pages open a browser (Chrome is recommended) and type on the address bar the IP address of the machine followed by `:[PORT-NUMBER]` (i.e. `192.168.0.1:60000`). See Note section for more information.
+
+ The `[PORT-NUMBER]` values are:
 
 * 60000 - Charades
 * 60001 - DiDeMo
@@ -61,16 +63,16 @@ To reach those web pages open a browser (Chrome is recommended) and type on the 
 This action will prompt you to the index page in which a table lists all the queries for validation/test sets of the datasets.
 
 
-![alt text][index]
+![index][index]
 
 
-Clicking on the query itself you will reach to the result page which will display the rank ordered results retrieved by the system.
+Clicking on the query itself you will reach to the result page which will display the ordered results retrieved by the system.
 
 
-![alt text][results]
+![results][results]
 
-[index]: https://drive.google.com/open?id=1qdwtL-R_K2-kH6D5YC3E32Uoy5DeyFT5 "Index screenshot"
-[results]: https://drive.google.com/open?id=1T5h896cAaqB9lbSgVjk-W15EK1B28YNc "Results screenshot"
+[index]: https://github.com/escorciav/moments-retrieval/blob/collaboration/dashboards/corpus%20moment%20analyst/images/index.png "Index screenshot"
+[results]: https://github.com/escorciav/moments-retrieval/blob/collaboration/dashboards/corpus%20moment%20analyst/images/results.png "Results screenshot"
 
 
 ## Note

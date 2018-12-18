@@ -24,6 +24,8 @@ where `[DATASET]` is the specific dataset you are interested in.
 * **Charades** download [link](), to be placed in folder:   `./static/DATA/charades/ `
 * **Activtynet** download [link](), to be placed in folder: `./static/DATA/activitynet/ `
 
+> TODO: Add link to the dataset download page.
+
 
 ### 2 - Metadata
 

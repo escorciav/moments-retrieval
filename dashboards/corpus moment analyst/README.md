@@ -15,11 +15,10 @@ Selecting a video will open the player. This section provides several controls o
 
 ![player][player]
 
-[![video](https://github.com/escorciav/moments-retrieval/blob/collaboration/dashboards/corpus%20moment%20analyst/images/results.png)](https://www.youtube.com/watch?v=248S6jQ2wAI)
 
 [index]: https://github.com/escorciav/moments-retrieval/blob/collaboration/dashboards/corpus%20moment%20analyst/images/index.png "Index screenshot"
 [results]: https://github.com/escorciav/moments-retrieval/blob/collaboration/dashboards/corpus%20moment%20analyst/images/results.png "Results screenshot"
-[player]: https://github.com/escorciav/moments-retrieval/blob/collaboration/dashboards/corpus%20moment%20analyst/images/results.png "Results screenshot"
+[player]: https://github.com/escorciav/moments-retrieval/blob/collaboration/dashboards/corpus%20moment%20analyst/images/player.png "Results screenshot"
 
 
 

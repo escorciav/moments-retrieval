@@ -26,12 +26,12 @@ Selecting a video will open the player. This section provides several controls o
 
 1. Install all the required dependencies:
 
-	An Anaconda environment is provided by mean of a *.yml* file in the main README of the repository. 
+	An anaconda environment is provided by mean of a *.yml* file in the main README of the repository. 
 	Follow those instructions to obtain the virtual environment.
 
 2. Download data:
 
-	For this App to be functional the following data is needed.
+	For this app to be functional the following data is needed.
 
 	- **Datasets videos**
 

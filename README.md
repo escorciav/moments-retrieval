@@ -2,6 +2,14 @@
 
 TODO: add teaser and overview images
 
+
+<a href="url"><img src="https://github.com/escorciav/moments-retrieval/blob/README_fix/images/teaser.png" width="570" ></a>
+<a href="url"><img src="https://github.com/escorciav/moments-retrieval/blob/README_fix/images/overview.png" width="310"></a>
+
+       
+[retrieval]:      https://github.com/escorciav/moments-retrieval/blob/README_fix/images/retrieval.png
+[model-colorful]: https://github.com/escorciav/moments-retrieval/blob/README_fix/images/model-colorful.png
+
 ## Introduction
 
 TODO: layman explanation of the content in the repo
@@ -28,7 +36,7 @@ TODO
 
     - Activate the environment
 
-      `conda activate moments-retrieval-devel`
+      `conda activate moments-retrieval`
       
 2. Download data
 
@@ -42,7 +50,7 @@ TODO
   
       ```bash
       cd moments-retrieval
-      `cp -r [path]/data data`
+      `cp -r [path]/data .`
       ```
     
       > Please remember to replace `[path]` with the actual folder of the downloaded data in your machine.

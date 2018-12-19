@@ -11,7 +11,7 @@ By clicking on the query itself you will reach to the *result page* which will d
 
 ![results][results]
 
-Selecting a video will open the player. This section provides several controls over the video, it is possible to play/pause and activate/deactivate loop over the predicted interval as well as increase and decrease the speed. It is also possible to move the sliders under the video to tune the reproduction interval and inspect the neighbor of the predicted interval. In the end, a reset button can restore the default settings.
+Selecting a video will open the player. This section provides several controls over the video, it is possible to play/pause and activate/deactivate loop over the predicted interval as well as increase and decrease the speed. It is also possible to move the sliders under the video to tune the reproduction interval and inspect its neighbor. As last, a reset button if provided to restore the default settings.
 
 ![player][player]
 

@@ -28,11 +28,11 @@ TODO
 
     - Creating the environment.
 
-      `conda env create -n moments-retrieval -f environment-devel.yml`
+      `conda env create -n moments-retrieval-devel -f environment-devel.yml`
 
     - Activate the environment
 
-      `conda activate moments-retrieval`
+      `conda activate moments-retrieval-devel`
       
 2. Download data
 

@@ -70,8 +70,13 @@ parser.add_argument('--evaluate', action='store_true',
 # Features
 parser.add_argument('--feat', default='rgb',
                     help='Record the type of feature used (modality)')
-parser.add_argument('--h5-path', type=Path, default='non-existent',
-                    help='HDF5-file with features')
+parser_visual_info_grp = parser.add_mutually_exclusive_group()
+parser_visual_info_grp.add_argument(
+    '--h5-path', type=Path, default='non-existent',
+    help='HDF5-file with features')
+parser_visual_info_grp.add_argument(
+    '--time-unit', type=float, default=None,
+    help='Clip length in seconds')
 # Model features
 parser.add_argument('--loc', type=TemporalFeatures.from_string,
                     default=TemporalFeatures.TEMPORAL_ENDPOINT,
@@ -449,7 +454,8 @@ def setup_dataset(args):
         logging.info(f'Found {subset}-list: {filename}')
         dataset = dataset_untrimmed.__dict__[dataset_name](
             filename, cues=cues, loc=args.loc, context=args.context,
-            no_visual=no_visual, debug=args.debug, **extras_dataset)
+            no_visual=no_visual, debug=args.debug, time_unit=args.time_unit,
+            **extras_dataset)
         logging.info(f'Setting loader')
         if subset == 'train' and args.bias_to_single_clips > 0:
             extras_loader['shuffle'] = False

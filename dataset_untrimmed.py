@@ -79,18 +79,24 @@ class UntrimmedBase(Dataset):
                 self.features[key] = {}
                 for video_id in self.metadata_per_video:
                     self.features[key][video_id] = fid[video_id][:]
+                    # HDF5 contains info about the video that is not practical
+                    # to include in the JSON
+                    self.metadata_per_video[video_id]['num_clips'] = len(
+                        fid[video_id])
                 time_unit = fid.get('metadata/time_unit')
                 if time_unit is not None:
                     time_unit = time_unit.value
                 time_units.append(time_unit)
-                raise NotImplementedError
-                # We must set `self.metadata_per_video[video_id]['num_clips']`
-                # based on info in HDF5 'cause we can't assume
-        if len(set(time_units)) > 1:
+
+        # Update time_unit of the dataset
+        if len(time_units) == 0:
+            return
+        elif len(set(time_units)) > 1:
             raise ValueError(
                 'Handling multiple features with different time_unit is '
                 'tricky. Do it at your own discretion.')
-        self.time_unit = time_units[0]
+        else:
+            self.time_unit = time_units[0]
 
     def _preprocess_descriptions(self):
         "Tokenize descriptions into words"
@@ -178,7 +184,8 @@ class UntrimmedBasedMCNStyle(UntrimmedBase):
                  loc=TemporalFeatures.TEMPORAL_ENDPOINT,
                  max_words=50, eval=False, context=True,
                  proposals_interface=None, no_visual=False, sampling_iou=0.35,
-                 ground_truth_rate=1, prob_nproposal_nextto=-1, debug=False):
+                 ground_truth_rate=1, prob_nproposal_nextto=-1,
+                 time_unit=None, debug=False):
         super(UntrimmedBasedMCNStyle, self).__init__()
         self._setup_list(json_file)
         self._load_features(cues)
@@ -202,6 +209,14 @@ class UntrimmedBasedMCNStyle(UntrimmedBase):
         if self.eval:
             self.eval = True
             assert self.proposals_interface is not None
+        # UntrimmedBase was designed to hold visual features, thus ignoring
+        # visual information is held outside it
+        if self.no_visual:
+            if time_unit is None:
+                raise ValueError(
+                    'Please provide the clip length (seconds) as this is a'
+                    'property grabbed from the HDF5. Missing in this case.')
+            self.time_unit = time_unit
 
     @property
     def decomposable(self):
@@ -533,7 +548,8 @@ class UntrimmedSMCN(UntrimmedBasedMCNStyle):
             it's more efficient to re-write the final pooling.
         """
         if self.no_visual:
-            return self._only_tef(video_id, moment_loc)
+            # return self._only_tef(video_id, moment_loc)
+            raise NotImplementedError('only-TEF is temporally disabled')
 
         feature_collection = {}
         video_duration = self._video_duration(video_id)

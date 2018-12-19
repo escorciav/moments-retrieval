@@ -2,13 +2,9 @@
 
 TODO: add teaser and overview images
 
+![teaser][teaser]
 
-<a href="url"><img src="https://github.com/escorciav/moments-retrieval/blob/README_fix/images/teaser.png" width="570" ></a>
-<a href="url"><img src="https://github.com/escorciav/moments-retrieval/blob/README_fix/images/overview.png" width="310"></a>
-
-       
-[retrieval]:      https://github.com/escorciav/moments-retrieval/blob/README_fix/images/retrieval.png
-[model-colorful]: https://github.com/escorciav/moments-retrieval/blob/README_fix/images/model-colorful.png
+[teaser]: https://github.com/escorciav/moments-retrieval/blob/fix-readme/data/images/readme.png "teaser image"
 
 ## Introduction
 

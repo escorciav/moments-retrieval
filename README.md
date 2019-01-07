@@ -1,7 +1,4 @@
 # Temporal Localization of Moments in Video Collections with Natural Language
-
-TODO: add teaser and overview images
-
 ![teaser][teaser]
 
 [teaser]: https://github.com/escorciav/moments-retrieval/blob/fix-readme/data/images/readme.png "teaser image"

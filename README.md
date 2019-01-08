@@ -1,6 +1,7 @@
 # Temporal Localization of Moments in Video Collections with Natural Language
+![teaser][teaser]
 
-TODO: add teaser and overview images
+[teaser]: https://github.com/escorciav/moments-retrieval/blob/fix-readme/data/images/readme.png "teaser image"
 
 ## Introduction
 
@@ -24,7 +25,7 @@ TODO
 
     - Creating the environment.
 
-      `conda env create -n moments-retrieval -f environment-devel.yml`
+      `conda env create -n moments-retrieval-devel -f environment-devel.yml`
 
     - Activate the environment
 
@@ -42,7 +43,7 @@ TODO
   
       ```bash
       cd moments-retrieval
-      `cp -r [path]/data data`
+      `cp -r [path]/data .`
       ```
     
       > Please remember to replace `[path]` with the actual folder of the downloaded data in your machine.

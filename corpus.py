@@ -283,11 +283,11 @@ class GreedyMomentRetrievalFromClipBasedProposalsTable(
 
             # Update mapping from (video_index, clip_index_at_video) to
             # proposal_index_at_corpus
-            time_unit = self.dataset.time_unit
+            clip_length = self.dataset.clip_length
             for proposal_ind_v, proposal_i in enumerate(proposals_):
                 proposal_index = moment_ind_runner + proposal_ind_v
-                c_start = int(proposal_i[0] // time_unit)
-                c_end = int((proposal_i[1] - 1e-6) // time_unit)
+                c_start = int(proposal_i[0] // clip_length)
+                c_end = int((proposal_i[1] - 1e-6) // clip_length)
                 for c_index in range(c_start, c_end + 1):
                     video_clip_index = (video_index, c_index)
                     if video_clip_index not in self.video_clip2proposals:

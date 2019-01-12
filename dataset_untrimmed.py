@@ -13,7 +13,7 @@ from didemo import sentences_to_words, normalization1d
 from np_segments_ops import iou as segment_iou
 from utils import dict_of_lists
 
-TIME_UNIT = 3
+CLIP_LENGTH = 3
 
 
 @unique
@@ -43,7 +43,7 @@ class UntrimmedBase(Dataset):
         self.metadata = None
         self.metadata_per_video = None
         self._video_list = None
-        self.time_unit = TIME_UNIT
+        self.clip_length = CLIP_LENGTH
 
     def max_number_of_clips(self):
         "Return maximum number of clips/chunks over all videos in dataset"
@@ -96,7 +96,7 @@ class UntrimmedBase(Dataset):
                 'Handling multiple features with different time_unit is '
                 'tricky. Do it at your own discretion.')
         else:
-            self.time_unit = time_units[0]
+            self.clip_length = time_units[0]
 
     def _preprocess_descriptions(self):
         "Tokenize descriptions into words"
@@ -185,7 +185,7 @@ class UntrimmedBasedMCNStyle(UntrimmedBase):
                  max_words=50, eval=False, context=True,
                  proposals_interface=None, no_visual=False, sampling_iou=0.35,
                  ground_truth_rate=1, prob_nproposal_nextto=-1,
-                 time_unit=None, debug=False):
+                 clip_length=None, debug=False):
         super(UntrimmedBasedMCNStyle, self).__init__()
         self._setup_list(json_file)
         self._load_features(cues)
@@ -212,11 +212,11 @@ class UntrimmedBasedMCNStyle(UntrimmedBase):
         # UntrimmedBase was designed to hold visual features, thus ignoring
         # visual information is held outside it
         if self.no_visual:
-            if time_unit is None:
+            if clip_length is None:
                 raise ValueError(
                     'Please provide the clip length (seconds) as this is a'
                     'property grabbed from the HDF5. Missing in this case.')
-            self.time_unit = time_unit
+            self.clip_length = clip_length
 
     @property
     def decomposable(self):
@@ -318,16 +318,16 @@ class UntrimmedBasedMCNStyle(UntrimmedBase):
         if not hasattr(self.proposals_interface, 'stride'):
             raise ValueError('Unsupported proposal interface')
         t_start, t_end = moment_loc[1], moment_loc[1]
-        time_unit = self.proposals_interface.stride
+        clip_length = self.clip_length
         moment_i = self.metadata[idx]
         video_id = moment_i['video']
         duration = self._video_duration(video_id)
         sampled_loc = np.empty_like(moment_loc)
 
         # sample duration at random
-        moment_num_clips = max(int((t_end - t_start) // time_unit), 1)
+        moment_num_clips = max(int((t_end - t_start) // clip_length), 1)
         sample_num_clips = random.randint(1, moment_num_clips)
-        sample_length = sample_num_clips * time_unit
+        sample_length = sample_num_clips * clip_length
         if random.random() >= 0.5:
             if t_start - sample_length >= 0:
                 sampled_loc[1] = t_start
@@ -473,13 +473,13 @@ class UntrimmedMCN(UntrimmedBasedMCNStyle):
         for key, feat_db in self.features.items():
             feature_video = feat_db[video_id]
             moment_feat_k = self.visual_interface(
-                feature_video, moment_loc, time_unit=self.time_unit,
+                feature_video, moment_loc, clip_length=self.clip_length,
                 num_clips=num_clips)
             if self.tef_interface:
                 moment_feat_k = np.concatenate(
                     [moment_feat_k,
                      self.tef_interface(moment_loc, video_duration,
-                                        time_unit=self.time_unit)]
+                                        clip_length=self.clip_length)]
                 )
 
             feature_collection[key] = moment_feat_k.astype(
@@ -507,7 +507,7 @@ class UntrimmedMCN(UntrimmedBasedMCNStyle):
         feature_collection = {}
         for i, key in enumerate(self.features):
             feature_collection[key] = self.tef_interface(
-                moment_loc, video_duration, time_unit=self.time_unit)
+                moment_loc, video_duration, clip_length=self.clip_length)
         return feature_collection
 
 
@@ -554,17 +554,17 @@ class UntrimmedSMCN(UntrimmedBasedMCNStyle):
         feature_collection = {}
         video_duration = self._video_duration(video_id)
         num_clips = self._video_num_clips(video_id)
-        time_unit = self.time_unit
+        clip_length = self.clip_length
         for key, feat_db in self.features.items():
             feature_video = feat_db[video_id]
             moment_feat_k, mask = self.visual_interface(
-                feature_video, moment_loc, time_unit=time_unit,
+                feature_video, moment_loc, clip_length=clip_length,
                 num_clips=num_clips)
             if self.tef_interface:
                 T, N = mask.sum().astype(np.int), len(moment_feat_k)
                 tef_feature = np.zeros((N, 2), dtype=self.tef_interface.dtype)
                 tef_feature[:T, :] = self.tef_interface(
-                    moment_loc, video_duration, time_unit=time_unit)
+                    moment_loc, video_duration, clip_length=clip_length)
                 moment_feat_k = np.concatenate(
                     [moment_feat_k, tef_feature], axis=1)
 
@@ -607,7 +607,7 @@ class UntrimmedSMCN(UntrimmedBasedMCNStyle):
     def _only_tef(self, video_id, moment_loc):
         "Return the feature collection with only any of the temporal features"
         video_duration = self._video_duration(video_id)
-        time_unit = self.time_unit
+        clip_length = self.clip_length
         num_clips = self._video_num_clips(video_id)
         if not self.eval:
             num_clips = self.max_number_of_clips()
@@ -615,13 +615,13 @@ class UntrimmedSMCN(UntrimmedBasedMCNStyle):
         # Padding and info about extend of the moment on it
         padded_data = np.zeros((num_clips, 2), dtype=np.float32)
         mask = np.zeros(num_clips, dtype=np.float32)
-        im_start = int(moment_loc[0] // time_unit)
-        im_end = int((moment_loc[1] - 1e-6) // time_unit)
+        im_start = int(moment_loc[0] // clip_length)
+        im_end = int((moment_loc[1] - 1e-6) // clip_length)
         T = im_end - im_start + 1
 
         # Actual features and mask
         padded_data[:T, :] = self.tef_interface(
-            moment_loc, video_duration, time_unit=time_unit)
+            moment_loc, video_duration, clip_length=clip_length)
         mask[:T] = 1
 
         # Packing
@@ -669,15 +669,15 @@ class TemporallyAwareFeature():
         self.dtype = dtype
         self.eps = eps
 
-    def __call__(self, start_end, duration, time_unit, **kwargs):
-        im_start = int(start_end[0] // time_unit)
-        im_end = int((start_end[1] - self.eps) // time_unit)
+    def __call__(self, start_end, duration, clip_length, **kwargs):
+        im_start = int(start_end[0] // clip_length)
+        im_end = int((start_end[1] - self.eps) // clip_length)
         T = im_end - im_start + 1
         feat = np.empty((T, 2), dtype=self.dtype)
-        feat[:, 0] = np.arange(im_start * time_unit,
-                               im_end * time_unit + self.eps,
-                               time_unit)
-        feat[:, 1] = feat[:, 0] + time_unit
+        feat[:, 0] = np.arange(im_start * clip_length,
+                               im_end * clip_length + self.eps,
+                               clip_length)
+        feat[:, 1] = feat[:, 0] + clip_length
         return feat / duration
 
 
@@ -709,15 +709,15 @@ class VisualRepresentationMCN():
         self.dtype = dtype
         self.eps = eps
 
-    def __call__(self, features, moment_loc, time_unit, num_clips=None):
+    def __call__(self, features, moment_loc, clip_length, num_clips=None):
         f_dim = features.shape[1]
         data = np.empty(f_dim * self.size_factor, dtype=self.dtype)
         # From time to units of time
         # we substract a small amount of t_end to ensure that it's close to
-        # the unit of time in case t_end == time_unit
+        # the unit of time in case t_end == clip_length
         # The end index is inclusive, check `function:normalization1d`.
-        im_start = int(moment_loc[0] // time_unit)
-        im_end = int((moment_loc[1] - self.eps) // time_unit)
+        im_start = int(moment_loc[0] // clip_length)
+        im_end = int((moment_loc[1] - self.eps) // clip_length)
         data[0:f_dim] = normalization1d(im_start, im_end, features)
         if self.context:
             ic_start, ic_end = 0, len(features) - 1
@@ -758,16 +758,16 @@ class VisualRepresentationSMCN():
             self._w_half = w_size // 2
             self._box = np.ones((w_size, 1), dtype=dtype) / w_size
 
-    def __call__(self, features, moment_loc, time_unit, num_clips=None):
+    def __call__(self, features, moment_loc, clip_length, num_clips=None):
         n_feat, f_dim = features.shape
         if self.max_clips is not None:
             n_feat = self.max_clips
         # From time to units of time
         # we substract a small amount of t_end to ensure that it's close to
-        # the unit of time in case t_end == time_unit
+        # the unit of time in case t_end == clip_length
         # The end index is inclusive, check `function:normalization1d`.
-        im_start = int(moment_loc[0] // time_unit)
-        im_end = int((moment_loc[1] - self.eps) // time_unit)
+        im_start = int(moment_loc[0] // clip_length)
+        im_end = int((moment_loc[1] - self.eps) // clip_length)
         # T := \mathcal{T} but in this case is the cardinality of the set
         T = im_end - im_start + 1
         if not self.padding:
@@ -835,8 +835,11 @@ if __name__ == '__main__':
     from proposals import SlidingWindowMSFS
     # Kinda Unit-test
     print('UntrimmedMCN\n\t* Train')
-    json_data = 'data/processed/charades-sta/train.json'
-    h5_file = 'data/processed/charades-sta/rgb_resnet152_max_cs-3.h5'
+    json_data = 'data/processed/didemo/train-03.json'
+    h5_file = 'data/processed/didemo/resnet152_rgb_max_cl-5.h5'
+    # TODO: update Charades-STA pre-processed data
+    # json_data = 'data/processed/charades-sta/train.json'
+    # h5_file = 'data/processed/charades-sta/rgb_resnet152_max_cs-3.h5'
     cues = {'rgb': {'file': h5_file}}
     t_start = time.time()
     dataset = UntrimmedMCN(json_data, cues, debug=True)

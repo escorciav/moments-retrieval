@@ -75,7 +75,7 @@ parser_visual_info_grp.add_argument(
     '--h5-path', type=Path, default='non-existent',
     help='HDF5-file with features')
 parser_visual_info_grp.add_argument(
-    '--time-unit', type=float, default=None,
+    '--clip-length', type=float, default=None,
     help='Clip length in seconds')
 # Model features
 parser.add_argument('--loc', type=TemporalFeatures.from_string,
@@ -380,12 +380,12 @@ def sampler_biased_single_clip_moment(dataset, rate):
     """
     if 'didemo' in str(dataset.json_file):
         return None
-    time_unit = dataset.proposals_interface.stride
+    clip_length = dataset.proposals_interface.stride
     ind_per_length = {}
     for it, moment_data in enumerate(dataset.metadata):
         moment = moment_data['times'][0]
         length = moment[1] - moment[0]
-        num_clips = int(length // time_unit)
+        num_clips = int(length // clip_length)
         if num_clips not in ind_per_length:
             ind_per_length[num_clips] = []
         ind_per_length[num_clips].append(it)
@@ -413,6 +413,8 @@ def setup_dataset(args):
     if args.h5_path.exists():
         no_visual = False
         cues = {args.feat: {'file': args.h5_path}}
+    elif args.clip_length is None:
+        raise ValueError('clip-length is required without visual features')
     proposal_generator = proposals.__dict__[args.proposal_interface](
         args.min_length, args.num_scales, args.stride, unique=True)
     proposal_generator_train = None
@@ -454,7 +456,8 @@ def setup_dataset(args):
         logging.info(f'Found {subset}-list: {filename}')
         dataset = dataset_untrimmed.__dict__[dataset_name](
             filename, cues=cues, loc=args.loc, context=args.context,
-            no_visual=no_visual, debug=args.debug, time_unit=args.time_unit,
+            no_visual=no_visual, debug=args.debug,
+            clip_length=args.clip_length,
             **extras_dataset)
         logging.info(f'Setting loader')
         if subset == 'train' and args.bias_to_single_clips > 0:

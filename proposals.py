@@ -14,16 +14,27 @@ class TemporalProposalsBase():
 
 
 class DidemoICCV17SS(TemporalProposalsBase):
-    "Original search space of moments proposed in ICCV-2017"
-    time_unit = 5
+    """Original search space of moments proposed in ICCV-2017
+
+    Attributes:
+        clip_length_min (float) : minimum length, in seconds, of a video clip.
+        proposals (numpy array) : of shape [21, 2] representing all the
+            possible temporal segments of valid annotations of DiDeMo dataset.
+            It represents the search space of a temporal localization
+            algorithm.
+
+    Reference: Hendricks et al. Localizing Moments in Video with Natural
+        Language. ICCV 2017.
+    """
+    clip_length_min = 5.0
 
     def __init__(self, *args, dtype=np.float32, **kwargs):
         clips_indices = [(0, 0), (1, 1), (2, 2), (3, 3), (4, 4), (5, 5)]
         for i in itertools.combinations(range(len(clips_indices)), 2):
             clips_indices.append(i)
         self.proposals = np.array(clips_indices, dtype=dtype)
-        self.proposals *= self.time_unit
-        self.proposals[:, 1] += self.time_unit
+        self.proposals *= self.clip_length_min
+        self.proposals[:, 1] += self.clip_length_min
 
     def __call__(self, *args, **kwargs):
         return self.proposals

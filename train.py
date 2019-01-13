@@ -194,7 +194,8 @@ def main(args):
             args.topk = args.topk.cuda(device=args.device, non_blocking=True)
             args.topk_ = args.topk_.cuda(
                 device=args.device, non_blocking=True)
-    logging.info(f'Git revision hash:  {get_git_revision_hash()}')
+    logging.info(f'Git revision hash: {get_git_revision_hash()}')
+    args.git_hash = get_git_revision_hash()
     logging.info(f'{args.arch} in untrimmed videos')
     logging.info(args)
     logging.info(f'Device: {device_name}')

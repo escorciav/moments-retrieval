@@ -93,7 +93,7 @@ def dumping_arguments(args, val_performance=None, test_performance=None,
     if test_performance is not None:
         args_dict.update({f'test_{k}': v for k, v in test_performance.items()})
     with open(result_file, 'w') as fid:
-        json.dump(args_dict, fid, skipkeys=True, indent=1)
+        json.dump(args_dict, fid, skipkeys=True, indent=1, sort_keys=True)
     if args.dump_results and perf_per_sample_val is not None:
         dump_tensors_as_hdf5(args.logfile + '_instances_rst_val.h5',
                              perf_per_sample_val)

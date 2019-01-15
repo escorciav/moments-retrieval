@@ -1,4 +1,7 @@
+import json
+import random
 import sys
+from copy import deepcopy
 
 import h5py
 import numpy as np
@@ -197,3 +200,44 @@ def recall_bound_and_search_space(videos_df, instances_df,
     )
 
     return recall_ious, search_space_median_std
+
+
+def split_moments_dataset(filename, ratio=0.75):
+    """Create two disjoint partitions of a Dataset of moments
+
+    Args:
+        filename : path to JSON-file with the moments dataset
+        ratio : float indicating the partition ratio in terms of
+            number of unique videos.
+
+    Returns:
+        split1 : dict of length ratio * len(videos)
+        split2 : dict of length (1 - ratio) * len(videos)
+    """
+    with open(filename, 'r') as fid:
+        data = json.load(fid)
+        video2moment_ind = {}
+        for i, moment in enumerate(data['moments']):
+            video_id = moment['video']
+            if video_id not in video2moment_ind:
+                video2moment_ind[video_id] = []
+            video2moment_ind[video_id].append(i)
+
+    splits = []
+    for i in range(2):
+        splits.append(deepcopy(data))
+        splits[-1]['videos'] = {}
+        splits[-1]['moments'] = []
+
+    videos = list(data['videos'].keys())
+    cut = int(len(videos) * ratio)
+    random.shuffle(videos)
+
+    repo = splits[0]
+    for i, video_id in enumerate(videos):
+        if i > cut:
+            repo = splits[1]
+        repo['videos'][video_id] = data['videos'][video_id]
+        for j in video2moment_ind[video_id]:
+            repo['moments'].append(data['moments'][j])
+    return (*splits,)

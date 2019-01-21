@@ -117,16 +117,16 @@ parser.add_argument('--prob-proposal-nextto', type=float, default=-1.0,
                     help=('Prob to sample negatives next to moments. -1'
                           'means disabled. Increase it to sample often.'))
 # Hyper-parameters to explore search space (inference)
-parser.add_argument('--proposal-interface', default='SlidingWindowMSFS',
+parser.add_argument('--proposal-interface', default='SlidingWindowMSRSS',
                     choices=proposals.PROPOSAL_SCHEMES,
                     help='Type of proposals spanning search space')
-parser.add_argument('--min-length', type=float, default=3,
-                    help='Minimum length of slidding windows (seconds)')
-parser.add_argument('--num-scales', type=int, default=8,
-                    help='Number of scales in a multi-scale linear slidding '
-                         'window')
-parser.add_argument('--stride', type=float, default=3,
-                    help='stride of the slidding window (seconds)')
+parser.add_argument('--min-length', type=float, default=1.5,
+                    help='Minimum length of sliding windows (seconds)')
+parser.add_argument('--scales', type=int, nargs='+',
+                    default=list(range(2, 17, 2)),
+                    help='Relative durations for sliding windows')
+parser.add_argument('--overlap', type=float, default=0.5,
+                    help='Use to compute stride of a sliding window')
 parser.add_argument('--nms-threshold', type=float, default=0.5)
 # Device specific
 parser.add_argument('--batch-size', type=int, default=128, help='batch size')
@@ -379,6 +379,7 @@ def sampler_biased_single_clip_moment(dataset, rate):
 
     TODO: experimental feature. Remove if it's useless.
     """
+    raise ValueError('Deprecated')
     if 'didemo' in str(dataset.json_file):
         return None
     clip_length = dataset.proposals_interface.stride
@@ -417,7 +418,7 @@ def setup_dataset(args):
     elif args.clip_length is None:
         raise ValueError('clip-length is required without visual features')
     proposal_generator = proposals.__dict__[args.proposal_interface](
-        args.min_length, args.num_scales, args.stride, unique=True)
+        args.min_length, args.scales, args.overlap)
     proposal_generator_train = None
     if args.proposals_in_train:
         proposal_generator_train = proposal_generator

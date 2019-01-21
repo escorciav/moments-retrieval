@@ -3,7 +3,7 @@ import itertools
 
 import numpy as np
 
-PROPOSAL_SCHEMES = ['DidemoICCV17SS', 'SlidingWindowMSFS']
+PROPOSAL_SCHEMES = ['DidemoICCV17SS', 'SlidingWindowMSRSS']
 
 
 class TemporalProposalsBase():

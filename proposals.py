@@ -3,7 +3,7 @@ import itertools
 
 import numpy as np
 
-PROPOSAL_SCHEMES = ['DidemoICCV17SS', 'SlidingWindowMSFS']
+PROPOSAL_SCHEMES = ['DidemoICCV17SS', 'SlidingWindowMSRSS']
 
 
 class TemporalProposalsBase():
@@ -43,7 +43,10 @@ class DidemoICCV17SS(TemporalProposalsBase):
 class SlidingWindowMSFS(TemporalProposalsBase):
     """Multi-scale (linear) sliding window with fixed stride
 
-    TODO: documentation
+    TODO:
+        - We are considering to deprecated this abstraction. Indeed, it's
+          disabled from training.
+        - documentation.
     """
 
     def __init__(self, length, num_scales, stride, unique=False,
@@ -76,9 +79,57 @@ class SlidingWindowMSFS(TemporalProposalsBase):
         return self.sliding_windows(duration)
 
 
+class SlidingWindowMSRSS(TemporalProposalsBase):
+    """Multi-scale sliding window with relative stride within the same scale
+
+    Attributes:
+        length (float) : length of smallest window.
+        scales (sequence of int) : duration of moments relative to
+            `lenght`.
+        stride (float) : relative stride between two windows with the same
+            duration. We used different strides for each scale rounding it
+            towards a multiple of `length`. Note that the minimum stride is
+            `length` for any window will be the `length` itself.
+        dtype (numpy.dtype) : TODO
+
+    TODO: documentation
+    """
+
+    def __init__(self, length, scales, stride=0.5, dtype=np.float32):
+        self.length = length
+        self.scales = scales
+        self.relative_stride = stride
+        # pick strides per scale that are multiples of length
+        self.strides = [max(round(i * stride), 1) * length for i in scales]
+        self.dtype = dtype
+        assert len(scales) > 0
+
+    def sliding_windows(self, t_end, t_start=0):
+        "sliding canonical windows over a given time interval"
+        windows_ = []
+        for i, stride in enumerate(self.strides):
+            num_i = np.ceil((t_end - t_start)/ stride)
+            windows_i = np.empty((int(num_i), 2), dtype=np.float32)
+            windows_i[:, 0] = np.arange(t_start, t_end, stride)
+            windows_i[:, 1] = windows_i[:, 0] + self.length * self.scales[i]
+            windows_i[windows_i[:, 1] > t_end, 1] = t_end
+            windows_.append(windows_i)
+        windows = np.concatenate(windows_, axis=0)
+        # Hacky way to make windows fit inside video
+        # It implies windows at the end may not belong to the set spanned by
+        # length and scales.
+        return np.unique(windows, axis=0)
+
+    def __call__(self, video_id, metadata=None, feature_collection=None):
+        duration = metadata.get('duration')
+        assert duration is not None
+        return self.sliding_windows(duration)
+
+
 if __name__ == '__main__':
     test_fns_args = [(SlidingWindowMSFS, (3, 5, 3)),
-                     (DidemoICCV17SS, ())]
+                     (DidemoICCV17SS, (),),
+                     (SlidingWindowMSRSS, (1.5, [2, 4, 6, 12]))]
     for fn_i, args_i in test_fns_args:
         proposal_fn = fn_i(*args_i)
         x = proposal_fn('hola', {'duration': 15})

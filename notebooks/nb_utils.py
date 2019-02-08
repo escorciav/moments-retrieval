@@ -105,79 +105,57 @@ def make_annotations_df(instances, file_h5):
     return videos_df, instances_df
 
 
-# TODO: deprecate the next two functions in favor of proposals.py module
-def generate_windows(length, scale, linear=True):
-    "create multi-scale (duration) right aligned windows"
-    if not linear:
-        raise NotImplementedError('WIP')
-    windows = np.zeros((scale, 2))
-    windows[:, 1] += np.arange(1, scale + 1) * length
-    return windows
+def parse_moments(filename):
+    "Parse processed JSON used for training/evaluation"
+    with open(filename, 'r') as fid:
+        data = json.load(fid)
+
+    i = 0
+    for video_id, value in data['videos'].items():
+        data['videos'][video_id]['index'] = i
+        # This field is populated by _update_metadata
+        data['videos'][video_id]['moment_indices'] = []
+        i += 1
+
+    for i, moment in enumerate(data['moments']):
+        video_id = data['moments'][i]['video']
+        data['moments'][i]['times'] = np.array(
+            moment['times'], dtype=np.float32)
+        data['moments'][i]['video_index'] = (
+            data['videos'][video_id]['index'])
+        data['videos'][video_id]['moment_indices'].append(i)
+        # `time` field may get deprecated
+        data['moments'][i]['time'] = None
+
+    return data
 
 
-def sliding_window(length, scale, stride, t_end,
-                   t_start=0, linear=True):
-    "Sliding windows for a given time interval"
-    list_of_np_windows = []
-    canonical_windows = generate_windows(length, scale, linear)
-    for t in np.arange(t_start, t_end, stride):
-        window_t = canonical_windows * 1
-        # shift windows
-        window_t += t
-        list_of_np_windows.append(window_t)
-    windows = np.vstack(list_of_np_windows)
-    # only keep valid windows inside video
-    # this way is clean but change numbers
-    # windows = windows[windows[:, 1] <= t_end, :]
-
-    # hacky := we end up with windows length != alpha * length
-    # with alpha in Z+
-    windows[windows[:, 1] > t_end, 1] = t_end
-    return windows
-
-
-def recall_bound_and_search_space(videos_df, instances_df,
-                                  stride, length, scale, linear=True,
-                                  slidding_window_fn=sliding_window,
-                                  iou_thresholds=IOU_THRESHOLDS, fps=FPS):
+def recall_bound_and_search_space(filename, proposals_fn,
+                                   iou_thresholds=IOU_THRESHOLDS):
     """Compute recall and search-space for a given stride
 
     Args:
-        videos_df : DataFrame with video info, required `num_frames`.
+        filename : path to JSON-file.
         instances_df : DataFrame with instance info, required `t_start`
                        and `t_end'.
     """
-    num_videos = len(videos_df)
-    videos_gbv = videos_df.groupby('video')
-    instances_gbv = instances_df.groupby('video')
+    dataset = parse_moments(filename)
+    i, num_videos = 0, len(dataset['videos'])
 
+    durations = []
     matched_gt_per_iou = [[] for i in range(len(iou_thresholds))]
     search_space_card_per_video = np.empty(num_videos)
-    for i, (video_id, gt_instances) in enumerate(instances_gbv):
+    for video_id, video_data in dataset['videos'].items():
+        durations.append(video_data['duration'])
+
         # Get ground-truth segments
-        instances_start = gt_instances.loc[:, 't_start'].values[:, None]
-        instances_end = gt_instances.loc[:, 't_end'].values[:, None]
-        gt_segments = np.hstack([instances_start, instances_end])
-
-        # Estimate video duration
-        num_frames = videos_gbv.get_group(
-            video_id)['num_frames'].values[0]
-        t_end = num_frames / FPS
-
-        # sanitize
-        # i) clamp moments inside video
-        gt_segments[gt_segments[:, 0] > t_end, 0] = t_end
-        gt_segments[gt_segments[:, 1] > t_end, 1] = t_end
-        # ii) remove moments with duration <= 0
-        duration = gt_segments[:, 1] - gt_segments[:, 0]
-        ind = duration > 0
-        if ind.sum() == 0:
-            continue
-        gt_segments = gt_segments[ind, :]
+        gt_segments_ = []
+        for j in video_data['moment_indices']:
+            gt_segments_.append(dataset['moments'][j]['times'])
+        gt_segments = np.concatenate(gt_segments_, axis=0)
 
         # Generate search space
-        windows = slidding_window_fn(length, scale, stride, t_end,
-                                     linear=linear)
+        windows = proposals_fn(video_id, video_data)
         search_space_card_per_video[i] = len(windows)
 
         # IOU between windows and gt_segments
@@ -189,17 +167,21 @@ def recall_bound_and_search_space(videos_df, instances_df,
         # Compute matched_gt_per_iou for over multiple thresholds
         for j, iou_thr in enumerate(iou_thresholds):
             matched_gt_per_iou[j].append(iou_per_gt_i >= iou_thr)
+        i += 1
 
     recall_ious = np.empty(len(iou_thresholds))
     for i, list_of_arrays in enumerate(matched_gt_per_iou):
         matched_gt_i = np.concatenate(list_of_arrays)
         recall_ious[i] = matched_gt_i.sum() / len(matched_gt_i)
-    search_space_median_std = np.array(
+    search_space = np.array(
         [np.median(search_space_card_per_video),
-         np.std(search_space_card_per_video)]
+         np.std(search_space_card_per_video),
+         search_space_card_per_video.sum()
+        ]
     )
+    durations = np.array(durations)
 
-    return recall_ious, search_space_median_std
+    return recall_ious, search_space, durations
 
 
 def split_moments_dataset(filename, ratio=0.75):

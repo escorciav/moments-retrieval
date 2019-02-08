@@ -125,8 +125,9 @@ parser.add_argument('--min-length', type=float, default=1.5,
 parser.add_argument('--scales', type=int, nargs='+',
                     default=list(range(2, 17, 2)),
                     help='Relative durations for sliding windows')
-parser.add_argument('--overlap', type=float, default=0.5,
-                    help='Use to compute stride of a sliding window')
+parser.add_argument('--stride', type=float, default=0.5,
+                    help=('Relative stride for sliding windows [0, 1]. '
+                          'Check SlidingWindowMSRSS details'))
 parser.add_argument('--nms-threshold', type=float, default=0.5)
 # Device specific
 parser.add_argument('--batch-size', type=int, default=128, help='batch size')

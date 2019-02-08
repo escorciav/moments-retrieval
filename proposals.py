@@ -43,7 +43,10 @@ class DidemoICCV17SS(TemporalProposalsBase):
 class SlidingWindowMSFS(TemporalProposalsBase):
     """Multi-scale (linear) sliding window with fixed stride
 
-    TODO: documentation
+    TODO:
+        - We are considering to deprecated this abstraction. Indeed, it's
+          disabled from training.
+        - documentation.
     """
 
     def __init__(self, length, num_scales, stride, unique=False,
@@ -80,25 +83,24 @@ class SlidingWindowMSRSS(TemporalProposalsBase):
     """Multi-scale sliding window with relative stride within the same scale
 
     Attributes:
-        length (float) :
+        length (float) : length of smallest window.
         scales (sequence of int) : duration of moments relative to
             `lenght`.
-        overlap (float) : max overlap between two windows with the same
-            duration. We compute a stride per scale from the `overlap` and
-            rounded towards a multiple of `min_length`, thus
-            you may find windows with the same length and an `overlap` value
-            slightly higher.
+        stride (float) : relative stride between two windows with the same
+            duration. We used different strides for each scale rounding it
+            towards a multiple of `length`. Note that the minimum stride is
+            `length` for any window will be the `length` itself.
         dtype (numpy.dtype) : TODO
 
     TODO: documentation
     """
 
-    def __init__(self, length, scales, overlap=0.5, dtype=np.float32):
+    def __init__(self, length, scales, stride=0.5, dtype=np.float32):
         self.length = length
         self.scales = scales
-        self.overlap = overlap
+        self.relative_stride = stride
         # pick strides per scale that are multiples of length
-        self.strides = [round(i * overlap) * length for i in scales]
+        self.strides = [max(round(i * stride), 1) * length for i in scales]
         self.dtype = dtype
         assert len(scales) > 0
 

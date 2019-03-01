@@ -419,7 +419,7 @@ def setup_dataset(args):
     elif args.clip_length is None:
         raise ValueError('clip-length is required without visual features')
     proposal_generator = proposals.__dict__[args.proposal_interface](
-        args.min_length, args.scales, args.overlap)
+        args.min_length, args.scales, args.stride)
     proposal_generator_train = None
     if args.proposals_in_train:
         proposal_generator_train = proposal_generator

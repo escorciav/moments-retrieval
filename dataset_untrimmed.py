@@ -1,6 +1,7 @@
 "Dataset abstractions to deal with data of various length"
 import json
 import random
+import re
 from enum import IntEnum, unique
 
 import h5py
@@ -8,12 +9,38 @@ import numpy as np
 from scipy.signal import convolve
 from torch.utils.data import Dataset
 
-from didemo import LanguageRepresentationMCN, FakeLanguageRepresentation
-from didemo import sentences_to_words, normalization1d
+from glove import RecurrentEmbedding
 from np_segments_ops import iou as segment_iou
 from utils import dict_of_lists
 
-CLIP_LENGTH = 3
+
+class FakeLanguageRepresentation():
+    "Allow faster iteration while I learn to cache stuff ;P"
+
+    def __init__(self, max_words=50, dim=300):
+        self.max_words = max_words
+        self.dim = dim
+
+    def __call__(self, query):
+        return np.random.rand(self.max_words, self.dim).astype(np.float32)
+
+
+class LanguageRepresentationMCN(object):
+    "Get representation of sentence"
+
+    def __init__(self, max_words):
+        self.max_words = max_words
+        self.rec_embedding = RecurrentEmbedding()
+        self.dim = self.rec_embedding.embedding.glove_dim
+
+    def __call__(self, query):
+        "Return padded sentence feature"
+        feature = np.zeros((self.max_words, self.dim), dtype=np.float32)
+        len_query = min(len(query), self.max_words)
+        for i, word in enumerate(query[:len_query]):
+            if word in self.rec_embedding.vocab_dict:
+                feature[i, :] = self.rec_embedding.vocab_dict[word]
+        return feature
 
 
 @unique
@@ -43,7 +70,7 @@ class UntrimmedBase(Dataset):
         self.metadata = None
         self.metadata_per_video = None
         self._video_list = None
-        self.clip_length = CLIP_LENGTH
+        self.clip_length = None
 
     def max_number_of_clips(self):
         "Return maximum number of clips/chunks over all videos in dataset"
@@ -828,6 +855,27 @@ def global_context(x_t, num_clips=None):
     if num_clips is not None:
         ic_end = num_clips - 1
     return normalization1d(ic_start, ic_end, x_t)
+
+
+def normalization1d(start, end, features):
+    "1D mean-pooling + normalization for visual features"
+    base_feature = np.mean(features[start:end + 1, :], axis=0)
+    scaling_factor = np.linalg.norm(base_feature) + 0.00001
+    return base_feature / scaling_factor
+
+
+def sentences_to_words(sentences):
+    words = []
+    for s in sentences:
+        words.extend(word_tokenize(str(s.lower())))
+    return words
+
+
+def word_tokenize(s):
+    sent = s.lower()
+    sent = re.sub('[^A-Za-z0-9\s]+', ' ', sent)
+    return sent.split()
+
 
 
 if __name__ == '__main__':

@@ -123,6 +123,8 @@ parser.add_argument('--h5-path-nis', type=Path, default=None,
                     help='HDF5-file for negative importance sampling')
 parser.add_argument('--nis-k', type=int, default=None,
                     help='Only sample negative videos from top-k')
+parser.add_argument('--dropout-clips', type=float, default=0,
+                    help='Dropout rate over clips. Ony for SMCN/CAL.')
 # Hyper-parameters concerning proposals (candidates) to score
 parser.add_argument('--proposal-interface', default='SlidingWindowMSRSS',
                     choices=proposals.PROPOSAL_SCHEMES,
@@ -573,6 +575,8 @@ def setup_model(args, train_loader=None, test_loader=None):
     )
     if args.clip_loss:
         args.arch = 'SMCNCL'
+    if args.arch == 'SMCN':
+        arch_setup['dropout_clips'] = args.dropout_clips
     net = model.__dict__[args.arch](**arch_setup)
 
     opt_parameters, criterion = None, None

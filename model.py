@@ -194,8 +194,9 @@ class MCN(nn.Module):
 class SMCN(MCN):
     "SMCN model"
 
-    def __init__(self, *args, **kwargs):
+    def __init__(self, *args, dropout_clips=0, **kwargs):
         super(SMCN, self).__init__(*args, **kwargs)
+        self.dropout_clips = nn.Dropout2d(dropout_clips)
 
     def forward(self, padded_query, query_length, visual_pos,
                 visual_neg_intra=None, visual_neg_inter=None):
@@ -231,9 +232,16 @@ class SMCN(MCN):
         x_ = x.view(-1, D)
         x_ = self.visual_encoder(x_)
         # x_ = self.visual_embedding(x_)
+
+        # Dropout over clips
+        x_ = x_.view((B, N, -1))
+        x_ = x_.unsqueeze(dim=-1)
+        x_ = self.dropout_clips(x_) * (1 - self.dropout_clips.p)
+        x_ = x_.squeeze()
+
         if self.unit_vector:
-            x_ = F.normalize(x_)
-        return x_.view((B, N, -1))
+            x_ = F.normalize(x_, dim=-1)
+        return x_
 
     def pool_compared_snippets(self, x, mask):
         masked_x = x * mask
@@ -629,6 +637,26 @@ if __name__ == '__main__':
     # print(f'y.shape = {y_padded.shape}')
     # print(y_padded.grad)
     # print([i.grad for i in y])
+
+    # SMCN
+    B, LD, Nv = 3, 500, 4
+    net = SMCN(lang_size=LD)
+    x = torch.rand(B, Nv, 4096, requires_grad=True)
+    m = []
+    for i in range(B):
+        m_i = torch.zeros(Nv)
+        m_i[:random.randint(0, Nv) + 1] = 1
+        m.append(m_i)
+    m = torch.stack(m, 0).requires_grad_()
+    x_packed = {'hola': x, 'mask': m}
+    z = [random.randint(2, 6) for i in range(B)]
+    z.sort(reverse=True)
+    y = [torch.rand(i, LD, requires_grad=True) for i in z]
+    y_padded = pad_sequence(y, True)
+    z = torch.tensor(z)
+    a, b, c = net(y_padded, z, x_packed, x_packed, x_packed)
+    b.backward(b.clone())
+    a, *_ = net(y_padded, z, x_packed)
 
     # SMCNTalcv1
     B, LD, S = 3, 5, 4

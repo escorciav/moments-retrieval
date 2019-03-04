@@ -10,6 +10,7 @@ import numpy as np
 import pandas as pd
 import torch
 import yaml
+from tensorboardX import SummaryWriter
 from torch.utils.data.sampler import Sampler
 from torch.utils.data.dataloader import default_collate
 
@@ -79,6 +80,7 @@ def dumping_arguments(args, val_performance=None, test_performance=None,
     topk = args.topk
     # Update dict with performance and remove non-serializable stuff
     if hasattr(args, 'topk_'): delattr(args, 'topk_')
+    if hasattr(args, 'writer'): delattr(args, 'writer')
     args.logfile = str(args.logfile)
     args.h5_path = str(args.h5_path) if args.h5_path.exists() else None
     args.train_list = str(args.train_list) if args.train_list.exists() else None
@@ -160,10 +162,16 @@ def setup_logging(args):
     "Setup logging to dump progress into file or print it"
     log_prm = dict(format='%(asctime)s:%(levelname)s:%(message)s',
                    level=logging.DEBUG)
+    # This should be a module variable in case we don't want tensorboard
+    setup_tensorboard = False
     if len(args.logfile.name) >= 1:
         log_prm['filename'] = args.logfile.with_suffix('.log')
         log_prm['filemode'] = 'w'
+        setup_tensorboard = True
     logging.basicConfig(**log_prm)
+    args.writer = None
+    if setup_tensorboard:
+        args.writer = SummaryWriter(args.logfile.with_suffix(''))
 
 
 def setup_rng(args):
@@ -175,12 +183,16 @@ def setup_rng(args):
     torch.cuda.manual_seed(args.seed)
 
 
-def save_checkpoint(args, state):
+def save_checkpoint(args, state, record=False):
     "Serialize model into pth"
     if len(args.logfile.name) == 0 or not args.serialize:
         return
-    torch.save(state, args.logfile.with_suffix('.pth.tar'))
-
+    filename = args.logfile.with_suffix('.pth.tar')
+    if record:
+        epoch = args.epochs
+        name = args.logfile.stem
+        filename = args.logfile.with_name(f'{name}-{epoch}.pth.tar')
+    torch.save(state, filename)
 
 def ship_to(x, device):
     # TODO: clean like default_collate :S

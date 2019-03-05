@@ -1,4 +1,4 @@
-"Train *MCN in untrimmed data"
+"Train&evaluate MCN/CAL models"
 import argparse
 import logging
 import time
@@ -36,16 +36,16 @@ BEST_RESULT = 0.0
 TOPK_DIDEMO = torch.tensor([1, 5]).float()
 
 parser = argparse.ArgumentParser(
-    description='*MCN training',
+    description='MCN/CAL training',
     formatter_class=argparse.ArgumentDefaultsHelpFormatter
 )
 # Data
 parser.add_argument('--train-list', type=Path, default='non-existent',
                     help='JSON-file with training instances')
 parser.add_argument('--val-list', type=Path, default='non-existent',
-                    help='JSON-file with training instances')
+                    help='JSON-file with validation instances')
 parser.add_argument('--test-list', type=Path, default='non-existent',
-                    help='JSON-file with training instances')
+                    help='JSON-file with testing instances')
 # Architecture
 parser.add_argument('--arch', choices=model.MOMENT_RETRIEVAL_MODELS,
                     default='MCN', help='model architecture')
@@ -153,18 +153,31 @@ parser.add_argument('--clip-grad', type=float, default=10,
                     help='clip gradients')
 parser.add_argument('--weight-decay', type=float, default=0.0,
                     help='weight decay')
-parser.add_argument('--patience', type=int, default=-1,
-                    help='stop optimization if there is no improvements')
 parser.add_argument('--no-shuffle', action='store_false', dest='shuffle',
                     help='Disable suffle dataset after each epoch')
-# Logging
-parser.add_argument('--logfile', type=Path, default='', help='Logging file')
-parser.add_argument('--n-display', type=float, default=0.1,
-                    help='logging rate during epoch')
+# train/eval callbacks
+parser.add_argument('--patience', type=int, default=-1,
+                    help=('stop optimization if there is no improvements '
+                          'after poking test-list by this amount.'))
+parser.add_argument('--min-epochs', type=float, default=0.45,
+                    help=('Ignore patience at the begining. Given as ratio '
+                          'wrt total numbers of epochs.'))
+parser.add_argument('--eval-on-epoch', type=int, default=-1,
+                    help=('Check validation in multiples of these epoch.'
+                          'Raises an error if the actual `test-list` is given '
+                          'and `eval_on_epoch` > 0'))
 parser.add_argument('--not-serialize', action='store_false', dest='serialize',
                     help='Avoid dumping .pth.tar with model parameters')
 parser.add_argument('--dump-results', action='store_true',
                     help='Dump HDF5 with per sample results in val & test')
+parser.add_argument('--save-on-epoch', type=int, default=-1,
+                    help='Dump every given number of epochs')
+parser.add_argument('--force-eval-end', action='store_true',
+                    help='Force eval at the end of training')
+# Logging
+parser.add_argument('--logfile', type=Path, default='', help='Logging file')
+parser.add_argument('--n-display', type=float, default=0.1,
+                    help='logging rate during epoch')
 # Reproducibility
 parser.add_argument('--seed', type=int, default=1701,
                     help='random seed (-1 := random)')
@@ -227,52 +240,68 @@ def main(args):
         optimizer, args.lr_step, args.lr_decay)
 
     logging.info('Starting optimization...')
-    best_result = BEST_RESULT
-    perf_test = None
-    patience = 0
+    # on training begin
     n_display_float = args.n_display
-    for epoch in range(args.epochs):
+    total_epochs = args.epochs
+    args.min_epochs = max(1, int(total_epochs * args.min_epochs))
+    patience, args.epochs, best_result = 0, 0, BEST_RESULT
+    if args.eval_on_epoch > 0:
+        logging.info(f'Epoch: {args.epochs}')
+        perf_val, perf_per_sample_val = evaluate(args, net, val_loader)
+        perf_test, perf_per_sample_test = evaluate(
+            args, net, test_loader, subset='test')
+        performance = perf_test if perf_test is None else perf_val
+        best_result = performance[TRACK]
+    for epoch in range(1, total_epochs + 1):
         # on epoch begin
+        args.epochs += 1
         args.n_display = max(int(n_display_float * len(train_loader)), 1)
         lr_schedule.step()
 
-        train_epoch(args, net, ranking_loss, train_loader, optimizer, epoch)
+        train_epoch(args, net, ranking_loss, train_loader, optimizer)
 
-        perf_val, perf_per_sample_val = evaluate(args, net, val_loader)
-        val_result = perf_val[TRACK] if perf_val else best_result
-
-        if val_result > best_result:
-            patience = 0
-            best_result = val_result
-            logging.info(f'Hit jackpot {TRACK}: {best_result:.4f}')
+        # on epoch ends
+        # eval on val/test-lists
+        if args.eval_on_epoch > 0 and epoch % args.eval_on_epoch == 0:
+            logging.info('Trigger evaluation')
+            perf_val, perf_per_sample_val = evaluate(args, net, val_loader)
             perf_test, perf_per_sample_test = evaluate(
-                args, net, test_loader)
-            save_checkpoint(args, {'epoch': epoch + 1,
-                                   'state_dict': net.state_dict(),
-                                   'best_result': best_result})
-        else:
-            patience += 1
+                args, net, test_loader, subset='test')
+            performance = perf_test if perf_test is None else perf_val
+            current_result = performance[TRACK] if performance else best_result
+            if args.patience >= 0 and current_result > best_result:
+                patience = 0
+                best_result = current_result
+                save_checkpoint(args, {'state_dict': net.state_dict()})
+            else:
+                patience += 1
 
-        if patience == args.patience:
+        # dump model at given epoch
+        if args.save_on_epoch > 0 and epoch % args.save_on_epoch == 0:
+            save_checkpoint(args, {'state_dict': net.state_dict()}, record=True)
+
+        # stop training when if no improvement
+        if patience == args.patience and epoch > args.args.min_epochs:
             break
-    args.epochs = epoch + 1
-    if args.patience == -1:
-        perf_test, perf_per_sample_test = evaluate(args, net, test_loader)
-        save_checkpoint(args, {'epoch': epoch + 1,
-                               'state_dict': net.state_dict(),
-                               'best_result': best_result})
+    # on train ends
+    if args.eval_on_epoch < 0 or args.force_eval_end:
+        logging.info('Evaluation after training finished')
+        perf_val, perf_per_sample_val = evaluate(args, net, val_loader)
+        perf_test, perf_per_sample_test = evaluate(
+            args, net, test_loader, subset='test')
+        save_checkpoint(args, {'state_dict': net.state_dict()})
 
     logging.info(f'Best val {TRACK}: {best_result:.4f}')
     dumping_arguments(args, perf_val, perf_test,
                       perf_per_sample_val, perf_per_sample_test)
 
 
-def train_epoch(args, net, criterion, loader, optimizer, epoch):
+def train_epoch(args, net, criterion, loader, optimizer):
     "Update model making a whole pass over dataset in loader"
     ind = 2 if args.debug else 0
     time_meters = Multimeter(keys=['Data', 'Batch'])
     running_loss = 0.0
-    logging.info(f'Epoch: {epoch + 1}')
+    logging.info(f'Epoch: {args.epochs}')
     net.train()
     end = time.time()
     for it, minibatch in enumerate(loader):
@@ -293,13 +322,19 @@ def train_epoch(args, net, criterion, loader, optimizer, epoch):
         time_meters.update([data_time, time.time() - end])
         end = time.time()
 
-        running_loss += loss.item()
+        loss_it = loss.item()
+        running_loss += loss_it
+        n_iter = it + args.epochs * len(loader)
+        if args.writer:
+            args.writer.add_scalar('train/loss', loss_it, n_iter)
         if (it + 1) % args.n_display == 0:
-            logging.info(f'Epoch: [{epoch + 1}]'
+            logging.info(f'Epoch: [{args.epochs}]'
                          f'[{100 * it / len(loader):.2f}]\t'
                          f'{time_meters.report()}\t'
                          f'Loss {running_loss / args.n_display:.4f}')
             running_loss = 0.0
+    if args.writer:
+        args.writer.add_scalar('train/loss-end', running_loss, args.epochs)
 
 
 def validation(args, net, loader):
@@ -365,14 +400,18 @@ def validation(args, net, loader):
     return meters_1.dump(), None
 
 
-def evaluate(args, net, loader):
+def evaluate(args, net, loader, subset='val'):
     """Lazy function to make comparsion = to json parsing.
 
     Note: Please do not fool yourself picking model based on testing
     """
     if loader is None:
         return None, None
-    return validation(args, net, loader)
+    perf_overall, perf_per_sample = validation(args, net, loader)
+    if perf_overall and args.writer:
+        for metric, value in perf_overall.items():
+            args.writer.add_scalar(f'{subset}/{metric}', value, args.epochs)
+    return perf_overall, perf_per_sample
 
 
 def sampler_biased_single_clip_moment(dataset, rate):
@@ -409,6 +448,14 @@ def setup_dataset(args):
         dataset_name = 'UntrimmedSMCN'
     else:
         raise ValueError(f'Unsuported arch: {args.arch}, call 911!')
+
+    # Make sure test_list doesn't cheating
+    search_for = 'test'
+    if 'activitynet' in args.test_list.name:
+        search_for = 'val.json'
+    if (not args.evaluate and search_for in args.test_list.name and
+        args.eval_on_epoch > 0):
+        raise ValueError('Risk of cheating. Please read prolog.')
 
     subset_files = [('train', args.train_list), ('val', args.val_list),
                     ('test', args.test_list)]

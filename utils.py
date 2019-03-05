@@ -194,6 +194,7 @@ def save_checkpoint(args, state, record=False):
         filename = args.logfile.with_name(f'{name}-{epoch}.pth.tar')
     torch.save(state, filename)
 
+
 def ship_to(x, device):
     # TODO: clean like default_collate :S
     y = []

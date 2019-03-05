@@ -246,12 +246,13 @@ def main(args):
     args.min_epochs = max(1, int(total_epochs * args.min_epochs))
     patience, args.epochs, best_result = 0, 0, BEST_RESULT
     if args.eval_on_epoch > 0:
+        logging.info(f'Epoch: {args.epochs}')
         perf_val, perf_per_sample_val = evaluate(args, net, val_loader)
         perf_test, perf_per_sample_test = evaluate(
             args, net, test_loader, subset='test')
         performance = perf_test if perf_test is None else perf_val
         best_result = performance[TRACK]
-    for epoch in range(total_epochs):
+    for epoch in range(1, total_epochs + 1):
         # on epoch begin
         args.epochs += 1
         args.n_display = max(int(n_display_float * len(train_loader)), 1)
@@ -262,6 +263,7 @@ def main(args):
         # on epoch ends
         # eval on val/test-lists
         if args.eval_on_epoch > 0 and epoch % args.eval_on_epoch == 0:
+            logging.info('Trigger evaluation')
             perf_val, perf_per_sample_val = evaluate(args, net, val_loader)
             perf_test, perf_per_sample_test = evaluate(
                 args, net, test_loader, subset='test')
@@ -276,14 +278,14 @@ def main(args):
 
         # dump model at given epoch
         if args.save_on_epoch > 0 and epoch % args.save_on_epoch == 0:
-            state = {'epoch': epoch, 'state_dict': net.state_dict()}
-            save_checkpoint(args, state, record=True)
+            save_checkpoint(args, {'state_dict': net.state_dict()}, record=True)
 
         # stop training when if no improvement
         if patience == args.patience and epoch > args.args.min_epochs:
             break
     # on train ends
     if args.eval_on_epoch < 0 or args.force_eval_end:
+        logging.info('Evaluation after training finished')
         perf_val, perf_per_sample_val = evaluate(args, net, val_loader)
         perf_test, perf_per_sample_test = evaluate(
             args, net, test_loader, subset='test')
@@ -449,9 +451,9 @@ def setup_dataset(args):
 
     # Make sure test_list doesn't cheating
     search_for = 'test'
-    if 'activitynet' in args.test_list:
+    if 'activitynet' in args.test_list.name:
         search_for = 'val.json'
-    if (not args.evaluate and search_for in args.test_list and
+    if (not args.evaluate and search_for in args.test_list.name and
         args.eval_on_epoch > 0):
         raise ValueError('Risk of cheating. Please read prolog.')
 

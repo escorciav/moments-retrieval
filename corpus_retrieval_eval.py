@@ -63,8 +63,9 @@ def main(args):
     if args.dump:
         args.disable_tqdm = True
         if len(args.logfile.name) == 0:
-            args.logfile = args.snapshot_args.with_suffix('').with_name(
-                args.snapshot_args.stem + '_corpus-eval')
+            basename_fusion = [str(i.with_suffix('').with_name(i.stem))
+                               for i in args.snapshot]
+            args.logfile = Path('-'.join(basename_fusion) + '_corpus-eval')
         if args.logfile.exists():
             raise ValueError(
                 f'{args.logfile} already exists. Please provide a logfile or'
@@ -73,6 +74,7 @@ def main(args):
 
     logging.info('Corpus Retrieval Evaluation for *MCN')
     load_hyperparameters(args)
+    logging.info(args)
 
     engine_prm = {}
     if args.arch == 'MCN':
@@ -167,8 +169,7 @@ def main(args):
             for key, value in result.items():
                 result[key] = float(value)
             result['median_moments_scanned'] = moments_scanned_median
-            result['snapshot'] = str(args.snapshot)
-            result['snapshot_args'] = str(args.snapshot_args)
+            result['snapshot'] = [str(i) for i in args.snapshot]
             result['corpus'] = str(args.test_list)
             result['greedy'] = args.greedy
             result['date'] = datetime.now().isoformat()

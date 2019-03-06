@@ -4,6 +4,7 @@ import logging
 from datetime import datetime
 from pathlib import Path
 
+import h5py
 import numpy as np
 import torch
 from tqdm import tqdm
@@ -51,10 +52,12 @@ parser.add_argument('--n-display', type=float, default=0.2,
                     help='logging rate during epoch')
 parser.add_argument('--disable-tqdm', action='store_true',
                     help='Disable progress-bar')
+parser.add_argument('--dump-per-instance-results', action='store_true',
+                    help='HDF5 with results')
 # Debug
 parser.add_argument('--debug', action='store_true',
                     help=('yield incorrect results! to verify things are'
-                            'glued correctly (dataset, model, eval)'))
+                          'glued correctly (dataset, model, eval)'))
 args = parser.parse_args()
 
 
@@ -72,7 +75,7 @@ def main(args):
                 'backup existing results.')
     setup_logging(args)
 
-    logging.info('Corpus Retrieval Evaluation for *MCN')
+    logging.info('Corpus Retrieval Evaluation for CAL/MCN')
     load_hyperparameters(args)
     logging.info(args)
 
@@ -145,9 +148,18 @@ def main(args):
     num_instances_retrieved = []
     judge = CorpusVideoMomentRetrievalEval(topk=args.topk)
     args.n_display = max(int(args.n_display * len(dataset.metadata)), 1)
+    vid_indices_per_instance, prop_ind_per_instance = [], []
     for it, query_metadata in tqdm(enumerate(dataset.metadata),
                                    disable=args.disable_tqdm):
-        vid_indices, segments = engine.query(query_metadata['language_input'])
+        result_per_query = engine.query(
+            query_metadata['language_input'],
+            return_indices=args.dump_per_instance_results)
+        if args.dump_per_instance_results:
+            vid_indices, segments, proposals_ind = result_per_query
+            vid_indices_per_instance.append(vid_indices)
+            prop_ind_per_instance.append(proposals_ind)
+        else:
+            vid_indices, segments = result_per_query
         judge.add_single_predicted_moment_info(
             query_metadata, vid_indices, segments, max_rank=engine.num_moments)
         num_instances_retrieved.append(len(vid_indices))
@@ -174,6 +186,18 @@ def main(args):
             result['greedy'] = args.greedy
             result['date'] = datetime.now().isoformat()
             json.dump(result, fid, indent=1)
+
+    if args.dump_per_instance_results:
+        filename = args.logfile.with_suffix('.h5')
+        with h5py.File(filename, 'x') as fid:
+            fid.create_dataset(
+                name='proposals', data=engine.proposals, chunks=True)
+            fid.create_dataset(
+                name='vid_indices', chunks=True,
+                data=torch.stack(vid_indices_per_instance))
+            fid.create_dataset(
+                name='proposals_ind', chunks=True,
+                data=torch.stack(prop_ind_per_instance))
 
 
 def load_hyperparameters(args):

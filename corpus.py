@@ -118,7 +118,7 @@ class MomentRetrievalFromProposalsTable(CorpusVideoMomentRetrievalBase):
             num_entries_per_video)
         self.video_indices = torch.from_numpy(video_indices)
 
-    def query(self, description):
+    def query(self, description, return_indices=False):
         "Search moments based on a text description given as list of words"
         torch.set_grad_enabled(False)
         lang_feature, len_query = self.preprocess_description(description)
@@ -133,6 +133,8 @@ class MomentRetrievalFromProposalsTable(CorpusVideoMomentRetrievalBase):
         # assert np.unique(descending_list).shape[0] == 1
         scores, ind = scores.sort(descending=descending_k)
         # TODO (tier-1): enable bell and whistles
+        if return_indices:
+            return self.video_indices[ind], self.proposals[ind, :], ind
         return self.video_indices[ind], self.proposals[ind, :]
 
 
@@ -212,7 +214,7 @@ class MomentRetrievalFromClipBasedProposalsTable(
         self.clips_per_moment_list = self.clips_per_moment.tolist()
         self.clips_per_moment = self.clips_per_moment.float()
 
-    def query(self, description):
+    def query(self, description, return_indices=False):
         "Search moments based on a text description given as list of words"
         torch.set_grad_enabled(False)
         lang_feature, len_query = self.preprocess_description(description)
@@ -228,6 +230,8 @@ class MomentRetrievalFromClipBasedProposalsTable(
         # assert np.unique(descending_list).shape[0] == 1
         scores, ind = scores.sort(descending=descending_k)
         # TODO (tier-1): enable bell and whistles
+        if return_indices:
+            return self.video_indices[ind], self.proposals[ind, :], ind
         return self.video_indices[ind], self.proposals[ind, :]
 
 
@@ -351,7 +355,7 @@ class GreedyMomentRetrievalFromClipBasedProposalsTable(
             np.arange(0, len(self.dataset.videos)), clips_per_video)
         self.video_indices_clip = torch.from_numpy(video_indices_clip)
 
-    def query(self, description):
+    def query(self, description, return_indices=False):
         "Search moments based on a text description given as list of words"
         torch.set_grad_enabled(False)
         lang_feature, len_query = self.preprocess_description(description)
@@ -410,6 +414,9 @@ class GreedyMomentRetrievalFromClipBasedProposalsTable(
         moments_score = sum(moment_score_list)
         sorted_moments_score, ind_moments = moments_score.sort(
             descending=descending_k)
+        if return_indices:
+            # return self.video_indices[ind], self.proposals[ind, :], ind
+            raise NotImplementedError('WIP')
         return video_indices[ind_moments], proposals[ind_moments, :]
 
 

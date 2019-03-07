@@ -47,8 +47,8 @@ class CorpusVideoMomentRetrievalBase():
 
     def preprocess_description(self, description):
         "Return tensors representing description as 1) vectors and 2) length"
-        assert isinstance(description, list)
         # TODO (release): allow to tokenize description
+        assert isinstance(description, list)
         lang_feature_, len_query_ = self.dataset._compute_language_feature(
             description)
         # torchify
@@ -64,6 +64,82 @@ class CorpusVideoMomentRetrievalBase():
     def query(self, description):
         "Return videos and moments aligned with a text description"
         raise NotImplementedError('Subclass and implement your indexing')
+
+
+class LoopOverKVideos():
+    """Rank moments contained on K-videos
+
+    TODO: description
+    """
+
+    def __init__(self, dataset, model, h5_1ststage, topk=10):
+        self.dataset = dataset
+        self.model = model
+        self.h5_file = h5_1ststage
+        self.topk = topk
+        self.proposals = None
+        self.query2videos_ind = None
+        self._setup()
+
+    @property
+    def num_moments(self):
+        return self.proposals.shape[0]
+
+    def preprocess_description(self, description):
+        "Return tensors representing description as 1) vectors and 2) length"
+        # TODO (refactor): duplicate snippet from
+        # CorpusVideoMomentRetrievalBase. Factor it out as function or apply
+        # inheritance.
+
+        # TODO (release): allow to tokenize description
+        assert isinstance(description, list)
+        lang_feature_, len_query_ = self.dataset._compute_language_feature(
+            description)
+        # torchify
+        lang_feature = torch.from_numpy(lang_feature_)
+        lang_feature.unsqueeze_(0)
+        len_query = torch.tensor([len_query_])
+        return lang_feature, len_query
+
+    def query(self, description, description_ind):
+        "Return videos and moments aligned with a text description"
+        # TODO (tier-2): remove 2nd-stage results from 1st-stage to make them
+        # exhaustive
+        torch.set_grad_enabled(False)
+        lang_feature, len_query = self.preprocess_description(description)
+
+        video_indices_1ststage = self.query2videos_ind[description_ind, :]
+        videos_reranked = set()
+
+        video_indices, proposals, scores = [], [], []
+        for i in range(self.topk):
+            if video_indices_1ststage[i] in videos_reranked:
+                continue
+            videos_reranked.add(video_indices_1ststage[i])
+
+            raise NotImplementedError('WIP')
+            # TODO: update dataset to return visual-info per video
+            # We may need to replicate lang_feature and len_query or
+            # add a new method for each model
+            # TODO: move eval/validation stuff here
+
+            scores_i, descending_i = model_k.predict()
+            # TODO: apply NMS
+            scores.append(scores_i)
+            proposals.append(proposals_i)
+            video_indices.append([video_indices_1ststage[i]] * len(proposals_i))
+
+        # TODO: cat scores, proposals, video_indices
+        scores, ind = scores.sort(descending=descending_i)
+        return video_indices[ind], proposals[ind, :]
+
+    def _setup(self):
+        "Load results from 1st retrieval stage"
+        with h5py.File(self.h5_file, 'r') as fid:
+            self.proposals = fid['proposals'][:]
+            self.query2videos_ind = fid['vid_indices'][:]
+            # self.query2proposals_ind = fid['proposals_ind'][:]
+            # TODO: trigger find top-k unique video-ind
 
 
 class MomentRetrievalFromProposalsTable(CorpusVideoMomentRetrievalBase):
@@ -435,24 +511,27 @@ if __name__ == '__main__':
 
     # Unit-test
     from dataset_untrimmed import UntrimmedMCN
-    from proposals import SlidingWindowMSFS
+    from proposals import SlidingWindowMSRSS, DidemoICCV17SS
     from model import MCN
     np.random.seed(1701)
 
-    charades_data = 'data/processed/charades-sta'
+    
+    # TODO: check that video indices are correct
+
+    # TODO: unit-test for MomentRetrievalFromClipBasedProposalsTable
+
+    # TODO: unit-test for GreedyMomentRetrievalFromClipBasedProposalsTable
+
+    h5_1ststage = 'workers/ibex-scratch/data/interim/smcn_40/b/1_corpus-eval.h5'
+    didemo_data = 'data/processed/didemo'
     dataset_setup = dict(
-        json_file=f'{charades_data}/test.json',
-        cues={'rgb': {'file': f'{charades_data}/rgb_resnet152_max_cs-3.h5'}},
+        json_file=f'{didemo_data}/test-03.json',
+        cues={'rgb': {'file': f'{didemo_data}/resnet152_rgb_max_cl-2.5.h5'}},
         loc=True,
         context=True,
         debug=True,
         eval=True,
-        proposals_interface=SlidingWindowMSFS(
-            length=3,
-            num_scales=8,
-            stride=3,
-            unique=True
-        )
+        proposals_interface=DidemoICCV17SS()
     )
     dataset = UntrimmedMCN(**dataset_setup)
     arch_setup = dict(
@@ -464,11 +543,7 @@ if __name__ == '__main__':
         lang_hidden=1000,
         visual_layers=1
     )
-    model = {'rgb': MCN(**arch_setup)}
-    subject = MomentRetrievalFromProposalsTable(dataset, model)
-    subject.indexing()
+    model = MCN(**arch_setup)
+    subject = LoopOverKVideos(dataset, model,h5_1ststage=h5_1ststage)
     ind = np.random.randint(0, len(dataset))
-    subject.query(dataset.metadata[ind]['language_input'])
-    # TODO: check that video indices are correct
-    # TODO: unit-test for MomentRetrievalFromClipBasedProposalsTable
-    # TODO: unit-test for GreedyMomentRetrievalFromClipBasedProposalsTable
+    subject.query(dataset.metadata[ind]['language_input'], ind)

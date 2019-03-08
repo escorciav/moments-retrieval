@@ -113,28 +113,37 @@ class LoopOverKVideos():
 
         video_indices, proposals, scores = [], [], []
         for i in range(self.topk):
-            if video_indices_1ststage[i] in videos_reranked:
+            video_ind = int(video_indices_1ststage[i])
+            if video_ind in videos_reranked:
                 continue
-            videos_reranked.add(video_indices_1ststage[i])
+            videos_reranked.add(video_ind)
 
-            raise NotImplementedError('WIP')
-            # TODO: update dataset to return visual-info per video
-            # We may need to replicate lang_feature and len_query or
-            # add a new method for each model
-            # TODO: move eval/validation stuff here
+            candidates_i_feat, proposals_i = self.dataset.video_item(video_ind)
+            # torchify
+            candidates_i_feat = {k: torch.from_numpy(v)
+                                 for k, v in candidates_i_feat.items()}
+            proposals_i = torch.from_numpy(proposals_i)
+            num_segments = len(proposals_i)
 
-            scores_i, descending_i = model_k.predict()
-            # TODO: apply NMS
+            scores_i, descending_i = self.model.predict(
+                lang_feature, len_query, candidates_i_feat)
+
+            # TODO: add post-processing such as NMS
+
             scores.append(scores_i)
             proposals.append(proposals_i)
-            video_indices.append([video_indices_1ststage[i]] * len(proposals_i))
+            video_indices.append(
+                video_ind * torch.ones(len(proposals_i), dtype=torch.int32))
 
         # TODO: cat scores, proposals, video_indices
+        scores = torch.cat(scores)
+        proposals = torch.cat(proposals, dim=0)
+        video_indices = torch.cat(video_indices)
         scores, ind = scores.sort(descending=descending_i)
         return video_indices[ind], proposals[ind, :]
 
     def _setup(self):
-        "Load results from 1st retrieval stage"
+        "Misc stuff like load results from 1st retrieval stage"
         with h5py.File(self.h5_file, 'r') as fid:
             self.proposals = fid['proposals'][:]
             self.query2videos_ind = fid['vid_indices'][:]
@@ -497,41 +506,27 @@ class GreedyMomentRetrievalFromClipBasedProposalsTable(
 
 
 if __name__ == '__main__':
-    _filename = 'data/interim/mcn/corpus_val_rgb.hdf5'
-    _corpus = Corpus(_filename)
-    # test video and segment mapping
-    _index = np.random.randint(len(_corpus.features))
-    print(_index, _corpus.ind_to_repo(_index))
-
-    _filename = 'data/interim/mcn/queries_val_rgb.hdf5'
-    with h5py.File(_filename, 'r') as fid:
-        _sample_key = list(fid.keys())[0]
-        _sample_value = fid[_sample_key][:]
-    _corpus.index(_sample_value)
-
     # Unit-test
-    from dataset_untrimmed import UntrimmedMCN
+    import os
+    from dataset_untrimmed import UntrimmedMCN, UntrimmedSMCN
     from proposals import SlidingWindowMSRSS, DidemoICCV17SS
-    from model import MCN
+    from model import MCN, SMCN
     np.random.seed(1701)
+    torch.manual_seed(1701)
 
-    
-    # TODO: check that video indices are correct
-
-    # TODO: unit-test for MomentRetrievalFromClipBasedProposalsTable
-
-    # TODO: unit-test for GreedyMomentRetrievalFromClipBasedProposalsTable
-
-    h5_1ststage = 'workers/ibex-scratch/data/interim/smcn_40/b/1_corpus-eval.h5'
-    didemo_data = 'data/processed/didemo'
+    charades_data = 'data/processed/charades-sta'
     dataset_setup = dict(
-        json_file=f'{didemo_data}/test-03.json',
-        cues={'rgb': {'file': f'{didemo_data}/resnet152_rgb_max_cl-2.5.h5'}},
+        json_file=f'{charades_data}/test-01.json',
+        cues={'rgb': {'file': f'{charades_data}/resnet152_rgb_max_cl-3.h5'}},
         loc=True,
         context=True,
         debug=True,
         eval=True,
-        proposals_interface=DidemoICCV17SS()
+        proposals_interface=SlidingWindowMSRSS(
+            length=3,
+            scales=range(2, 9),
+            stride=0.3
+        )
     )
     dataset = UntrimmedMCN(**dataset_setup)
     arch_setup = dict(
@@ -543,7 +538,33 @@ if __name__ == '__main__':
         lang_hidden=1000,
         visual_layers=1
     )
-    model = MCN(**arch_setup)
-    subject = LoopOverKVideos(dataset, model,h5_1ststage=h5_1ststage)
+    model = {'rgb': MCN(**arch_setup)}
+    engine = MomentRetrievalFromProposalsTable(dataset, model)
+    engine.indexing()
     ind = np.random.randint(0, len(dataset))
-    subject.query(dataset.metadata[ind]['language_input'], ind)
+    engine.query(dataset.metadata[ind]['language_input'])
+
+    # TODO: check that video indices are correct
+
+    # TODO: unit-test for MomentRetrievalFromClipBasedProposalsTable
+
+    # TODO: unit-test for GreedyMomentRetrievalFromClipBasedProposalsTable
+
+    # Commented as it requires data
+    h5_1ststage = 'data/interim/debug/dummy_1st_retrieval.h5'
+    with h5py.File(h5_1ststage, 'x') as fid:
+        num_queries = len(dataset)
+        num_videos = len(dataset.videos)
+        num_proposals = engine.proposals.shape[0]
+        rng_video_ind = np.random.randint(
+            0, num_videos, (num_queries, num_proposals))
+        fid.create_dataset(name='proposals', data=engine.proposals)
+        fid.create_dataset(name='vid_indices', data=rng_video_ind)
+    didemo_data = 'data/processed/didemo'
+    dataset = UntrimmedSMCN(**dataset_setup)
+    model = SMCN(**arch_setup)
+    model.eval()
+    engine = LoopOverKVideos(dataset, model, h5_1ststage=h5_1ststage)
+    ind = np.random.randint(0, len(dataset))
+    engine.query(dataset.metadata[ind]['language_input'], ind)
+    os.remove(h5_1ststage)

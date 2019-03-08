@@ -272,6 +272,14 @@ class UntrimmedBasedMCNStyle(UntrimmedBase):
         return {k[12:]: v for k, v in self.feat_dim.items()
                 if 'visual_size' in k}
 
+    def video_item(self, idx):
+        "Return visual description of all possible moments in a given video"
+        assert idx < len(self.videos)
+        video_id = self.videos[idx]
+        pos_visual_feature, segments = self._compute_visual_feature_eval(
+            video_id)
+        return pos_visual_feature, segments
+
     def _compute_language_feature(self, query):
         "Get language representation of words in query"
         # TODO: pack next two vars into a dict

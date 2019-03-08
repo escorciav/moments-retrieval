@@ -14,7 +14,7 @@ import dataset_untrimmed
 import model
 import proposals
 from evaluation import CorpusVideoMomentRetrievalEval
-from utils import setup_logging\
+from utils import setup_logging, get_git_revision_hash
 
 # TODO(tier-2;clean): remove this hard-coded approach
 # we not only use the same arch, but also the same hyper-prm
@@ -76,6 +76,7 @@ def main(args):
     setup_logging(args)
 
     logging.info('Corpus Retrieval Evaluation for CAL/MCN')
+    logging.info(f'Git revision hash: {get_git_revision_hash()}')
     load_hyperparameters(args)
     logging.info(args)
 
@@ -185,6 +186,7 @@ def main(args):
             result['corpus'] = str(args.test_list)
             result['greedy'] = args.greedy
             result['date'] = datetime.now().isoformat()
+            result['git_hash'] = get_git_revision_hash()
             json.dump(result, fid, indent=1)
 
     if args.dump_per_instance_results:

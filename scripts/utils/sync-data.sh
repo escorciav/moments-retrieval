@@ -6,7 +6,7 @@
 #
 # """
 # Note: edit your list of servers mounted in workers/
-workers=(ibex-fscratch ibex-scratch skynet-root marla)
+workers=(ibex-fscratch ibex-scratch skynet-root marla-root)
 # Note: list of data required for training
 data_files=(
   data/raw/vocab_glove_complete.txt
@@ -24,6 +24,7 @@ data_files=(
   data/processed/activitynet-captions/val.json
   data/processed/activitynet-captions/train.json
   data/processed/didemo/resnet152_rgb_max_cl-2.5.h5
+  data/processed/didemo/resnet152_rgb_max_cl-5.h5
   # additional HDF5s for DiDeMo
   # data/raw/average_fc7.h5
   # data/raw/average_global_flow.h5

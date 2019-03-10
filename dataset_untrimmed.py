@@ -11,7 +11,7 @@ from torch.utils.data import Dataset
 
 from glove import RecurrentEmbedding
 from np_segments_ops import iou as segment_iou
-from utils import dict_of_lists
+from utils import dict_of_lists, unique2d_perserve_order
 
 
 class FakeLanguageRepresentation():
@@ -205,6 +205,10 @@ class UntrimmedBasedMCNStyle(UntrimmedBase):
     TODO:
         batch during evaluation
         negative mining and batch negative sampling
+
+    Attributes:
+        _prob_querytovideo (2D numpy-array): matrix used to sample negative
+            videos for each query.
     """
 
     def __init__(self, json_file, cues=None,
@@ -212,7 +216,7 @@ class UntrimmedBasedMCNStyle(UntrimmedBase):
                  max_words=50, eval=False, context=True,
                  proposals_interface=None, no_visual=False, sampling_iou=0.35,
                  ground_truth_rate=1, prob_nproposal_nextto=-1,
-                 clip_length=None, debug=False):
+                 clip_length=None, h5_nis=None, debug=False):
         super(UntrimmedBasedMCNStyle, self).__init__()
         self._setup_list(json_file)
         self._load_features(cues)
@@ -227,6 +231,8 @@ class UntrimmedBasedMCNStyle(UntrimmedBase):
         self.proposals_interface = proposals_interface
         self._ground_truth_rate = ground_truth_rate
         self._prob_neg_proposal_next_to = prob_nproposal_nextto
+        self.h5_nis = h5_nis
+        self._prob_querytovideo = None
         # clean this, glove of original MCN is really slow, it kills fast
         # iteration during debugging :) (yes, I could cache but dahh)
         self.lang_interface = FakeLanguageRepresentation(
@@ -244,6 +250,7 @@ class UntrimmedBasedMCNStyle(UntrimmedBase):
                     'Please provide the clip length (seconds) as this is a'
                     'property grabbed from the HDF5. Missing in this case.')
             self.clip_length = clip_length
+        self._setup_neg_importance_sampling()
 
     @property
     def decomposable(self):
@@ -377,12 +384,10 @@ class UntrimmedBasedMCNStyle(UntrimmedBase):
 
     def _negative_inter_sampling(self, idx, moment_loc):
         "Sample another moment from other video as in original MCN paper"
-        moment_i = self.metadata[idx]
-        video_id = moment_i['video']
-        other_video = video_id
-        while other_video == video_id:
-            idx = int(random.random() * len(self.metadata))
-            other_video = self.metadata[idx]['video']
+        prob_videos = self._prob_querytovideo[idx, :]
+        neg_video_ind = np.random.multinomial(1, prob_videos).nonzero()[0][0]
+        other_video = self.videos[neg_video_ind]
+        video_id = self.metadata[idx]['video']
 
         # MCN-ICCV2017 strategy as close as possible
         video_duration = self._video_duration(video_id)
@@ -441,6 +446,55 @@ class UntrimmedBasedMCNStyle(UntrimmedBase):
             self.feat_dim.update(
                 {f'visual_size_{key}': instance[2 + ind][key].shape[-1]}
             )
+
+    def _setup_neg_importance_sampling(self):
+        "Define sampling prob for videos and moments"
+        # 1. Init neg sampling to uniform dist
+        num_queries = len(self)
+        num_videos = len(self.videos)
+        prob_querytovideoid = np.empty(
+            (num_queries, num_videos), dtype=np.float32)
+        prob_querytovideoid[:None, :] = 1 / num_videos
+        # 1.1 zero-out prob of sampling the same video
+        for query_ind, query_data in enumerate(self.metadata):
+            video_ind = query_data['video_index']
+            prob_querytovideoid[query_ind, video_ind] = 0
+        # 1.2 re-normalize probability
+        prob_querytovideoid /= prob_querytovideoid.sum(axis=1, keepdims=True)
+
+        # TODO: prob_querytomoment
+        # max_num_proposals = None
+        # self._prior_querytomomentid = np.zeros(
+        #     (num_queries, num_videos, max_num_proposals), dtype=np.float32)
+        # raise NotImplementedError('WIP')
+
+        # No importance sampling
+        if self.h5_nis is None:
+            self._prob_querytovideo = prob_querytovideoid
+            return
+
+        # 2. Importance sampling can be casted as updating P(video) based on
+        #   P(query | video).
+        # 2.1 Generate P(query | video) from video ranking from each query
+        #   Here. we will use the a pdf derived from 1 / x i.e. videos
+        #   retrieved first will be sampled often but this will decay rapidly
+        with h5py.File(self.h5_nis, 'r') as fid:
+            ranks_of_videos_from_moments_table_per_query = fid['vid_indices'][:]
+        ranks_of_videos_per_query = unique2d_perserve_order(
+            ranks_of_videos_from_moments_table_per_query)
+        rank_prob = 1 / np.arange(1, num_videos + 1, dtype=np.float32)
+        rank_prob /= sum(rank_prob)
+        prob_query_given_video = np.empty(
+            (num_queries, num_videos), dtype=np.float32)
+        # TODO: vectorize this
+        for i in range(num_queries):
+            prob_query_given_video[
+                i, ranks_of_videos_per_query[i]] = rank_prob
+        # 2.2 Update P(video) with P(video) * P(query | video)
+        #   Shall we wrap this inside a for loop?
+        prob_querytovideoid = prob_query_given_video * prob_querytovideoid
+        prob_querytovideoid /= prob_querytovideoid.sum(axis=1, keepdims=True)
+        self._prob_querytovideo = prob_querytovideoid
 
     def _set_tef_interface(self, loc):
         "Setup interface to get moment location feature"
@@ -887,21 +941,44 @@ def word_tokenize(s):
 
 
 if __name__ == '__main__':
+    import os
     import time
-    from proposals import SlidingWindowMSFS
+    from proposals import SlidingWindowMSRSS, DidemoICCV17SS
     # Kinda Unit-test
     print('UntrimmedMCN\n\t* Train')
+    t_start = time.time()
     json_data = 'data/processed/didemo/train-03.json'
     h5_file = 'data/processed/didemo/resnet152_rgb_max_cl-5.h5'
+    dummy_h5_neg_sampling = 'data/interim/debug/dummy_1st_retrieval.h5'
     # TODO: update Charades-STA pre-processed data
-    # json_data = 'data/processed/charades-sta/train.json'
-    # h5_file = 'data/processed/charades-sta/rgb_resnet152_max_cs-3.h5'
+    # json_data = 'data/processed/charades-sta/train-01.json'
+    # h5_file = 'data/processed/charades-sta/rgb_resnet152_max_cl-3.h5'
     cues = {'rgb': {'file': h5_file}}
-    t_start = time.time()
     dataset = UntrimmedMCN(json_data, cues, debug=True)
+    num_queries = len(dataset)
+    num_videos = len(dataset.videos)
+    if 'didemo' in json_data:
+        dataset.proposals_interface = DidemoICCV17SS()
+    else:
+        dataset.proposals_interface = SlidingWindowMSRSS()
+    num_proposals = sum([len(dataset.video_item(i)[1])
+                         for i in range(num_videos)])
+    with h5py.File(dummy_h5_neg_sampling, 'w') as fid:
+        video_ind = np.arange(num_videos)
+        data = [np.random.permutation(video_ind) for i in range(num_queries)]
+        data = np.repeat(data, (num_proposals // num_queries) + 1, 1)
+        data = data[:, :num_proposals]
+        fid.create_dataset('vid_indices', data=data)
+    print(f'\tPreproc due to h5-nis: {time.time() - t_start}')
+    t_start = time.time()
+    dataset = UntrimmedMCN(
+        json_data, cues, proposals_interface=dataset.proposals_interface,
+        h5_nis=dummy_h5_neg_sampling, debug=True)
     ind = int(random.random() * len(dataset))
     print(f'\tTime loading dataset: {time.time() - t_start}')
-    print('\tNumber of moments: ', len(dataset))
+    print('\tNumber of moments: ', num_queries)
+    print('\tNumber of videos: ', num_videos)
+    print('\tNumber of proposals: ', num_proposals)
     print(f'\tSample moment ({ind}): ', dataset.metadata[ind])
     item = dataset[ind]
     assert len(item) == 7
@@ -929,7 +1006,6 @@ if __name__ == '__main__':
     print('\t* Eval')
     dataset.eval = True
     dataset.debug = True
-    dataset.proposals_interface = SlidingWindowMSFS(3, 5, 3)
     item = dataset[ind]
     assert len(item) == 9
     for i, v in enumerate(item):
@@ -957,15 +1033,37 @@ if __name__ == '__main__':
     dataset.debug = False
     item = dataset[ind]
     assert len(item) == 7
+    os.remove(dummy_h5_neg_sampling)
 
     # Kinda Unit-test for UntrimmedSMCN
     # (json_data and cues come from previous unit-test
     print('UntrimmedSMCN\n\ttrain')
     t_start = time.time()
     dataset = UntrimmedSMCN(json_data, cues, debug=True)
+    num_queries = len(dataset)
+    num_videos = len(dataset.videos)
+    if 'didemo' in json_data:
+        dataset.proposals_interface = DidemoICCV17SS()
+    else:
+        dataset.proposals_interface = SlidingWindowMSRSS()
+    num_proposals = sum([len(dataset.video_item(i)[1])
+                         for i in range(num_videos)])
+    with h5py.File(dummy_h5_neg_sampling, 'w') as fid:
+        video_ind = np.arange(num_videos)
+        data = [np.random.permutation(video_ind) for i in range(num_queries)]
+        data = np.repeat(data, (num_proposals // num_queries) + 1, 1)
+        data = data[:, :num_proposals]
+        fid.create_dataset('vid_indices', data=data)
+    print(f'\tPreproc due to h5-nis: {time.time() - t_start}')
+    t_start = time.time()
+    dataset = UntrimmedSMCN(
+        json_data, cues, proposals_interface=dataset.proposals_interface,
+        h5_nis=dummy_h5_neg_sampling, debug=True)
     ind = int(random.random() * len(dataset))
     print(f'\tTime loading dataset: ', time.time() - t_start)
-    print('\tNumber of moments: ', len(dataset))
+    print('\tNumber of moments: ', num_queries)
+    print('\tNumber of videos: ', num_videos)
+    print('\tNumber of proposals: ', num_proposals)
     print(f'\tSample moment ({ind}): ', dataset.metadata[ind])
     item = dataset[ind]
     assert len(item) == 7
@@ -993,7 +1091,6 @@ if __name__ == '__main__':
     print('\teval')
     dataset.eval = True
     dataset.debug = True
-    dataset.proposals_interface = SlidingWindowMSFS(3, 5, 3)
     item = dataset[ind]
     assert len(item) == 9
     for i, v in enumerate(item):
@@ -1025,3 +1122,4 @@ if __name__ == '__main__':
     dataset.set_padding(False)
     for k, v in dataset[ind][2].items():
         print(f'\tMode:', k, v.shape)
+    os.remove(dummy_h5_neg_sampling)

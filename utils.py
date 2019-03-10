@@ -208,6 +208,19 @@ def ship_to(x, device):
     return y
 
 
+def unique2d_perserve_order(x):
+    """Return unique along rows in x
+
+    Note: It assumes the same range of numbers for each row in x
+    """
+    assert x.ndim == 2
+    y = []
+    for i in range(len(x)):
+        _, ind = np.unique(x[i, :], return_index=True)
+        y.append(x[i, np.sort(ind)])
+    return np.row_stack(y)
+
+
 class AverageMeter(object):
     """Computes and stores the average and current value"""
 

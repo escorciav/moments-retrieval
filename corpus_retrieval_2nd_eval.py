@@ -35,6 +35,7 @@ parser.add_argument('--k-first', type=int, required=True,
 parser.add_argument('--topk', nargs='+', type=int,
                     default=[1, 10, 100],
                     help='top-k values to compute in ascending order.')
+parser.add_argument('--nms-threshold', type=float, default=0.5)
 # Dump results and logs
 parser.add_argument('--dump', action='store_true',
                     help='Save log in text file and json')
@@ -119,8 +120,10 @@ def main(args):
     net.load_state_dict(snapshot_['state_dict'])
     net.eval()
 
+    logging.info('Setting up engine')
     engine = LoopOverKVideos(
-        dataset, net, args.h5_1ststage, topk=args.k_first)
+        dataset, net, args.h5_1ststage, topk=args.k_first,
+        nms_threshold=args.nms_threshold)
 
     logging.info('Launch evaluation...')
     # log-scale up to the end of the database

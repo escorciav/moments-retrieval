@@ -6,6 +6,7 @@ import h5py
 import numpy as np
 import torch
 
+from np_segments_ops import non_maxima_suppresion
 from utils import unique2d_perserve_order
 
 
@@ -74,11 +75,13 @@ class LoopOverKVideos():
     TODO: description
     """
 
-    def __init__(self, dataset, model, h5_1ststage, topk=10):
+    def __init__(self, dataset, model, h5_1ststage, topk=10,
+                 nms_threshold=1.0):
         self.dataset = dataset
         self.model = model
         self.h5_file = h5_1ststage
         self.topk = topk
+        self.nms_threshold = nms_threshold
         self.proposals = None
         self.query2videos_ind = None
         self._setup()
@@ -126,6 +129,12 @@ class LoopOverKVideos():
                 lang_feature, len_query, candidates_i_feat)
 
             # TODO: add post-processing such as NMS
+            if self.nms_threshold < 1:
+                idx = non_maxima_suppresion(
+                        proposals_i.numpy(), -scores_i.numpy(),
+                        self.nms_threshold)
+                proposals_i = proposals_i[idx, :]
+                scores_i = scores_i[idx]
 
             scores.append(scores_i)
             proposals.append(proposals_i)
@@ -583,7 +592,8 @@ if __name__ == '__main__':
     dataset = UntrimmedSMCN(**dataset_setup)
     model = SMCN(**arch_setup)
     model.eval()
-    engine = LoopOverKVideos(dataset, model, h5_1ststage=h5_1ststage)
+    engine = LoopOverKVideos(dataset, model, h5_1ststage=h5_1ststage,
+                             nms_threshold=0.6)
     ind = np.random.randint(0, len(dataset))
     engine.query(dataset.metadata[ind]['language_input'], ind)
     os.remove(h5_1ststage)

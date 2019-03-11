@@ -162,7 +162,7 @@ class LoopOverKVideos():
                 self.proposals = fid['proposals'][:]
             else:
                 proposals = []
-                for video_ind in range(len(self.videos)):
+                for video_ind in range(self.dataset.num_videos):
                     _, proposals_i = self.dataset.video_item(video_ind)
                     proposals.append(proposals_i)
                 self.proposals = np.concatenate(proposals, axis=0)

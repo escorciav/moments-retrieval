@@ -61,6 +61,8 @@ def main(args):
             basename = args.snapshot.with_suffix('')
             args.logfile = basename.parent.joinpath(
                 args.output_prefix, basename.stem + '_corpus-2nd-eval')
+            if not args.logfile.parent.exists():
+                args.logfile.parent.mkdir()
         if args.logfile.exists():
             raise ValueError(
                 f'{args.logfile} already exists. Please provide a logfile or'

@@ -6,6 +6,8 @@ import h5py
 import numpy as np
 import torch
 
+from utils import unique2d_perserve_order
+
 
 class CorpusVideoMomentRetrievalBase():
     """Composite abstraction for scalable moment retrieval from video corpus
@@ -109,14 +111,9 @@ class LoopOverKVideos():
         lang_feature, len_query = self.preprocess_description(description)
 
         video_indices_1ststage = self.query2videos_ind[description_ind, :]
-        videos_reranked = set()
-
         video_indices, proposals, scores = [], [], []
         for i in range(self.topk):
             video_ind = int(video_indices_1ststage[i])
-            if video_ind in videos_reranked:
-                continue
-            videos_reranked.add(video_ind)
 
             candidates_i_feat, proposals_i = self.dataset.video_item(video_ind)
             # torchify
@@ -145,10 +142,32 @@ class LoopOverKVideos():
     def _setup(self):
         "Misc stuff like load results from 1st retrieval stage"
         with h5py.File(self.h5_file, 'r') as fid:
-            self.proposals = fid['proposals'][:]
-            self.query2videos_ind = fid['vid_indices'][:]
+            query2videos_ind = fid['vid_indices'][:]
+            # Force us to examine a way to deal with approximate retrieval
+            # approaches
+            assert query2videos_ind.shape[1] >= self.dataset.num_videos
+            assert (query2videos_ind >= 0).all()
+            # Trigger post-processing in case we are dealing with retrieval
+            # results from a moment-based approach
+            if query2videos_ind.shape[1] > self.dataset.num_videos:
+                query2videos_ind = unique2d_perserve_order(query2videos_ind)
+            self.query2videos_ind = query2videos_ind
+
+            # Do we really need the "proposals"?
+            # So far we only need the number of candidates that we could
+            # retrieve. However, the proposals might come handy for mixing
+            # two-stage and exhaustive retrieval from moments to get better
+            # performance for a large top-k during evaluation.
+            if 'proposals' in fid:
+                self.proposals = fid['proposals'][:]
+            else:
+                proposals = []
+                for video_ind in range(len(self.videos)):
+                    _, proposals_i = self.dataset.video_item(video_ind)
+                    proposals.append(proposals_i)
+                self.proposals = np.concatenate(proposals, axis=0)
+
             # self.query2proposals_ind = fid['proposals_ind'][:]
-            # TODO: trigger find top-k unique video-ind
 
 
 class MomentRetrievalFromProposalsTable(CorpusVideoMomentRetrievalBase):
@@ -554,8 +573,8 @@ if __name__ == '__main__':
     h5_1ststage = 'data/interim/debug/dummy_1st_retrieval.h5'
     with h5py.File(h5_1ststage, 'x') as fid:
         num_queries = len(dataset)
-        num_videos = len(dataset.videos)
-        num_proposals = engine.proposals.shape[0]
+        num_videos = dataset.num_videos
+        num_proposals = engine.num_moments
         rng_video_ind = np.random.randint(
             0, num_videos, (num_queries, num_proposals))
         fid.create_dataset(name='proposals', data=engine.proposals)

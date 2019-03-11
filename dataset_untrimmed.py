@@ -84,6 +84,11 @@ class UntrimmedBase(Dataset):
         return self.max_clips
 
     @property
+    def num_videos(self):
+        "Number of videos in the Dataset"
+        return len(self.videos)
+
+    @property
     def videos(self):
         "Iterator over videos in Dataset"
         if self._video_list is None:
@@ -146,7 +151,7 @@ class UntrimmedBase(Dataset):
     def _shrink_dataset(self):
         "Make single video dataset to debug video corpus moment retrieval"
         # TODO(tier-2;release): log if someone triggers this
-        ind = random.randint(0, len(self.videos) - 1)
+        ind = random.randint(0, self.num_videos - 1)
         self._video_list = [self._video_list[ind]]
         video_id = self._video_list[0]
         moment_indices = self.metadata_per_video[video_id]['moment_indices']
@@ -281,7 +286,7 @@ class UntrimmedBasedMCNStyle(UntrimmedBase):
 
     def video_item(self, idx):
         "Return visual description of all possible moments in a given video"
-        assert idx < len(self.videos)
+        assert idx < self.num_videos
         video_id = self.videos[idx]
         pos_visual_feature, segments = self._compute_visual_feature_eval(
             video_id)
@@ -451,7 +456,7 @@ class UntrimmedBasedMCNStyle(UntrimmedBase):
         "Define sampling prob for videos and moments"
         # 1. Init neg sampling to uniform dist
         num_queries = len(self)
-        num_videos = len(self.videos)
+        num_videos = self.num_videos
         prob_querytovideoid = np.empty(
             (num_queries, num_videos), dtype=np.float32)
         prob_querytovideoid[:None, :] = 1 / num_videos

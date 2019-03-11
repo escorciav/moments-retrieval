@@ -40,6 +40,8 @@ parser.add_argument('--dump', action='store_true',
                     help='Save log in text file and json')
 parser.add_argument('--logfile', type=Path, default='',
                     help='Logging file')
+parser.add_argument('--output-prefix', type=Path, default='',
+                    help="")
 parser.add_argument('--n-display', type=float, default=0.2,
                     help='logging rate during epoch')
 parser.add_argument('--disable-tqdm', action='store_true',
@@ -57,8 +59,8 @@ def main(args):
         args.disable_tqdm = True
         if len(args.logfile.name) == 0:
             basename = args.snapshot.with_suffix('')
-            args.logfile = basename.with_name(
-                args.snapshot.stem + '_corpus-2nd-eval')
+            args.logfile = basename.parent.joinpath(
+                args.output_prefix, basename.stem + '_corpus-2nd-eval')
         if args.logfile.exists():
             raise ValueError(
                 f'{args.logfile} already exists. Please provide a logfile or'

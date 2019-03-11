@@ -52,3 +52,11 @@ Subset: val
     Num dumped instances: 34526
     Dumped file: ../data/interim/activitynet/val.json
 ```
+
+# 3rdparty
+
+Data from other methods
+
+- f40c475b4d8e76d726de419445e4ad9e  3rdparty/mee_video-retrieval_activitynet-captions_val.h5
+- a53a632d608e57353c97ff543ddef25b  3rdparty/mee_video-retrieval_charades-sta_test.h5
+- ad44c0ff4fa1c630ebd0f56f8e8378ff  3rdparty/mee_video-retrieval_didemo_test.h5

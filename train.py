@@ -178,6 +178,8 @@ parser.add_argument('--force-eval-end', action='store_true',
 parser.add_argument('--logfile', type=Path, default='', help='Logging file')
 parser.add_argument('--n-display', type=float, default=0.1,
                     help='logging rate during epoch')
+parser.add_argument('--enable-tb', action='store_true',
+                    help='Log to tensorboard')
 # Reproducibility
 parser.add_argument('--seed', type=int, default=1701,
                     help='random seed (-1 := random)')

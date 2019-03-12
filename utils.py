@@ -162,15 +162,13 @@ def setup_logging(args):
     "Setup logging to dump progress into file or print it"
     log_prm = dict(format='%(asctime)s:%(levelname)s:%(message)s',
                    level=logging.DEBUG)
-    # This should be a module variable in case we don't want tensorboard
-    setup_tensorboard = False
     if len(args.logfile.name) >= 1:
         log_prm['filename'] = args.logfile.with_suffix('.log')
         log_prm['filemode'] = 'w'
-        setup_tensorboard = True
     logging.basicConfig(**log_prm)
     args.writer = None
-    if setup_tensorboard:
+    if args.enable_tb:
+        # This should be a module variable in case we don't want tensorboard
         args.writer = SummaryWriter(args.logfile.with_suffix(''))
 
 

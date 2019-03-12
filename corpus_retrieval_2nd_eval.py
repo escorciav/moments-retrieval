@@ -47,6 +47,8 @@ parser.add_argument('--n-display', type=float, default=0.2,
                     help='logging rate during epoch')
 parser.add_argument('--disable-tqdm', action='store_true',
                     help='Disable progress-bar')
+parser.add_argument('--enable-tb', action='store_true',
+                    help='Log to tensorboard. Nothing logged by this program')
 # Debug
 parser.add_argument('--debug', action='store_true',
                     help=('yield incorrect results! to verify things are'

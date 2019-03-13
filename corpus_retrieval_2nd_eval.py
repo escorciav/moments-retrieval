@@ -99,9 +99,6 @@ def main(args):
         proposals_interface=proposals_interface
     )
     dataset = dataset_untrimmed.__dict__[args.dataset](**dataset_setup)
-    if args.arch == 'SMCN':
-        logging.info('Set padding on UntrimmedSMCN dataset')
-        dataset.set_padding(False)
 
     logging.info('Setting up models')
     arch_setup = dict(

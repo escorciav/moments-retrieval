@@ -90,15 +90,13 @@ def main(args):
         dataset_cues = {args.feat: {'file': args.h5_path}}
     else:
         raise NotImplementedError('WIP')
-    proposals_interface = proposals.__dict__[args.proposal_interface]
-    proposals_prm = dict(
-        length=args.min_length, stride=args.stride,
-        num_scales=args.num_scales, unique=True)
+    proposals_interface = proposals.__dict__[args.proposal_interface](
+        args.min_length, args.scales, args.stride)
     dataset_setup = dict(
         json_file=args.test_list, cues=dataset_cues, loc=args.loc,
         context=args.context, debug=args.debug, eval=True,
         no_visual=dataset_novisual,
-        proposals_interface=proposals_interface(**proposals_prm)
+        proposals_interface=proposals_interface
     )
     dataset = dataset_untrimmed.__dict__[args.dataset](**dataset_setup)
     if args.arch == 'SMCN':

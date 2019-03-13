@@ -390,6 +390,10 @@ class UntrimmedBasedMCNStyle(UntrimmedBase):
     def _negative_inter_sampling(self, idx, moment_loc):
         "Sample another moment from other video as in original MCN paper"
         prob_videos = self._prob_querytovideo[idx, :]
+        # tech taming humam: Bug in numpy
+        # https://github.com/numpy/numpy/issues/8317
+        prob_videos = prob_videos.astype(float, copy=False)
+        prob_videos /= prob_videos.sum()
         neg_video_ind = np.random.multinomial(1, prob_videos).nonzero()[0][0]
         other_video = self.videos[neg_video_ind]
         video_id = self.metadata[idx]['video']

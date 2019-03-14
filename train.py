@@ -116,7 +116,9 @@ parser.add_argument('--ground-truth-rate', type=float, default=1.0,
 parser.add_argument('--prob-proposal-nextto', type=float, default=-1.0,
                     help=('Prob to sample negatives next to moments. -1'
                           'means disabled. Increase it to sample often.'))
-# Hyper-parameters to explore search space (inference)
+parser.add_argument('--h5-path-nis', type=Path, default=None,
+                    help='HDF5-file for negative importance sampling')
+# Hyper-parameters concerning proposals (candidates) to score
 parser.add_argument('--proposal-interface', default='SlidingWindowMSRSS',
                     choices=proposals.PROPOSAL_SCHEMES,
                     help='Type of proposals spanning search space')
@@ -477,7 +479,8 @@ def setup_dataset(args):
         {'proposals_interface': proposal_generator_train,
          'ground_truth_rate': args.ground_truth_rate,
          'prob_nproposal_nextto': args.prob_proposal_nextto,
-         'sampling_iou': args.negative_sampling_iou},
+         'sampling_iou': args.negative_sampling_iou,
+         'h5_nis': args.h5_path_nis},
         # Validation or Testing
         {'eval': True, 'proposals_interface': proposal_generator}
     ]

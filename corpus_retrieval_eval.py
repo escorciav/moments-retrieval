@@ -100,17 +100,21 @@ def main(args):
     logging.info('Loading dataset')
     dataset_novisual = True
     dataset_cues = {feat: None for feat in args.tags}
-    if len(args.h5_path) > 0:
+    if args.h5_path:
         for i, key in enumerate(args.tags):
             dataset_cues[key] = {'file': args.h5_path[i]}
         dataset_novisual = False
+        clip_length = None
+    else:
+        clip_length = args.clip_length
     proposals_interface = proposals.__dict__[args.proposal_interface](
         args.min_length, args.scales, args.stride)
     dataset_setup = dict(
         json_file=args.test_list, cues=dataset_cues, loc=args.loc,
         context=args.context, debug=args.debug, eval=True,
         no_visual=dataset_novisual,
-        proposals_interface=proposals_interface
+        proposals_interface=proposals_interface,
+        clip_length=clip_length
     )
     dataset = dataset_untrimmed.__dict__[args.dataset](**dataset_setup)
     if args.arch == 'SMCN':
@@ -213,17 +217,23 @@ def main(args):
 
 def load_hyperparameters(args):
     "Update args with model hyperparameters"
-    if len(args.tags) == 0:
-        single_model_and_cues = len(args.snapshot) == len(args.h5_path)
-        assert single_model_and_cues
-        # take tag of first model
-        logging.info('Set JSON files with hyper-parameters')
-        with open(args.snapshot[0], 'r') as fid:
-            hyper_prm = json.load(fid)
-            args.tags = [hyper_prm['feat']]
-            args.snapshot_tags = [args.tags[0]]
+    if args.tags is None:
+        # Parse single model
+        assert len(args.snapshot) == 1
 
-    logging.info('Parsing JSON files with hyper-parameters')
+        logging.info('Parsing single JSON file with hyper-parameters')
+        with open(args.snapshot[0], 'r') as fid:
+            if args.h5_path:
+                assert len(args.h5_path) == 1
+            hyper_prm = json.load(fid)
+            args.tags = {hyper_prm['feat']: None}
+            args.snapshot_tags = [hyper_prm['feat']]
+            for key, value in hyper_prm.items():
+                if not hasattr(args, key):
+                    setattr(args, key, value)
+            return
+
+    logging.info('Parsing multiple JSON files with hyper-parameters')
     args.tags = dict.fromkeys(args.tags)
     assert len(args.h5_path) == len(args.tags)
     for i, filename in enumerate(args.snapshot):

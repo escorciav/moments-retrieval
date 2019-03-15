@@ -65,6 +65,8 @@ args = parser.parse_args()
 
 def main(args):
     "Put all the pieces together"
+    if args.dump_per_instance_results:
+        args.dump = True
     if args.dump:
         args.disable_tqdm = True
         if len(args.logfile.name) == 0:
@@ -153,7 +155,6 @@ def main(args):
     num_instances_retrieved = []
     judge = CorpusVideoMomentRetrievalEval(topk=args.topk)
     args.n_display = max(int(args.n_display * len(dataset.metadata)), 1)
-    vid_indices_per_instance, prop_ind_per_instance = [], []
     for it, query_metadata in tqdm(enumerate(dataset.metadata),
                                    disable=args.disable_tqdm):
         result_per_query = engine.query(
@@ -161,8 +162,6 @@ def main(args):
             return_indices=args.dump_per_instance_results)
         if args.dump_per_instance_results:
             vid_indices, segments, proposals_ind = result_per_query
-            vid_indices_per_instance.append(vid_indices)
-            prop_ind_per_instance.append(proposals_ind)
         else:
             vid_indices, segments = result_per_query
         judge.add_single_predicted_moment_info(
@@ -170,6 +169,25 @@ def main(args):
         num_instances_retrieved.append(len(vid_indices))
         if args.disable_tqdm and (it + 1) % args.n_display == 0:
             logging.info(f'Processed queries [{it}/{len(dataset.metadata)}]')
+
+        if args.dump_per_instance_results:
+            if it == 0:
+                filename = args.logfile.with_suffix('.h5')
+                fid = h5py.File(filename, 'x')
+                fid.create_dataset(
+                    name='proposals', data=engine.proposals, chunks=True)
+                fid_vi = fid.create_dataset(
+                    name='vid_indices', chunks=True,
+                    shape=(len(dataset),) + vid_indices.shape, dtype='int64')
+                fid_pi = fid.create_dataset(
+                    name='proposals_ind', chunks=True,
+                    shape=(len(dataset),) + proposals_ind.shape, dtype='int64')
+
+            fid_vi[it, ...] = vid_indices
+            fid_pi[it, ...] = proposals_ind
+
+    if args.dump_per_instance_results:
+        fid.close()
 
     logging.info('Summarizing results')
     num_instances_retrieved = np.array(num_instances_retrieved)
@@ -201,18 +219,6 @@ def main(args):
             result['date'] = datetime.now().isoformat()
             result['git_hash'] = get_git_revision_hash()
             json.dump(result, fid, indent=1)
-
-    if args.dump_per_instance_results:
-        filename = args.logfile.with_suffix('.h5')
-        with h5py.File(filename, 'x') as fid:
-            fid.create_dataset(
-                name='proposals', data=engine.proposals, chunks=True)
-            fid.create_dataset(
-                name='vid_indices', chunks=True,
-                data=torch.stack(vid_indices_per_instance))
-            fid.create_dataset(
-                name='proposals_ind', chunks=True,
-                data=torch.stack(prop_ind_per_instance))
 
 
 def load_hyperparameters(args):

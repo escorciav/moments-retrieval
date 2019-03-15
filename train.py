@@ -18,8 +18,8 @@ from evaluation import single_moment_retrieval, didemo_evaluation
 from dataset_untrimmed import TemporalFeatures
 from utils import Multimeter, Tracker
 from utils import collate_data, collate_data_eval, ship_to
-from utils import setup_hyperparameters, setup_logging, setup_rng
-from utils import dumping_arguments, logfile_from_snapshot, save_checkpoint
+from utils import setup_hyperparameters, setup_logging, setup_rng, setup_metrics
+from utils import dumping_arguments, load_args_from_snapshot, save_checkpoint
 from utils import get_git_revision_hash
 from utils import MutableSampler
 from np_segments_ops import non_maxima_suppresion
@@ -49,8 +49,11 @@ parser.add_argument('--test-list', type=Path, default='non-existent',
 # Architecture
 parser.add_argument('--arch', choices=model.MOMENT_RETRIEVAL_MODELS,
                     default='MCN', help='model architecture')
-parser.add_argument('--snapshot', type=Path, default='non-existent',
-                    help='pht.tar with dict and state_dict key with params ')
+parser.add_argument('--snapshot', type=Path, default='',
+                    help=('JSON with hyper-parameters. It also expects  a '
+                          '.pth.tar file in the same directory to load the'
+                          'model parameters. Those are placed into a '
+                          'key called `state_dict`.'))
 # Arch hyper-parameters
 parser.add_argument('--visual-hidden', type=int, default=500,
                     help='Hidden unit in MLP visual stream')
@@ -194,15 +197,20 @@ parser.add_argument('--debug', action='store_true',
                           '(loaders, ops) can run well'))
 
 args = parser.parse_args()
-args.topk = torch.tensor(TOPK)
-args.iou_thresholds = IOU_THRESHOLDS
-args.topk_ = TOPK_DIDEMO
 
 
 def main(args):
     setup_logging(args)
+    if load_args_from_snapshot(args):
+        if len(args.snapshot.name) > 0:
+            # Override snapshot config with user argument
+            args = parser.parse_args(namespace=args)
+            logging.info(f'Loaded snapshot config: {args.snapshot}')
+    else:
+        logging.error('Unable to load {}, procedding with args.')
     setup_hyperparameters(args)
     setup_rng(args)
+    setup_metrics(args, TOPK, IOU_THRESHOLDS, TOPK_DIDEMO)
 
     args.device = device_name = 'cpu'
     if args.gpu_id >= 0 and torch.cuda.is_available():
@@ -219,11 +227,13 @@ def main(args):
     logging.info(f'Device: {device_name}')
 
     train_loader, val_loader, test_loader = setup_dataset(args)
-    net, ranking_loss, optimizer = setup_model(args, train_loader, val_loader)
+    net, ranking_loss, optimizer = setup_model(
+        args, train_loader, test_loader)
 
-    if args.snapshot.exists():
-        logging.info(f'Loading parameters from {args.snapshot}')
-        snapshot = torch.load(args.snapshot).get('state_dict')
+    if len(args.snapshot.name) > 0 and args.snapshot.exists():
+        logging.info(f'Load model-parameters from {args.snapshot}')
+        filename = args.snapshot.with_suffix('.pth.tar')
+        snapshot = torch.load(filename).get('state_dict')
         if snapshot is not None:
             net.load_state_dict(snapshot)
         else:
@@ -231,11 +241,14 @@ def main(args):
 
     if args.evaluate:
         if not args.snapshot.exists():
-            logging.info('Aborting due to lack of snapshot')
+            logging.error('Aborting due to lack of snapshot')
             return
         logging.info('Evaluating model')
-        args.logfile = logfile_from_snapshot(args)
-        rst, per_sample_rst = evaluate(args, net, val_loader)
+        # Update `arg.logfile` re-using basename from `args.snapshot` and
+        # append eval to avoid overwriting
+        args.logfile = args.snapshot.with_suffix('')
+        args.logfile = args.logfile.with_name(args.logfile.stem + '_eval')
+        rst, per_sample_rst = evaluate(args, net, test_loader)
         dumping_arguments(args, val_performance=rst,
                           perf_per_sample_val=per_sample_rst)
         return
@@ -527,14 +540,14 @@ def setup_dataset(args):
     return train_loader, val_loader, test_loader
 
 
-def setup_model(args, train_loader=None, val_loader=None):
+def setup_model(args, train_loader=None, test_loader=None):
     "Setup model, criterion and optimizer"
     if train_loader is not None:
         dataset = train_loader.dataset
-    elif val_loader is not None:
-        dataset = val_loader.dataset
+    elif test_loader is not None:
+        dataset = test_loader.dataset
     else:
-        raise ValueError('either train or val list must exists')
+        raise ValueError('Either train or test list must exists')
     logging.info('Setting-up model')
     arch_setup = dict(
         visual_size=dataset.visual_size[args.feat],

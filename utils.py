@@ -94,7 +94,8 @@ def dumping_arguments(args, val_performance=None, test_performance=None,
         args_dict.update({f'val_{k}': v for k, v in val_performance.items()})
     if test_performance is not None:
         args_dict.update({f'test_{k}': v for k, v in test_performance.items()})
-    with open(result_file, 'w') as fid:
+
+    with open(result_file, 'x') as fid:
         json.dump(args_dict, fid, skipkeys=True, indent=1, sort_keys=True)
     if args.dump_results and perf_per_sample_val is not None:
         dump_tensors_as_hdf5(args.logfile + '_instances_rst_val.h5',
@@ -113,12 +114,20 @@ def dump_tensors_as_hdf5(filename, tensors_as_dict_values):
             fid.create_dataset(name=key, data=value.numpy())
 
 
-def logfile_from_snapshot(args):
-    "Return log-filename for evaluation out of snapshot"
-    # remove .pth.tar
-    filename = args.snapshot.with_suffix('').with_suffix('')
-    # append eval to avoid overwriting
-    return filename.with_name(filename.name + '_eval')
+def load_args_from_snapshot(args):
+    "Update arguments with those from snapshot JSON"
+    if not args.snapshot.exists():
+        return False
+    elif len(args.snapshot.name) == 0:
+        return True
+    # Protect the lede
+    snapshot, logfile = args.snapshot, args.logfile
+    with open(args.snapshot, 'r') as fid:
+        hyper_prm = json.load(fid)
+    for key, value in hyper_prm.items():
+        setattr(args, key, value)
+    args.snapshot, args.logfile = snapshot, logfile
+    return True
 
 
 def setup_hyperparameters(args):
@@ -164,13 +173,19 @@ def setup_logging(args):
                    level=logging.DEBUG)
     if len(args.logfile.name) >= 1:
         log_prm['filename'] = args.logfile.with_suffix('.log')
-        log_prm['filemode'] = 'w'
+        log_prm['filemode'] = 'x'
     logging.basicConfig(**log_prm)
     args.writer = None
     if args.enable_tb:
         # This should be a module variable in case we don't want tensorboard
         args.writer = SummaryWriter(args.logfile.with_suffix(''))
 
+
+def setup_metrics(args, topks, iou_thresholds, topks_didemo):
+    "Update args with metrics"
+    args.topk = torch.tensor(topks)
+    args.iou_thresholds = iou_thresholds
+    args.topk_ = topks_didemo
 
 def setup_rng(args):
     "Init random number generators from seed in Namespace"

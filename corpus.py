@@ -196,6 +196,10 @@ class LoopOverKMoments(LoopOverKBase):
     TODO: description
     """
 
+    def __init__(self, *args, **kwargs):
+        super(LoopOverKMoments, self).__init__(*args, **kwargs)
+        self.moment_based_reranking = False
+
     def query(self, description, description_ind):
         "Return videos and moments aligned with a text description"
         # TODO (tier-2): remove 2nd-stage results from 1st-stage to make them
@@ -204,10 +208,9 @@ class LoopOverKMoments(LoopOverKBase):
         lang_feature, len_query = self.preprocess_description(description)
 
         video_ind_1ststage = self.query2videos_ind[description_ind, :]
-        video_ind_per_proposal, proposals_1ststage = None, None
-        # Sorry for this is a dirty trick
+        # Sorry for this dirty trick
         video_indices, proposals, scores = [], [], []
-        if self.query2videos_ind_per_proposal is not None:
+        if self.moment_based_reranking:
             proposals_ind = self.query2proposals_ind[
                 description_ind, :self.topk]
             video_indices = self.query2videos_ind_per_proposal[
@@ -217,7 +220,7 @@ class LoopOverKMoments(LoopOverKBase):
         proposals_counter = 0
         for i in range(self.topk):
             # branch according to 1st-stage
-            if video_ind_per_proposal:
+            if self.moment_based_reranking:
                 video_id = self.dataset.videos[video_indices[i]]
                 candidate_i_feat = self.dataset._compute_visual_feature(
                     video_id, proposals[i, :])
@@ -259,13 +262,18 @@ class LoopOverKMoments(LoopOverKBase):
             if proposals_counter >= self.topk:
                 break
 
-        # Part of the dirty trick above
+        # Part of the dirty trick
         if isinstance(proposals, list):
             proposals = torch.cat(proposals, dim=0)
             video_indices = torch.cat(video_indices)
         scores = torch.cat(scores)
         scores, ind = scores.sort(descending=descending_i)
         return video_indices[ind], proposals[ind, :]
+
+    def _setup(self):
+        super(LoopOverKMoments, self)._setup()
+        if self.query2videos_ind_per_proposal is not None:
+            self.moment_based_reranking = True
 
 
 class MomentRetrievalFromProposalsTable(CorpusVideoMomentRetrievalBase):

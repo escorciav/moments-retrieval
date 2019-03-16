@@ -9,10 +9,10 @@ import numpy as np
 import torch
 from tqdm import tqdm
 
+import corpus
 import dataset_untrimmed
 import model
 import proposals
-from corpus import LoopOverKVideos
 from evaluation import CorpusVideoMomentRetrievalEval
 from utils import setup_logging, get_git_revision_hash
 
@@ -25,6 +25,10 @@ parser.add_argument('--test-list', type=Path, required=True,
 parser.add_argument('--h5-path', type=Path, default='non-existent',
                     help='HDF5-file with features')
 # Architecture
+parser.add_argument('--corpus-setup',
+                    choices=['LoopOverKMoments'], # , 'LoopOverKVideos']
+                    default='LoopOverKMoments',
+                    help='Kind of two-stage retrieval approach')
 parser.add_argument('--snapshot', type=Path, required=True,
                     help='JSON-file of model')
 parser.add_argument('--h5-1ststage', type=Path, required=True,
@@ -118,7 +122,7 @@ def main(args):
     net.eval()
 
     logging.info('Setting up engine')
-    engine = LoopOverKVideos(
+    engine = corpus.__dict__[args.corpus_setup](
         dataset, net, args.h5_1ststage, topk=args.k_first,
         nms_threshold=args.nms_threshold)
 
@@ -169,6 +173,8 @@ def main(args):
             result['k_first'] = args.k_first
             result['median_proposals_retrieved'] = retrieved_proposals_median
             result['min_proposals_retrieved'] = retrieved_proposals_min
+            result['nms_threshold'] = args.nms_threshold
+            result['corpus_setup'] = args.corpus_setup
             result['date'] = datetime.now().isoformat()
             result['git_hash'] = get_git_revision_hash()
             json.dump(result, fid, indent=1)

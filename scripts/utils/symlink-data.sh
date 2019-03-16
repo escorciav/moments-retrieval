@@ -23,6 +23,9 @@ data_files=(
   data/processed/activitynet-captions/resnet152_rgb_max_cl-2.5.h5
   data/processed/activitynet-captions/val.json
   data/processed/activitynet-captions/train.json
+  data/processed/activitynet-captions/val-01.json
+  data/processed/activitynet-captions/train-01.json
+  data/processed/activitynet-captions/train-01_01.json
   data/processed/didemo/resnet152_rgb_max_cl-2.5.h5
   data/processed/didemo/resnet152_rgb_max_cl-5.h5
   # additional HDF5s for DiDeMo

@@ -69,21 +69,20 @@ class CorpusVideoMomentRetrievalBase():
         raise NotImplementedError('Subclass and implement your indexing')
 
 
-class LoopOverKVideos():
-    """Rank moments contained on K-videos
+class LoopOverKBase():
+    "TODO: description"
 
-    TODO: description
-    """
-
-    def __init__(self, dataset, model, h5_1ststage, topk=10,
+    def __init__(self, dataset, model, h5_1ststage, topk=100,
                  nms_threshold=1.0):
         self.dataset = dataset
         self.model = model
         self.h5_file = h5_1ststage
         self.topk = topk
         self.nms_threshold = nms_threshold
-        self.proposals = None
-        self.query2videos_ind = None
+        self.proposals = None  # torch 2D-tensor
+        self.query2videos_ind = None  # numpy  2D-array
+        self.query2videos_ind_per_proposal = None  # torch 2D-tensor
+        self.query2proposals_ind = None  # torch 2D-tensor
         self._setup()
 
     @property
@@ -107,6 +106,47 @@ class LoopOverKVideos():
         return lang_feature, len_query
 
     def query(self, description, description_ind):
+        raise NotImplementedError('Subclass and implement')
+
+    def _setup(self):
+        "Misc stuff like load results from 1st retrieval stage"
+        with h5py.File(self.h5_file, 'r') as fid:
+            query2videos_ind = fid['vid_indices'][:]
+            # Force us to examine a way to deal with approximate retrieval
+            # approaches
+            assert query2videos_ind.shape[1] >= self.dataset.num_videos
+            assert (query2videos_ind >= 0).all()
+            # Trigger post-processing in case we are dealing with retrieval
+            # results from a moment-based approach
+            if query2videos_ind.shape[1] > self.dataset.num_videos:
+                self.query2videos_ind_per_proposal = torch.from_numpy(
+                    query2videos_ind)
+                query2videos_ind = unique2d_perserve_order(query2videos_ind)
+            self.query2videos_ind = query2videos_ind
+
+            # Note: self.proposals may be redudant and we could create a table
+            # to save storage in practice
+            if 'proposals' in fid:
+                self.proposals = torch.from_numpy(fid['proposals'][:])
+            else:
+                proposals = []
+                for video_ind in range(self.dataset.num_videos):
+                    _, proposals_i = self.dataset.video_item(video_ind)
+                    proposals.append(proposals_i)
+                self.proposals = torch.from_numpy(
+                    np.concatenate(proposals, axis=0))
+
+            if 'proposals_ind' in fid:
+                self.query2proposals_ind = fid['proposals_ind'][:]
+
+
+class LoopOverKVideos(LoopOverKBase):
+    """Rank moments contained on K-videos
+
+    TODO: description
+    """
+
+    def query(self, description, description_ind):
         "Return videos and moments aligned with a text description"
         # TODO (tier-2): remove 2nd-stage results from 1st-stage to make them
         # exhaustive
@@ -123,7 +163,6 @@ class LoopOverKVideos():
             candidates_i_feat = {k: torch.from_numpy(v)
                                  for k, v in candidates_i_feat.items()}
             proposals_i = torch.from_numpy(proposals_i)
-            num_segments = len(proposals_i)
 
             scores_i, descending_i = self.model.predict(
                 lang_feature, len_query, candidates_i_feat)
@@ -141,42 +180,92 @@ class LoopOverKVideos():
             video_indices.append(
                 video_ind * torch.ones(len(proposals_i), dtype=torch.int32))
 
-        # TODO: cat scores, proposals, video_indices
         scores = torch.cat(scores)
         proposals = torch.cat(proposals, dim=0)
         video_indices = torch.cat(video_indices)
         scores, ind = scores.sort(descending=descending_i)
         return video_indices[ind], proposals[ind, :]
 
-    def _setup(self):
-        "Misc stuff like load results from 1st retrieval stage"
-        with h5py.File(self.h5_file, 'r') as fid:
-            query2videos_ind = fid['vid_indices'][:]
-            # Force us to examine a way to deal with approximate retrieval
-            # approaches
-            assert query2videos_ind.shape[1] >= self.dataset.num_videos
-            assert (query2videos_ind >= 0).all()
-            # Trigger post-processing in case we are dealing with retrieval
-            # results from a moment-based approach
-            if query2videos_ind.shape[1] > self.dataset.num_videos:
-                query2videos_ind = unique2d_perserve_order(query2videos_ind)
-            self.query2videos_ind = query2videos_ind
 
-            # Do we really need the "proposals"?
-            # So far we only need the number of candidates that we could
-            # retrieve. However, the proposals might come handy for mixing
-            # two-stage and exhaustive retrieval from moments to get better
-            # performance for a large top-k during evaluation.
-            if 'proposals' in fid:
-                self.proposals = fid['proposals'][:]
+class LoopOverKMoments(LoopOverKBase):
+    """Re-rank topk moments
+
+    For text-to-video retrieval algorithms, we evaluate enough videos such
+    that the number of retrieved moments is bounded.
+
+    TODO: description
+    """
+
+    def query(self, description, description_ind):
+        "Return videos and moments aligned with a text description"
+        # TODO (tier-2): remove 2nd-stage results from 1st-stage to make them
+        # exhaustive
+        torch.set_grad_enabled(False)
+        lang_feature, len_query = self.preprocess_description(description)
+
+        video_ind_1ststage = self.query2videos_ind[description_ind, :]
+        video_ind_per_proposal, proposals_1ststage = None, None
+        # Sorry for this is a dirty trick
+        video_indices, proposals, scores = [], [], []
+        if self.query2videos_ind_per_proposal is not None:
+            proposals_ind = self.query2proposals_ind[
+                description_ind, :self.topk]
+            video_indices = self.query2videos_ind_per_proposal[
+                description_ind, :self.topk]
+            proposals = self.proposals[proposals_ind, :]
+
+        proposals_counter = 0
+        for i in range(self.topk):
+            # branch according to 1st-stage
+            if video_ind_per_proposal:
+                video_id = self.dataset.videos[video_indices[i]]
+                candidate_i_feat = self.dataset._compute_visual_feature(
+                    video_id, proposals[i, :])
+                for k, v in candidate_i_feat.items():
+                    if isinstance(v, np.ndarray):
+                        candidate_i_feat[k] = v[None, :]
+                proposals_i = proposals[i, :].unsqueeze_()
+                proposals_counter += 1
             else:
-                proposals = []
-                for video_ind in range(self.dataset.num_videos):
-                    _, proposals_i = self.dataset.video_item(video_ind)
-                    proposals.append(proposals_i)
-                self.proposals = np.concatenate(proposals, axis=0)
+                video_ind = int(video_ind_1ststage[i])
+                candidates_i_feat, proposals_i = self.dataset.video_item(
+                    video_ind)
+                video_ind_i = video_ind * torch.ones(
+                    len(proposals_i), dtype=torch.int32)
+                proposals_counter += len(proposals_i)
 
-            # self.query2proposals_ind = fid['proposals_ind'][:]
+            # torchify
+            candidates_i_feat = {k: torch.from_numpy(v)
+                                 for k, v in candidates_i_feat.items()}
+            if isinstance(proposals_i, np.ndarray):
+                proposals_i = torch.from_numpy(proposals_i)
+
+            scores_i, descending_i = self.model.predict(
+                lang_feature, len_query, candidates_i_feat)
+
+            # TODO: add post-processing such as NMS
+            if self.nms_threshold < 1:
+                idx = non_maxima_suppresion(
+                        proposals_i.numpy(), -scores_i.numpy(),
+                        self.nms_threshold)
+                proposals_i = proposals_i[idx, :]
+                scores_i = scores_i[idx]
+
+            scores.append(scores_i)
+            if isinstance(proposals, list):
+                proposals.append(proposals_i)
+                video_indices.append(video_ind_i)
+
+            if proposals_counter >= self.topk:
+                break
+
+        # Part of the dirty trick above
+        if isinstance(proposals, list):
+            proposals = torch.cat(proposals, dim=0)
+            video_indices = torch.cat(video_indices)
+        scores = torch.cat(scores)
+        scores, ind = scores.sort(descending=descending_i)
+        return video_indices[ind], proposals[ind, :]
 
 
 class MomentRetrievalFromProposalsTable(CorpusVideoMomentRetrievalBase):
@@ -578,22 +667,30 @@ if __name__ == '__main__':
 
     # TODO: unit-test for GreedyMomentRetrievalFromClipBasedProposalsTable
 
-    # Commented as it requires data
+    # Create fakes data proportional to real dataset, it takes a while
     h5_1ststage = 'data/interim/debug/dummy_1st_retrieval.h5'
     with h5py.File(h5_1ststage, 'x') as fid:
         num_queries = len(dataset)
-        num_videos = dataset.num_videos
         num_proposals = engine.num_moments
-        rng_video_ind = np.random.randint(
-            0, num_videos, (num_queries, num_proposals))
+        prop_ind = [np.random.permutation(num_proposals)
+                    for i in range(num_queries)]
+        prop_ind = np.row_stack(prop_ind)
+        video_ind = engine.video_indices[
+            prop_ind.reshape(-1)].reshape(-1, num_proposals)
         fid.create_dataset(name='proposals', data=engine.proposals)
-        fid.create_dataset(name='vid_indices', data=rng_video_ind)
+        fid.create_dataset(name='vid_indices', data=video_ind)
+        fid.create_dataset(name='proposals_ind', data=prop_ind)
     didemo_data = 'data/processed/didemo'
     dataset = UntrimmedSMCN(**dataset_setup)
     model = SMCN(**arch_setup)
     model.eval()
     engine = LoopOverKVideos(dataset, model, h5_1ststage=h5_1ststage,
                              nms_threshold=0.6)
+    ind = np.random.randint(0, len(dataset))
+    engine.query(dataset.metadata[ind]['language_input'], ind)
+
+    engine = LoopOverKMoments(dataset, model, h5_1ststage=h5_1ststage,
+                              nms_threshold=0.6)
     ind = np.random.randint(0, len(dataset))
     engine.query(dataset.metadata[ind]['language_input'], ind)
     os.remove(h5_1ststage)

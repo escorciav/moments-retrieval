@@ -221,7 +221,7 @@ class UntrimmedBasedMCNStyle(UntrimmedBase):
                  max_words=50, eval=False, context=True,
                  proposals_interface=None, no_visual=False, sampling_iou=0.35,
                  ground_truth_rate=1, prob_nproposal_nextto=-1,
-                 clip_length=None, h5_nis=None, debug=False):
+                 clip_length=None, h5_nis=None, nis_k=None, debug=False):
         super(UntrimmedBasedMCNStyle, self).__init__()
         self._setup_list(json_file)
         self._load_features(cues)
@@ -237,6 +237,7 @@ class UntrimmedBasedMCNStyle(UntrimmedBase):
         self._ground_truth_rate = ground_truth_rate
         self._prob_neg_proposal_next_to = prob_nproposal_nextto
         self.h5_nis = h5_nis
+        self.nis_k = nis_k
         self._prob_querytovideo = None
         # clean this, glove of original MCN is really slow, it kills fast
         # iteration during debugging :) (yes, I could cache but dahh)
@@ -488,22 +489,37 @@ class UntrimmedBasedMCNStyle(UntrimmedBase):
         #   Here. we will use the a pdf derived from 1 / x i.e. videos
         #   retrieved first will be sampled often but this will decay rapidly
         with h5py.File(self.h5_nis, 'r') as fid:
-            ranks_of_videos_from_moments_table_per_query = fid['vid_indices'][:]
-        ranks_of_videos_per_query = unique2d_perserve_order(
-            ranks_of_videos_from_moments_table_per_query)
-        rank_prob = 1 / np.arange(1, num_videos + 1, dtype=np.float32)
-        rank_prob /= sum(rank_prob)
-        prob_query_given_video = np.empty(
-            (num_queries, num_videos), dtype=np.float32)
-        # TODO: vectorize this
-        for i in range(num_queries):
+            # Num-queries x Num-moments matrix, i-th columns correspond to
+            # rank-ith
+            ranked_video_indices_from_moments_table_per_query = fid[
+                'vid_indices'][:]
+        ranked_video_indices_per_query = unique2d_perserve_order(
+            ranked_video_indices_from_moments_table_per_query)
+        if self.nis_k:
+            self.nis_k = min(self.nis_k, self.num_videos)
+            ranked_video_indices_per_query = ranked_video_indices_per_query[
+                :, :self.nis_k].reshape(-1)
+            ind = np.repeat(np.arange(num_queries), self.nis_k)
+            prob_query_given_video = np.zeros(
+                (num_queries, num_videos), dtype=np.float32)
             prob_query_given_video[
-                i, ranks_of_videos_per_query[i]] = rank_prob
+                ind, ranked_video_indices_per_query] = 1 / self.nis_k
+
+        else:
+            rank_prob = 1 / np.arange(1, num_videos + 1, dtype=np.float32)
+            rank_prob /= sum(rank_prob)
+            prob_query_given_video = np.empty(
+                (num_queries, num_videos), dtype=np.float32)
+            # TODO: vectorize this
+            for i in range(num_queries):
+                prob_query_given_video[
+                    i, ranked_video_indices_per_query[i]] = rank_prob
         # 2.2 Update P(video) with P(video) * P(query | video)
         #   Shall we wrap this inside a for loop?
         prob_querytovideoid = prob_query_given_video * prob_querytovideoid
         prob_querytovideoid /= prob_querytovideoid.sum(axis=1, keepdims=True)
         self._prob_querytovideo = prob_querytovideoid
+        del ranked_video_indices_from_moments_table_per_query
 
     def _set_tef_interface(self, loc):
         "Setup interface to get moment location feature"

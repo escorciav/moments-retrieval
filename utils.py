@@ -87,7 +87,7 @@ def dumping_arguments(args, val_performance=None, test_performance=None,
     args.val_list = str(args.val_list) if args.val_list.exists() else None
     args.test_list = str(args.test_list) if args.test_list.exists() else None
     args.snapshot = str(args.snapshot) if args.snapshot.exists() else None
-    args.h5_path_nis = str(args.h5_path_nis) if args.h5_path_nis.exists() else None
+    args.h5_path_nis = str(args.h5_path_nis) if args.h5_path_nis else None
     args.device = None
     args.topk = args.topk.tolist()
     args_dict = vars(args)

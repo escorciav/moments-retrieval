@@ -121,6 +121,8 @@ parser.add_argument('--prob-proposal-nextto', type=float, default=-1.0,
                           'means disabled. Increase it to sample often.'))
 parser.add_argument('--h5-path-nis', type=Path, default=None,
                     help='HDF5-file for negative importance sampling')
+parser.add_argument('--nis-k', type=int, default=None,
+                    help='Only sample negative videos from top-k')
 # Hyper-parameters concerning proposals (candidates) to score
 parser.add_argument('--proposal-interface', default='SlidingWindowMSRSS',
                     choices=proposals.PROPOSAL_SCHEMES,
@@ -493,7 +495,7 @@ def setup_dataset(args):
          'ground_truth_rate': args.ground_truth_rate,
          'prob_nproposal_nextto': args.prob_proposal_nextto,
          'sampling_iou': args.negative_sampling_iou,
-         'h5_nis': args.h5_path_nis},
+         'h5_nis': args.h5_path_nis, 'nis_k': args.nis_k},
         # Validation or Testing
         {'eval': True, 'proposals_interface': proposal_generator}
     ]

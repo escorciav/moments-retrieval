@@ -222,12 +222,13 @@ class LoopOverKMoments(LoopOverKBase):
             # branch according to 1st-stage
             if self.moment_based_reranking:
                 video_id = self.dataset.videos[video_indices[i]]
-                candidate_i_feat = self.dataset._compute_visual_feature(
+                # There is only a single candidate in this case
+                candidates_i_feat = self.dataset._compute_visual_feature(
                     video_id, proposals[i, :])
-                for k, v in candidate_i_feat.items():
+                for k, v in candidates_i_feat.items():
                     if isinstance(v, np.ndarray):
-                        candidate_i_feat[k] = v[None, :]
-                proposals_i = proposals[i, :].unsqueeze_()
+                        candidates_i_feat[k] = v[None, :]
+                proposals_i = proposals[i, :].unsqueeze_(dim=0)
                 proposals_counter += 1
             else:
                 video_ind = int(video_ind_1ststage[i])

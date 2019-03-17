@@ -197,8 +197,8 @@ class LoopOverKMoments(LoopOverKBase):
     """
 
     def __init__(self, *args, **kwargs):
-        super(LoopOverKMoments, self).__init__(*args, **kwargs)
         self.moment_based_reranking = False
+        super(LoopOverKMoments, self).__init__(*args, **kwargs)
 
     def query(self, description, description_ind):
         "Return videos and moments aligned with a text description"

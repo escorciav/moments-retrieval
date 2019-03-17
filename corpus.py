@@ -224,7 +224,7 @@ class LoopOverKMoments(LoopOverKBase):
                 video_id = self.dataset.videos[video_indices[i]]
                 # There is only a single candidate in this case
                 candidates_i_feat = self.dataset._compute_visual_feature(
-                    video_id, proposals[i, :])
+                    video_id, proposals[i, :].numpy())
                 for k, v in candidates_i_feat.items():
                     if isinstance(v, np.ndarray):
                         candidates_i_feat[k] = v[None, :]

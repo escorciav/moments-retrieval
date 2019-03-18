@@ -69,6 +69,42 @@ class CorpusVideoMomentRetrievalBase():
         raise NotImplementedError('Subclass and implement your indexing')
 
 
+class DummyMomentRetrievalFromProposalsTable(CorpusVideoMomentRetrievalBase):
+    """Setup moments table
+    """
+
+    def __init__(self, *args, **kwargs):
+        super(DummyMomentRetrievalFromProposalsTable, self).__init__(
+            *args, **kwargs)
+
+    def indexing(self):
+        "Setup index for moments and videos"
+        num_entries_per_video = []
+        all_proposals = []
+        for video_id in self.dataset.videos:
+            _, proposals_ = self.dataset._compute_visual_feature_eval(
+                video_id)
+            num_entries_per_video.append(len(proposals_))
+
+            # torchify
+            proposals = torch.from_numpy(proposals_)
+
+            # Append items to database
+            all_proposals.append(proposals)
+        # TODO (tier-2; design): organize this better
+        self.num_videos = len(num_entries_per_video)
+        self.entries_per_video = torch.tensor(num_entries_per_video)
+        self.proposals = torch.cat(all_proposals)
+        self.num_moments = int(self.proposals.shape[0])
+        video_indices = np.repeat(
+            np.arange(0, len(self.dataset.videos)),
+            num_entries_per_video)
+        self.video_indices = torch.from_numpy(video_indices)
+
+    def query(self, description):
+        raise ValueError('Not intended to be used to retrieve moments')
+
+
 class LoopOverKBase():
     "TODO: description"
 

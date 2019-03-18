@@ -39,16 +39,7 @@ def main(args):
     logging.info(args)
     logging.info('Setting-up datasets')
     train_dataset, test_dataset = setup_dataset(args)
-    if args.kde:
-        moment_freq_prior = KDEFrequencyPrior()
-    else:
-        if args.proposal_interface == 'DidemoICCV17SS':
-            logging.info('Ignoring bins argument')
-            args.ts_edges = np.arange(0, 31, 5.0) / 30
-            args.te_edges = np.arange(5, 36, 5.0) / 30
-        if args.ts_edges is not None:
-            args.bins = [args.ts_edges, args.te_edges]
-        moment_freq_prior = DiscretizedFrequencyPrior(args.bins)
+    moment_freq_prior = setup_model(args)
 
     logging.info('Estimating prior')
     for i, data in enumerate(train_dataset):
@@ -121,7 +112,7 @@ def video_duration(dataset, moment_index):
 
 
 def setup_dataset(args):
-    "Setup dataset and loader"
+    "Setup dataset"
     proposals_interface = proposals.__dict__[args.proposal_interface](
         args.min_length, args.scales, args.stride)
     lastname = 'kde' if args.kde else 'discrete'
@@ -141,6 +132,21 @@ def setup_dataset(args):
                 clip_length=args.clip_length)
         )
     return datasets
+
+
+def setup_model(args):
+    "Return MFP-model"
+    if args.kde:
+        model = KDEFrequencyPrior()
+    else:
+        if args.proposal_interface == 'DidemoICCV17SS':
+            logging.info('Ignoring bins argument')
+            args.ts_edges = np.arange(0, 31, 5.0) / 30
+            args.te_edges = np.arange(5, 36, 5.0) / 30
+        if args.ts_edges is not None:
+            args.bins = [args.ts_edges, args.te_edges]
+        model = DiscretizedFrequencyPrior(args.bins)
+    return model
 
 
 class BaseFrequencyPrior():

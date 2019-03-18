@@ -209,7 +209,7 @@ def main(args):
             args = parser.parse_args(namespace=args)
             logging.info(f'Loaded snapshot config: {args.snapshot}')
     else:
-        logging.error('Unable to load {}, procedding with args.')
+        logging.error('Unable to load {args.snapshot}, procedding with args.')
     setup_hyperparameters(args)
     setup_rng(args)
     setup_metrics(args, TOPK, IOU_THRESHOLDS, TOPK_DIDEMO)

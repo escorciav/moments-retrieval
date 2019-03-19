@@ -458,12 +458,6 @@ class CALChamfer(SMCN):
         self.init_parameters()
 
 
-    def predict(self, *args):
-        "Compute distance between visual and sentence"
-        d_pos, *_ = self.forward(*args)
-        return d_pos, False
-
-
     def forward(self, padded_query, query_length, visual_pos,
                 visual_neg_intra=None, visual_neg_inter=None):
         # v_v_embedded_* are tensors of shape [B, N, D]
@@ -549,6 +543,12 @@ class CALChamfer(SMCN):
         return self.chamfer_distance(v, l, mv, ml)
 
 
+    def predict(self, *args):
+        "Compute distance between visual and sentence"
+        d_pos, *_ = self.forward(*args)
+        return d_pos, False
+
+
     def _apply_dopout_language(self, emb_l):
         B = emb_l.size()[0]
         emb_l = emb_l.unsqueeze(1).view(B, -1, self.embedding_size)
@@ -586,14 +586,34 @@ class CALChamfer(SMCN):
 
 
 class LateFusion():
-    '''This Model do the convex combination of the MCN TEF only model and CALCahmfer'''
+    '''This Model do the convex combination of the MCN TEF only model and CALChamfer'''
 
-    def __init__(self, arch, *args, **kwargs):
+    def __init__(self, **arch_setup):
+        # Instantiate models
+        self.chamfer_net = CALChamfer(**arch_setup)
 
+        # Change size of input for only TEF
+        arch_setup['visual_size'] = 2
+        # And delete variables to let use the default
+        del arch_setup['bi_lstm']
+        del arch_setup['lang_dropout']
+        self.tef_only = MCN(**arch_setup)
 
-        self.chamfer_net = CALChamfer()
-        self.tef_only = MCN(*args, **kwargs)
+    def predict(self, lang_feature, len_query, candidates_i_feat):
+        "Compute scores for both models"
+        # pass data as it is to CALChamfer
+        d1, *_ = self.chamfer_net.forward(lang_feature, 
+                                    len_query, candidates_i_feat)
+        # Extract only TEF for tef_only model
+        candidates_i_feat = {"rgb":candidates_i_feat["rgb"][:,0,-2:]}
+        d2, *_ = self.tef_only.forward(lang_feature, 
+                                    len_query, candidates_i_feat)
+        return d1+d2, False
 
+    def load_state_dict(self,snapshots):
+        self.chamfer_net.load_state_dict(snapshots[0]['state_dict'])
+        self.tef_only.load_state_dict(snapshots[1]['state_dict'])
+    
     def eval(self):
         self.chamfer_net.eval()
         self.tef_only.eval()

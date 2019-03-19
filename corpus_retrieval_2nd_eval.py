@@ -14,7 +14,7 @@ import dataset_untrimmed
 import model
 import proposals
 from evaluation import CorpusVideoMomentRetrievalEval
-from utils import setup_logging, get_git_revision_hash
+from utils import setup_logging, get_git_revision_hash, setup_snapshot_
 
 parser = argparse.ArgumentParser(
     description='Corpus Retrieval 2nd Stage Evaluation',
@@ -58,10 +58,10 @@ parser.add_argument('--debug', action='store_true',
                     help=('yield incorrect results! to verify things are'
                           'glued correctly (dataset, model, eval)'))
 # Mattia
-parser.add_argument('--snapshot-tef-only', type=Path, required=False,
+parser.add_argument('--snapshot-tef-only', type=Path, required=False, default=None,
                     help='JSON-file of model')                 
 args = parser.parse_args()
-
+args.bi_lstm = False        # Initialize to false for those json that do not contain it
 
 def main(args):
     "Put all the pieces together"
@@ -111,12 +111,6 @@ def main(args):
         proposals_interface=proposals_interface
     )
     dataset = dataset_untrimmed.__dict__[args.dataset](**dataset_setup)
-    try:
-        if args.bi_lstm is False:
-            pass
-    except:
-        args.bi_lstm = False
-    
     logging.info('Setting up models')
     arch_setup = dict(
         visual_size=dataset.visual_size[args.feat],
@@ -129,16 +123,11 @@ def main(args):
         bi_lstm=args.bi_lstm, 
         lang_dropout=args.lang_dropout
     )
-    net = None
-    
+
+    if args.snapshot_tef_only is not None:  # Mattia
+        args.arch = 'LateFusion'            # Mattia
     net = model.__dict__[args.arch](**arch_setup)
-    # if args.snapshot_tef_only is not None:
-    #     net = model.LateFusion(args.arch,**arch_setup)
-    # else:
-    #     net = model.__dict__[args.arch](**arch_setup)
-    filename = args.snapshot.with_suffix('.pth.tar')
-    snapshot_ = torch.load(
-        filename, map_location=lambda storage, loc: storage)
+    snapshot_ = setup_snapshot_(args.snapshot, args.snapshot_tef_only)  # Mattia
     net.load_state_dict(snapshot_['state_dict'])
     net.eval()
 

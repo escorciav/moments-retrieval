@@ -189,6 +189,7 @@ def setup_metrics(args, topks, iou_thresholds, topks_didemo):
     args.iou_thresholds = iou_thresholds
     args.topk_ = topks_didemo
 
+
 def setup_rng(args):
     "Init random number generators from seed in Namespace"
     if args.seed < 1:
@@ -355,6 +356,21 @@ def timeit(method):
         return result
     return timed
 
+
+def setup_snapshot_(snapshot,snapshot_tef_only):
+    # Trick to setups snapshot when multiple are provided
+    filename = snapshot.with_suffix('.pth.tar')
+    snapshot_ = torch.load(filename, 
+                map_location=lambda storage, loc: storage)
+
+    if snapshot_tef_only is not None: 
+        snapshot_={'state_dict': [snapshot_]}
+        filename = snapshot_tef_only.with_suffix('.pth.tar')
+        snap_tef = torch.load(filename, 
+                        map_location=lambda storage, loc: storage)
+        snapshot_['state_dict'].append(snap_tef)
+
+    return snapshot_
 
 if __name__ == '__main__':
     aja = Multimeter(['hi', 'vi', 'tor'])

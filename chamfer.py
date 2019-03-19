@@ -106,8 +106,8 @@ class DoubleMaskedChamferDistance(MaskedChamferDistance):
 
     def forward(self, video_feat, lang_feat, mask_v, mask_l):
 
-        mask_v=mask_v.detach()#.to(minsv.device)  #control gradient flow
-        mask_l=mask_l.detach()#.to(minsv.device)
+        mask_v=mask_v.detach()          #control gradient flow
+        mask_l=mask_l.detach()
 
         #pairwise distances matrix, shape = [B,Nv,Nl]
         pairwise_dist = self.batch_pairwise_dist(video_feat, lang_feat)

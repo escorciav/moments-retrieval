@@ -340,12 +340,16 @@ class UntrimmedBasedMCNStyle(UntrimmedBase):
     def _get_tef_feature(self, moment_loc, video_id,):
         "Return TEF feature for a given instance"
         video_duration = self._video_duration(video_id)
+        tef_feature = self.tef_interface(
+            moment_loc, video_duration, clip_length=self.clip_length)
+        # Disable TEF-dropout. This was an experimental thing which we may
+        # remove later.
         # tef_feature = np.zeros((2,), dtype=np.float32)
         # Dropout is implemented as inputting random values betweem 0-1
-        tef_feature = np.random.uniform(0,1,(2,))
-        if random.random() >= self.dropout_tef:
-            tef_feature = self.tef_interface(
-                moment_loc, video_duration, clip_length=self.clip_length)
+        # tef_feature = np.random.uniform(0,1,(2,))
+        # if random.random() >= self.dropout_tef:
+        #     tef_feature = self.tef_interface(
+        #     moment_loc, video_duration, clip_length=self.clip_length)
         # if self.eval and self.dropout_tef > 0.0:
         #     tef_feature=np.asarray([0.5,0.5])
 
@@ -774,10 +778,9 @@ class UntrimmedCALChamfer(UntrimmedBasedMCNStyle):
     """
 
     def __init__(self, *args, max_clips=None, padding=True, w_size=None,
-                 dropout_tef=0,**kwargs):
+                 **kwargs):
         super(UntrimmedCALChamfer, self).__init__(*args, **kwargs)
         self.padding = padding
-        self.dropout_tef = dropout_tef
         if not self.eval:
             max_clips = self.max_number_of_clips()
         self.visual_interface = VisualRepresentationCALChamfer(

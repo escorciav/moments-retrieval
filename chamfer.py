@@ -1,26 +1,22 @@
-'''
-Author: Mattia Soldan
-e-mail: mattia.soldan@kaust.edu.sa
-'''
+import collections
+import time
 
-from torch.autograd import Variable
-import torch.nn as nn
 import numpy as np
 import torch
-import time
-import collections
+import torch.nn as nn
+from torch.autograd import Variable
 
 
 class ChamferDistance(nn.Module):
     "Chamfer distance"
 
     def __init__(self):
-        super(ChamferDistance, self).__init__()   
+        super(ChamferDistance, self).__init__()
 
-    def forward(self,video_feat,lang_feat):
+    def forward(self, video_feat, lang_feat):
         #pairwise distances matrix, shape = [B,Nv,Nl]
         pairwise_dist = self.batch_pairwise_dist(video_feat,lang_feat)
-    
+
         # Normalization values
         Nv = pairwise_dist.size()[1]
         Nl = pairwise_dist.size()[2]
@@ -35,9 +31,9 @@ class ChamferDistance(nn.Module):
 
         return language_to_clip_dist + clip_to_language_dist
 
-    def batch_pairwise_dist(self,x,y):
-        # implement the formula 
-        # Dij = ||x-y||**2 
+    def batch_pairwise_dist(self, x, y):
+        # implement the formula
+        # Dij = ||x-y||**2
         # Expanding it as: Dij = ||x||**2 + ||y||**2 - 2<x,y>
 
         a = x.pow(2).sum(dim=2,keepdim=True)
@@ -51,10 +47,10 @@ class MaskedChamferDistance(nn.Module):
     "Chamfer distance"
 
     def __init__(self):
-        super(MaskedChamferDistance, self).__init__()   
+        super(MaskedChamferDistance, self).__init__()
 
-    def forward(self,video_feat,lang_feat,mask):
-        
+    def forward(self, video_feat, lang_feat, mask):
+
         mask.detach()   #control gradient flow
 
         #pairwise distances matrix, shape = [B,Nv,Nl]
@@ -76,50 +72,51 @@ class MaskedChamferDistance(nn.Module):
 
         return language_to_clip_dist + clip_to_language_dist
 
-    def batch_pairwise_dist(self,x,y):
-        # implement the formula 
-        # Dij = ||x-y||**2 
+    def batch_pairwise_dist(self, x, y):
+        # implement the formula
+        # Dij = ||x-y||**2
         # Expanding it as: Dij = ||x||**2 + ||y||**2 - 2<x,y>
         a = x.pow(2).sum(dim=2,keepdim=True)
         b = y.pow(2).sum(dim=2,keepdim=True)
         ab = torch.bmm(x,y.transpose(2,1))
         pairwise_dist = a - 2*ab + b.transpose(2,1)
-        return pairwise_dist  
+        return pairwise_dist
 
-    def masking(self,p,m):
+    def masking(self, p, m):
         #make negative mask of the same shape of pairwise matrix
-        neg_m = m.clone().unsqueeze(-1).expand_as(p) 
+        neg_m = m.clone().unsqueeze(-1).expand_as(p)
 
-        # Negate mask 
+        # Negate mask
         neg_m[neg_m == 0] = 2
         neg_m = neg_m - 1
 
         #Add maximum value of pairwise matrix to all
-        # elements in position given by negate mask 
+        # elements in position given by negate mask
         max_ = p.max().detach()
         p = p + neg_m * max_
-        
+
         return p
-    
+
 
 class DoubleMaskedChamferDistance(MaskedChamferDistance):
     "Chamfer distance"
 
     def __init__(self):
-        super(DoubleMaskedChamferDistance, self).__init__()   
+        super(DoubleMaskedChamferDistance, self).__init__()
 
-    def forward(self,video_feat,lang_feat,mask_v,mask_l):
-        
+    def forward(self, video_feat, lang_feat, mask_v, mask_l):
+
         mask_v=mask_v.detach()#.to(minsv.device)  #control gradient flow
         mask_l=mask_l.detach()#.to(minsv.device)
 
         #pairwise distances matrix, shape = [B,Nv,Nl]
-        pairwise_dist = self.batch_pairwise_dist(video_feat,lang_feat)
-        masked_pairwise_dist = self.masking(pairwise_dist.clone(),mask_v,mask_l)
+        pairwise_dist = self.batch_pairwise_dist(video_feat, lang_feat)
+        masked_pairwise_dist = self.masking(
+            pairwise_dist.clone(), mask_v, mask_l)
 
         # Normalization values
-        Nv = torch.sum(mask_v,dim=1)
-        Nl = torch.sum(mask_l,dim=1) 
+        Nv = torch.sum(mask_v, dim=1)
+        Nl = torch.sum(mask_l, dim=1)
 
         # clip_to_language
         minsv, _ = masked_pairwise_dist.min(dim=2)
@@ -135,36 +132,36 @@ class DoubleMaskedChamferDistance(MaskedChamferDistance):
 
     def masking(self,p,mv,ml):
         #make negative mask of the same shape of pairwise matrix
-        import time 
+        import time
         t = time.time()
-        neg_mv = (mv.clone().unsqueeze(-1).expand_as(p)).cpu().numpy() 
+        neg_mv = (mv.clone().unsqueeze(-1).expand_as(p)).cpu().numpy()
         neg_ml = (ml.clone().unsqueeze(1).expand_as(p)).cpu().numpy()
         # sum and negate masks
-        neg = np.logical_not(np.logical_and(neg_ml,neg_mv)).astype(int)
-    
+        neg = np.logical_not(np.logical_and(neg_ml, neg_mv)).astype(int)
+
         #Add maximum value of pairwise matrix to all
-        # elements in position given by negate mask 
+        # elements in position given by negate mask
         max_ = p.max().detach()
         p = p + (neg * max_).type_as(p)
-        
+
         return p
-    
+
 # Deprecated since merge with corpus, I needed to remove the delta variable
 class MaskedChamferDistanceVisual(MaskedChamferDistance):
     "Chamfer distance"
 
     def __init__(self, writer=None):
-        super(MaskedChamferDistanceVisual, self).__init__()   
+        super(MaskedChamferDistanceVisual, self).__init__()
         self.writer = writer
         self.counter = 0
 
     def forward(self,video_feat,lang_feat,mask,delta):
-        
+
         mask.detach()   #control gradient flow
 
         #pairwise distances matrix, shape = [B,Nv,Nl]
-        pairwise_dist = self.batch_pairwise_dist(video_feat,lang_feat)
-        masked_pairwise_dist = self.masking(pairwise_dist.clone(),mask)
+        pairwise_dist = self.batch_pairwise_dist(video_feat, lang_feat)
+        masked_pairwise_dist = self.masking(pairwise_dist.clone(), mask)
 
         # Normalization values
         Nv = torch.sum(mask,dim=1)
@@ -183,20 +180,20 @@ class MaskedChamferDistanceVisual(MaskedChamferDistance):
             self.log_histogram(idx1,idx2,delta)
 
         return language_to_clip_dist + clip_to_language_dist
-    
+
     def masking(self,p,m):
         #make negative mask of the same shape of pairwise matrix
-        neg_m = m.clone().unsqueeze(-1).expand_as(p) 
+        neg_m = m.clone().unsqueeze(-1).expand_as(p)
 
-        # Negate mask 
+        # Negate mask
         neg_m[neg_m == 0] = 2
         neg_m = neg_m - 1
 
         #Add maximum value of pairwise matrix to all
-        # elements in position given by negate mask 
+        # elements in position given by negate mask
         max_ = p.max().detach()
         p = p + neg_m * max_
-        
+
         return p
 
     def log_histogram(self, idx1, idx2, delta):
@@ -206,31 +203,36 @@ class MaskedChamferDistanceVisual(MaskedChamferDistance):
 
         idx2 = (idx2 + delta.unsqueeze(1)) % idx1.size()[1]
 
-        self.writer.add_histogram("chamfer/video_min", idx1.view(-1),self.counter)
-        self.writer.add_histogram("chamfer/language_min", idx2.view(-1),self.counter)
+        self.writer.add_histogram(
+            "chamfer/video_min", idx1.view(-1), self.counter)
+        self.writer.add_histogram(
+            "chamfer/language_min", idx2.view(-1), self.counter)
         self.counter += 1
+
 
 # Deprecated since merge with corpus, I needed to remove the delta variable
 class DoubleMaskedChamferDistanceVisual(MaskedChamferDistance):
     "Chamfer distance"
 
     def __init__(self, writer=None):
-        super(DoubleMaskedChamferDistanceVisual, self).__init__()   
+        super(DoubleMaskedChamferDistanceVisual, self).__init__()
         self.writer = writer
         self.counter=0
 
-    def forward(self,video_feat,lang_feat,mask_v,mask_l,delta, name, training):
-        
+    def forward(self, video_feat, lang_feat, mask_v, mask_l, delta, name,
+                training):
+
         mask_v=mask_v.detach()   #control gradient flow
         mask_l=mask_l.detach()
 
         #pairwise distances matrix, shape = [B,Nv,Nl]
-        pairwise_dist = self.batch_pairwise_dist(video_feat,lang_feat)
-        masked_pairwise_dist = self.masking(pairwise_dist.clone(),mask_v,mask_l)
+        pairwise_dist = self.batch_pairwise_dist(video_feat, lang_feat)
+        masked_pairwise_dist = self.masking(
+            pairwise_dist.clone(), mask_v, mask_l)
 
         # Normalization values
         Nv = torch.sum(mask_v,dim=1)
-        Nl = torch.sum(mask_l,dim=1) 
+        Nl = torch.sum(mask_l,dim=1)
 
         # clip_to_language
         minsv, idxv = masked_pairwise_dist.min(dim=2)
@@ -242,28 +244,28 @@ class DoubleMaskedChamferDistanceVisual(MaskedChamferDistance):
         masked_minl = minsl * mask_l
         language_to_clip_dist = masked_minl.sum(dim=1)/Nl
 
-        if self.writer is not None and self.training:             
-            v = language_to_clip_dist + clip_to_language_dist     
-            self.log_histogram(idxv,idxl,mask_v,mask_l,delta, v, name)
+        if self.writer is not None and self.training:
+            v = language_to_clip_dist + clip_to_language_dist
+            self.log_histogram(idxv, idxl, mask_v, mask_l, delta, v, name)
 
         return language_to_clip_dist + clip_to_language_dist
 
-    def masking(self,p,mv,ml):
+    def masking(self, p, mv, ml):
         #make negative mask of the same shape of pairwise matrix
-        import time 
+        import time
         t = time.time()
-        neg_mv = (mv.clone().unsqueeze(-1).expand_as(p)).cpu().numpy() 
+        neg_mv = (mv.clone().unsqueeze(-1).expand_as(p)).cpu().numpy()
         neg_ml = (ml.clone().unsqueeze(1).expand_as(p)).cpu().numpy()
         # sum and negate masks
-        neg = np.logical_not(np.logical_and(neg_ml,neg_mv)).astype(int)
-    
+        neg = np.logical_not(np.logical_and(neg_ml, neg_mv)).astype(int)
+
         #Add maximum value of pairwise matrix to all
-        # elements in position given by negate mask 
+        # elements in position given by negate mask
         max_ = p.max().detach()
         p = p + (neg * max_).type_as(p)
-        
+
         return p.cuda()
-    
+
     def log_histogram(self, idxv, idxl, maskv, maskl, delta, v, name):
         B = len(delta)
         Nv = idxv.size()[-1]
@@ -280,10 +282,17 @@ class DoubleMaskedChamferDistanceVisual(MaskedChamferDistance):
         from_vid_to_lang= torch.cat(from_vid_to_lang, dim=0)
         from_lang_to_vid= torch.cat(from_lang_to_vid, dim=0)
 
-        self.writer.add_histogram("chamfer/video_to_lang/{}".format(name), from_vid_to_lang.view(-1),self.counter)
-        self.writer.add_histogram("chamfer/lang_to_video/{}".format(name),  from_lang_to_vid.view(-1),self.counter)
-        self.writer.add_histogram("chamfer_distance/{}".format(name),  v.view(-1),self.counter)
-        self.writer.add_scalar("chamfer_distance_mean/{}".format(name),  v.mean(),self.counter)
+        self.writer.add_histogram(
+            "chamfer/video_to_lang/{}".format(name),
+            from_vid_to_lang.view(-1),self.counter)
+        self.writer.add_histogram(
+            "chamfer/lang_to_video/{}".format(name),
+            from_lang_to_vid.view(-1),self.counter)
+        self.writer.add_histogram(
+            "chamfer_distance/{}".format(name),
+            v.view(-1),self.counter)
+        self.writer.add_scalar(
+            "chamfer_distance_mean/{}".format(name), v.mean(), self.counter)
         self.counter += 1
 
 
@@ -331,7 +340,7 @@ def _ChamferDistance_v3(x, y):
 
 def _ChamferDistance_v4(x, y):
     Nl, Nv = x.shape[1],y.shape[1]       #BATCH SIZE, Nv, D
-     
+
     a = (x**2).sum(axis=2,keepdims=True)
     b = (y**2).sum(axis=2,keepdims=True)
     ab = np.matmul(x,y.transpose((0,2,1)))
@@ -392,7 +401,7 @@ def _comparison_test(video_feat,lang_feat,mask):
     t = time.time()
     l = d(video_feat.transpose(2,1), lang_feat.transpose(2,1))
     print("Avg Distance Silvio's Chamfer: \t\t{:.5f} - {:.5f} sec.\n".format(torch.mean(l),time.time()-t))
-        
+
     ############################################
 
     #atlas implementation
@@ -407,7 +416,7 @@ def _grad_test(video_feat,lang_feat):
     ## Chamfer Distance
     d = ChamferDistance()
     l = d(video_feat, lang_feat)
-    
+
     # check if it possible to use backpropagation
     torch.mean(l).backward()
     if video_feat.grad.size() and lang_feat.grad.size():
@@ -437,7 +446,7 @@ def _gen_mask(B, Nv, all_ones):
             if torch.sum(mask[i])==0:
                 mask[i][0]=1
         return mask
-  
+
 
 if __name__ == '__main__':
     ##parameters
@@ -455,4 +464,3 @@ if __name__ == '__main__':
 
     _comparison_test(video_feat,lang_feat,mask)
     _grad_test(video_feat, lang_feat)
-    

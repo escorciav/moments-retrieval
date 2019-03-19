@@ -340,9 +340,9 @@ class UntrimmedBasedMCNStyle(UntrimmedBase):
     def _get_tef_feature(self, moment_loc, video_id,):
         "Return TEF feature for a given instance"
         video_duration = self._video_duration(video_id)
-        # tef_feature = np.zeros((2,), dtype=np.float32)       
-        # Dropout is implemented as inputting random values betweem 0-1   
-        tef_feature = np.random.uniform(0,1,(2,))      
+        # tef_feature = np.zeros((2,), dtype=np.float32)
+        # Dropout is implemented as inputting random values betweem 0-1
+        tef_feature = np.random.uniform(0,1,(2,))
         # if random.random() >= self.dropout_tef:
         #     tef_feature = self.tef_interface(
         #         moment_loc, video_duration, clip_length=self.clip_length)
@@ -765,6 +765,12 @@ class UntrimmedCALChamfer(UntrimmedBasedMCNStyle):
 
     Attributes
         padding (bool): if True the representation is padded with zeros.
+
+    TODO:
+        - Disable padding, and decomposable.
+        - Consider refactoring using a base class for clip based models to
+          reduce code duplication. The `_compute_visual_feature` and
+          `_compute_visual_feature_eval` look very similar.
     """
 
     def __init__(self, *args, max_clips=None, padding=True, w_size=None,
@@ -786,7 +792,6 @@ class UntrimmedCALChamfer(UntrimmedBasedMCNStyle):
         if decomposable_time_features:
             return True
         return False
-
 
     def _compute_visual_feature(self, video_id, moment_loc):
         """Return visual features plus TEF for a given segment in the video
@@ -826,7 +831,8 @@ class UntrimmedCALChamfer(UntrimmedBasedMCNStyle):
         dtype = np.float32 if self.padding else np.int64
         moment_mask = mask.astype(dtype, copy=False)
         feature_collection['mask'] = moment_mask
-        # feature_collection['im_start'] = im_start     # DEPRECATED SINCE MERGE WITH CORPUS 
+        # DEPRECATED since training is disabled
+        # feature_collection['im_start'] = im_start
         return feature_collection
 
     def _compute_visual_feature_eval(self, video_id):
@@ -845,7 +851,6 @@ class UntrimmedCALChamfer(UntrimmedBasedMCNStyle):
             else:
                 candidates_rep[k] = np.concatenate(v, axis=0)
         return candidates_rep, candidates
-
 
     def set_padding(self, padding):
         "Change padding mode"
@@ -1126,8 +1131,7 @@ class VisualRepresentationCALChamfer():
         if self.padding:
             return padded_data, mask, im_start
         return padded_data, np.array([T])
-    
-    
+
     def _local_context(self, start, end, x_t, num_clips=None):
         "Context around clips"
         if num_clips is None:

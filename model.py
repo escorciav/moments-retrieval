@@ -3,9 +3,10 @@ import torch.nn as nn
 import torch.nn.functional as F
 from torch.nn.utils.rnn import pack_padded_sequence, pad_packed_sequence
 from torch.nn.utils.rnn import pad_sequence
-from chamfer import DoubleMaskedChamferDistance                         # Mattia
+from chamfer import DoubleMaskedChamferDistance
 
-MOMENT_RETRIEVAL_MODELS = ['MCN', 'SMCN', 'SMCNTalcv1', 'CALChamfer', 'LateFusion']   # Mattia
+MOMENT_RETRIEVAL_MODELS = ['MCN', 'SMCN', 'SMCNTalcv1', 'CALChamfer',
+                           'LateFusion']
 
 
 class MCN(nn.Module):
@@ -24,13 +25,13 @@ class MCN(nn.Module):
         self.max_length = max_length
         self.unit_vector = unit_vector
 
-        self.lang_hidden = lang_hidden      # Mattia
-        self.lang_size = lang_size          # Mattia
-        self.bi_lstm = bi_lstm              # Mattia
-        self.lang_dropout = lang_dropout    # Mattia
-        bi_norm = 1                         # Mattia
-        if self.bi_lstm:                    # Mattia
-            bi_norm = 2                     # Mattia
+        self.lang_hidden = lang_hidden
+        self.lang_size = lang_size
+        self.bi_lstm = bi_lstm
+        self.lang_dropout = lang_dropout
+        bi_norm = 1
+        if self.bi_lstm:
+            bi_norm = 2
 
         visual_encoder = [nn.Linear(visual_size, visual_hidden),
                           nn.ReLU(inplace=True)]
@@ -48,9 +49,10 @@ class MCN(nn.Module):
         #     nn.Dropout(dropout)
         # )
 
-        self.sentence_encoder = nn.LSTM(self.lang_size, self.lang_hidden, 
-                                batch_first=True, bidirectional=self.bi_lstm)   # Mattia
-        self.lang_encoder = nn.Linear(bi_norm * self.lang_hidden, self.embedding_size)  # Mattia
+        self.sentence_encoder = nn.LSTM(self.lang_size, self.lang_hidden,
+                                batch_first=True, bidirectional=self.bi_lstm)
+        self.lang_encoder = nn.Linear(
+            bi_norm * self.lang_hidden, self.embedding_size)
         self.init_parameters()
 
     def forward(self, padded_query, query_length, visual_pos,
@@ -429,17 +431,18 @@ class SMCNTalcv1(SMCN):
         "Exhaustive search of query in table"
         raise NotImplementedError
 
-# Mattia
+
 class CALChamfer(SMCN):
-    '''CALChamfer = Extends SMCN by adding the chamfer distance as metric for 
-        computing the distance between two sets of embeddings.
-        The description is encoded through an LSTM layer of which every hidden state 
-        is mapped to the embedding state and constitute the set of language embeddings.
+    '''CALChamfer
+
+    Extends SMCN by adding the chamfer distance as metric for computing the
+    distance between two sets of embeddings. The description is encoded
+    through an LSTM layer of which every hidden state is mapped to the
+    embedding state and constitute the set of language embeddings.
     '''
 
     def __init__(self, *args, **kwargs):
         super(CALChamfer, self).__init__(*args, **kwargs)
-        
         bi_norm = 1
         if self.bi_lstm:
             bi_norm = 2
@@ -447,16 +450,13 @@ class CALChamfer(SMCN):
 
         # Language branch
         del self.lang_encoder
-        self.sentence_encoder = nn.LSTM(self.lang_size, self.lang_hidden, 
-                                        batch_first=True, bidirectional=self.bi_lstm,
-                                        num_layers=1)
-
-        self.state_encoder = nn.Linear(bi_norm * self.lang_hidden, self.embedding_size)
-        
-        # Initialize chamfer loss
+        self.sentence_encoder = nn.LSTM(
+            self.lang_size, self.lang_hidden, batch_first=True,
+            bidirectional=self.bi_lstm, num_layers=1)
+        self.state_encoder = nn.Linear(
+            bi_norm * self.lang_hidden, self.embedding_size)
         self.chamfer_distance = DoubleMaskedChamferDistance()
         self.init_parameters()
-
 
     def forward(self, padded_query, query_length, visual_pos,
                 visual_neg_intra=None, visual_neg_inter=None):
@@ -467,7 +467,7 @@ class CALChamfer(SMCN):
 
         l_embedded = self.encode_query(padded_query, query_length)
         l_mask = self._gen_lan_mask(self.max_length,query_length)
-            
+
         #embedding normalization
         if self.unit_vector:
             l_embedded = F.normalize(l_embedded, dim=-1)
@@ -486,10 +486,9 @@ class CALChamfer(SMCN):
             l_embedded, l_mask, visual_pos, visual_neg_intra, visual_neg_inter)
         return c_pos, c_neg_intra, c_neg_inter
 
-
     def encode_query(self, padded_query, query_length):
         B = len(padded_query)
-        packed_query = pack_padded_sequence(padded_query, query_length, 
+        packed_query = pack_padded_sequence(padded_query, query_length,
                                             batch_first=True)
         packed_output, _ = self.sentence_encoder(packed_query)
         output, _ = pad_packed_sequence(packed_output, batch_first=True,
@@ -503,7 +502,6 @@ class CALChamfer(SMCN):
             embedded_lang = self._apply_dopout_language(embedded_lang)
 
         return embedded_lang
-
 
     def encode_visual(self, pos, neg_intra, neg_inter):
         pos, _, neg_intra, _, neg_inter, _ = \
@@ -519,7 +517,6 @@ class CALChamfer(SMCN):
 
         return embedded_pos, embedded_neg_intra, embedded_neg_inter
 
-
     def compare_emdedded_snippets(self, embedded_p, embedded_n_intra,
                                   embedded_n_inter, embedded_a, l_mask,
                                   pos, neg_intra, neg_inter):
@@ -530,24 +527,20 @@ class CALChamfer(SMCN):
 
         c_pos = self.compare_emdeddings(embedded_p, embedded_a, mask_p, l_mask)
         if embedded_n_intra is not None:
-            c_neg_intra = self.compare_emdeddings(embedded_n_intra, embedded_a, 
+            c_neg_intra = self.compare_emdeddings(embedded_n_intra, embedded_a,
                                                     mask_n_intra, l_mask)
         if embedded_n_inter is not None:
             c_neg_inter = self.compare_emdeddings(embedded_n_inter, embedded_a,
                                                     mask_n_inter, l_mask)
         return c_pos, c_neg_intra, c_neg_inter
 
-
     def compare_emdeddings(self, v, l, mv, ml):
-        # Apply chamfer distance
         return self.chamfer_distance(v, l, mv, ml)
-
 
     def predict(self, *args):
         "Compute distance between visual and sentence"
         d_pos, *_ = self.forward(*args)
         return d_pos, False
-
 
     def _apply_dopout_language(self, emb_l):
         B = emb_l.size()[0]
@@ -557,18 +550,14 @@ class CALChamfer(SMCN):
         emb_l = emb_l.squeeze(dim=2)
         return emb_l
 
-
     def _gen_lan_mask(self,num_words,query_length):
         #TO DO: move this task to dataset_untrimmed
-
         B = query_length.size()[0]              # Batch size
         mask = torch.zeros(B,num_words)         # Mask initialization to zero
         # mask fill in with lenght of each single query
         for i in range(B):
-            mask[i,0:query_length[i]] = 1 
-
+            mask[i,0:query_length[i]] = 1
         return mask
-
 
     def _unpack_visual(self, *args):
         "Get visual feature inside a dict"
@@ -586,14 +575,14 @@ class CALChamfer(SMCN):
 
 
 class LateFusion():
-    '''This Model do the convex combination of the MCN TEF only model and CALChamfer'''
+    "Commbine CALChamfer and TEF-only model"
 
     def __init__(self, **arch_setup):
         # Instantiate models
         self.chamfer_net = CALChamfer(**arch_setup)
-
         # Change size of input for only TEF
         arch_setup['visual_size'] = 2
+        # TODO: refactor this as editing arguments in-place cause headache
         # And delete variables to let use the default
         del arch_setup['bi_lstm']
         del arch_setup['lang_dropout']
@@ -602,18 +591,18 @@ class LateFusion():
     def predict(self, lang_feature, len_query, candidates_i_feat):
         "Compute scores for both models"
         # pass data as it is to CALChamfer
-        d1, *_ = self.chamfer_net.forward(lang_feature, 
-                                    len_query, candidates_i_feat)
+        d1, *_ = self.chamfer_net.forward(
+            lang_feature, len_query, candidates_i_feat)
         # Extract only TEF for tef_only model
         candidates_i_feat = {"rgb":candidates_i_feat["rgb"][:,0,-2:]}
-        d2, *_ = self.tef_only.forward(lang_feature, 
-                                    len_query, candidates_i_feat)
+        d2, *_ = self.tef_only.forward(
+            lang_feature, len_query, candidates_i_feat)
         return d1+d2, False
 
     def load_state_dict(self,snapshots):
         self.chamfer_net.load_state_dict(snapshots[0]['state_dict'])
         self.tef_only.load_state_dict(snapshots[1]['state_dict'])
-    
+
     def eval(self):
         self.chamfer_net.eval()
         self.tef_only.eval()

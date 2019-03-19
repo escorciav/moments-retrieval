@@ -77,8 +77,7 @@ def main(args):
             raise ValueError(
                 f'{args.logfile} already exists. Please provide a logfile or'
                 'backup existing results.')
-    setup_logging(args)    elif args.arch == 'CALChamfer':
-        dataset_name = 'UntrimmedCALChamfer'
+    setup_logging(args)
 
     logging.info('Corpus Retrieval Evaluation for CAL/MCN')
     logging.info(f'Git revision hash: {get_git_revision_hash()}')

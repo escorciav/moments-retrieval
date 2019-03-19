@@ -24,8 +24,6 @@ from utils import get_git_revision_hash
 from utils import MutableSampler
 from np_segments_ops import non_maxima_suppresion
 
-import json         # Mattia
-
 OPTIMIZER = ['sgd', 'sgd_caffe']
 EVAL_BATCH_SIZE = 1
 TOPK, IOU_THRESHOLDS = (1, 5), (0.5, 0.7)
@@ -199,13 +197,7 @@ parser.add_argument('--hps', action='store_true',
 parser.add_argument('--debug', action='store_true',
                     help=('yield incorrect results! only to verify things '
                           '(loaders, ops) can run well'))
-# Mattia
-parser.add_argument('--lang-dropout', type=float, default=0.0,      
-                    help='Dropout rate in language stream')         
-parser.add_argument('--bi-lstm',action='store_true',                
-                    help='Set the LSTM encoder to be bidirectional or not.')
-parser.add_argument('--convex-combination', type=Path, default=None,
-                    help='JSON-file with scores from other model')          
+
 args = parser.parse_args()
 
 
@@ -365,89 +357,58 @@ def train_epoch(args, net, criterion, loader, optimizer):
 
 
 def validation(args, net, loader):
-    # Mattia #####################
-    ### Convex combination setup:
-    precomputed_scores= None                                    
-    alphas = [0.0,0.3,0.5,0.7,0.9,1.0]                         
-    convex_combination_results = {'r@1,0.5': [], 'r@5,0.5': [], 'r@1,0.7': [], 'r@5,0.7': []}
-    if args.convex_combination is None:                       
-        alphas = [0.0]                                       
-    else:                                                      
-        args.alphas = alphas
-        with open(args.convex_combination) as f:             
-            precomputed_scores = json.load(f)                 
-    
-    for alpha in alphas:       
-    # Mattia #####################                              
-        "Eval model"
-        ind = 2 if args.debug else 0
-        time_meters = Multimeter(keys=['Batch', 'Eval'])
-        meters_1, meters_2 = Multimeter(keys=METRICS), None
-        if args.proposal_interface == 'DidemoICCV17SS':
-            meters_2 = Multimeter(keys=METRICS_OLD)
-        tracker = Tracker(keys=VARS_TO_RECORD) if args.dump_results else None
-        logging.info(f'* Evaluation')
-        net.eval()
-        if args.convex_combination is not None:
-            logging.info("Convex combination value alpha: {}".format(alpha))
-
-        with torch.no_grad():
+    "Eval model"
+    ind = 2 if args.debug else 0
+    time_meters = Multimeter(keys=['Batch', 'Eval'])
+    meters_1, meters_2 = Multimeter(keys=METRICS), None
+    if args.proposal_interface == 'DidemoICCV17SS':
+        meters_2 = Multimeter(keys=METRICS_OLD)
+    tracker = Tracker(keys=VARS_TO_RECORD) if args.dump_results else None
+    logging.info(f'* Evaluation')
+    net.eval()
+    with torch.no_grad():
+        end = time.time()
+        for it, minibatch in enumerate(loader):
+            if args.gpu_id >= 0:
+                minibatch_ = minibatch
+                minibatch = ship_to(minibatch, args.device)
+            results, descending = net.predict(*minibatch[ind:-2])
+            # measure elapsed time
+            batch_time = time.time() - end
             end = time.time()
-            for it, minibatch in enumerate(loader):
-                if args.gpu_id >= 0:
-                    minibatch_ = minibatch
-                    minibatch = ship_to(minibatch, args.device)
-                results, descending = net.predict(*minibatch[ind:-2])
-                # measure elapsed time
-                batch_time = time.time() - end
-                end = time.time()
 
-                gt_segment, segments = minibatch[-2:]
+            gt_segment, segments = minibatch[-2:]
+            if args.nms_threshold < 1:
+                # TODO(tier-1): port to torch
+                gt_segment, segments = minibatch_[-2:]
+                scores = results.cpu()
+                idx = non_maxima_suppresion(
+                    segments.numpy(), -scores.numpy(), args.nms_threshold)
+                sorted_segments = segments[idx]
+            else:
+                scores, idx = results.sort(descending=descending)
+                sorted_segments = segments[idx, :]
 
-                # Mattia #####################
-                # Compute late fusion, convex combination
-                if args.convex_combination is not None:                    
-                    old_scores = torch.FloatTensor(precomputed_scores["scores"][it]).cuda()     
-                    results = (1-alpha)* results + alpha * old_scores       
-                # Mattia #####################
+            hit_k_iou = single_moment_retrieval(
+                gt_segment, sorted_segments, topk=args.topk)
+            if meters_2:
+                iou_r_at_ks = didemo_evaluation(
+                    gt_segment, sorted_segments, args.topk_)
+                meters_2.update([i.item() for i in iou_r_at_ks])
 
-                if args.nms_threshold < 1:
-                    # TODO(tier-1): port to torch
-                    gt_segment, segments = minibatch_[-2:]
-                    scores = results.cpu()
-                    idx = non_maxima_suppresion(
-                        segments.numpy(), -scores.numpy(), args.nms_threshold)
-                    sorted_segments = segments[idx]
-                else:
-                    scores, idx = results.sort(descending=descending)
-                    sorted_segments = segments[idx, :]
-
-                hit_k_iou = single_moment_retrieval(
-                    gt_segment, sorted_segments, topk=args.topk)
-                if meters_2:
-                    iou_r_at_ks = didemo_evaluation(
-                        gt_segment, sorted_segments, args.topk_)
-                    meters_2.update([i.item() for i in iou_r_at_ks])
-
-                # TODO(tier-2;profile): seems a bit slow
-                meters_1.update([i.item() for i in hit_k_iou])
-                time_meters.update([batch_time, time.time() - end])
-                if tracker:
-                    # artifact to ease Tracker job for few number of segments
-                    if scores.shape[0] < MAX_TOPK:
-                        n_times = round(MAX_TOPK / scores.shape[0])
-                        scores = scores.repeat(n_times)
-                        sorted_segments = sorted_segments.repeat(n_times, 1)
-                    tracker.append(it, hit_k_iou, scores[: MAX_TOPK],
-                                sorted_segments[:MAX_TOPK, :])
-                end = time.time()
-        logging.info(f'{time_meters.report()}\t{meters_1.report()}')
-        # Mattia #####################
-        if args.convex_combination is not None:
-            r = meters_1.dump()
-            for k in r.keys():
-                convex_combination_results[k].append(r[k])
-        # Mattia #####################
+            # TODO(tier-2;profile): seems a bit slow
+            meters_1.update([i.item() for i in hit_k_iou])
+            time_meters.update([batch_time, time.time() - end])
+            if tracker:
+                # artifact to ease Tracker job for few number of segments
+                if scores.shape[0] < MAX_TOPK:
+                    n_times = round(MAX_TOPK / scores.shape[0])
+                    scores = scores.repeat(n_times)
+                    sorted_segments = sorted_segments.repeat(n_times, 1)
+                tracker.append(it, hit_k_iou, scores[: MAX_TOPK],
+                               sorted_segments[:MAX_TOPK, :])
+            end = time.time()
+    logging.info(f'{time_meters.report()}\t{meters_1.report()}')
     if meters_2:
         logging.info(f'DiDeMo metrics: {meters_2.report()}')
     if tracker:
@@ -455,12 +416,7 @@ def validation(args, net, loader):
         performance = (meters_1.dump(), tracker.data)
         logging.info(f'Results aggregation completed')
         return performance
-    # Mattia #####################
-    if args.convex_combination is None:
-        return meters_1.dump(), None
-    else:
-        return convex_combination_results, None
-    # Mattia #####################
+    return meters_1.dump(), None
 
 
 def evaluate(args, net, loader, subset='val'):
@@ -509,8 +465,6 @@ def setup_dataset(args):
         dataset_name = 'UntrimmedMCN'
     elif args.arch == 'SMCN':
         dataset_name = 'UntrimmedSMCN'
-    elif args.arch == 'CALChamfer':                 # Mattia
-        dataset_name = 'UntrimmedCALChamfer'        # Mattia
     else:
         raise ValueError(f'Unsuported arch: {args.arch}, call 911!')
 
@@ -522,26 +476,8 @@ def setup_dataset(args):
         args.eval_on_epoch > 0):
         raise ValueError('Risk of cheating. Please read prolog.')
 
-    # Mattia ######################
-    if args.train_list is None:
-        args.train_list = Path("./nothing")             
-    elif isinstance(args.train_list, str):    
-        if args.evaluate:
-            args.train_list = Path("./nothing")                
-        else:
-            args.train_list = Path(args.train_list)
-    if args.val_list is None:
-        args.val_list = Path("./nothing")             
-    elif isinstance(args.val_list, str):   
-        args.val_list = Path(args.val_list)
-    if args.test_list is None:
-        args.test_list = Path("./nothing")             
-    elif isinstance(args.test_list, str):   
-        args.test_list = Path(args.test_list)
-    # Mattia ######################
-
-    subset_files = [('train', args.train_list), ('val', args.val_list), 
-                    ('test', args.test_list)]          
+    subset_files = [('train', args.train_list), ('val', args.val_list),
+                    ('test', args.test_list)]
     cues, no_visual = {args.feat: None}, True
     if args.h5_path.exists():
         no_visual = False
@@ -624,9 +560,7 @@ def setup_model(args, train_loader=None, test_loader=None):
         visual_hidden=args.visual_hidden,
         lang_hidden=args.lang_hidden,
         visual_layers=args.visual_layers,
-        unit_vector=args.unit_vector,
-        bi_lstm=args.bi_lstm,           # Mattia
-        lang_dropout=args.lang_dropout  # Mattia
+        unit_vector=args.unit_vector
     )
     if args.clip_loss:
         args.arch = 'SMCNCL'

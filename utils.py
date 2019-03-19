@@ -88,7 +88,6 @@ def dumping_arguments(args, val_performance=None, test_performance=None,
     args.test_list = str(args.test_list) if args.test_list.exists() else None
     args.snapshot = str(args.snapshot) if args.snapshot.exists() else None
     args.h5_path_nis = str(args.h5_path_nis) if args.h5_path_nis else None
-    args.convex_combination = None if args.convex_combination is None else str(args.convex_combination) # Mattia
     args.device = None
     args.topk = args.topk.tolist()
     args_dict = vars(args)
@@ -356,21 +355,6 @@ def timeit(method):
         return result
     return timed
 
-
-def setup_snapshot_(snapshot,snapshot_tef_only):
-    # Trick to setups snapshot when multiple are provided
-    filename = snapshot.with_suffix('.pth.tar')
-    snapshot_ = torch.load(filename, 
-                map_location=lambda storage, loc: storage)
-
-    if snapshot_tef_only is not None: 
-        snapshot_={'state_dict': [snapshot_]}
-        filename = snapshot_tef_only.with_suffix('.pth.tar')
-        snap_tef = torch.load(filename, 
-                        map_location=lambda storage, loc: storage)
-        snapshot_['state_dict'].append(snap_tef)
-
-    return snapshot_
 
 if __name__ == '__main__':
     aja = Multimeter(['hi', 'vi', 'tor'])

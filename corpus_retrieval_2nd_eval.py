@@ -26,7 +26,7 @@ parser.add_argument('--h5-path', type=Path, default='non-existent',
                     help='HDF5-file with features')
 # Architecture
 parser.add_argument('--corpus-setup',
-                    choices=['LoopOverKMoments'], # , 'LoopOverKVideos']
+                    choices=['LoopOverKMoments', 'LoopOverKVideos'],
                     default='LoopOverKMoments',
                     help='Kind of two-stage retrieval approach')
 parser.add_argument('--snapshot', type=Path, required=True, nargs='+',
@@ -36,6 +36,8 @@ parser.add_argument('--h5-1ststage', type=Path, required=True,
                     help='HDF5-file of 1st stage results')
 parser.add_argument('--k-first', type=int, required=True,
                     help='K first retrieved resuslts')
+parser.add_argument('--all', action='store_true',
+                    help='Loop over all the videos')
 # Evaluation parameters
 parser.add_argument('--topk', nargs='+', type=int,
                     default=[1, 10, 100],
@@ -81,7 +83,6 @@ def main(args):
     load_hyperparameters(args)
     logging.info(args)
 
-    engine_prm = {}
     if args.arch == 'MCN':
         args.dataset = 'UntrimmedMCN'
     elif args.arch == 'SMCN':
@@ -90,6 +91,11 @@ def main(args):
         args.dataset = 'UntrimmedCALChamfer'
     else:
         ValueError('Unknown/unsupported architecture')
+
+    engine_prm = {}
+    chamfer_active = args.arch == 'CALChamfer' or args.arch == 'LateFusion'
+    if chamfer_active and args.corpus_setup == 'LoopOverKVideos':
+        engine_prm['repeat_lang'] = True
 
     logging.info('Loading dataset')
     if args.h5_path.exists():
@@ -125,9 +131,13 @@ def main(args):
     net.eval()
 
     logging.info('Setting up engine')
+    if args.all:
+        if args.corpus_setup != args.corpus_setup == 'LoopOverKVideos':
+            logging.error('Ignoring --all parameter')
+        args.k_first = dataset.num_videos
     engine = corpus.__dict__[args.corpus_setup](
         dataset, net, args.h5_1ststage, topk=args.k_first,
-        nms_threshold=args.nms_threshold)
+        nms_threshold=args.nms_threshold, **engine_prm)
 
     logging.info('Launch evaluation...')
     # log-scale up to the end of the database

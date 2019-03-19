@@ -182,6 +182,10 @@ class LoopOverKVideos(LoopOverKBase):
     TODO: description
     """
 
+    def __init__(self, *args, repeat_lang=False, **kwargs):
+        self.repeat_lang = repeat_lang
+        super(LoopOverKVideos, self).__init__(*args, **kwargs)
+
     def query(self, description, description_ind):
         "Return videos and moments aligned with a text description"
         # TODO (tier-2): remove 2nd-stage results from 1st-stage to make them
@@ -200,8 +204,14 @@ class LoopOverKVideos(LoopOverKBase):
                                  for k, v in candidates_i_feat.items()}
             proposals_i = torch.from_numpy(proposals_i)
 
+            if self.repeat_lang:
+                lang_feature_ = lang_feature.repeat(len(proposals_i), 1, 1)
+                len_query_ = len_query.repeat(len(proposals_i))
+            else:
+                lang_feature_, len_query_ = lang_feature, len_query
+
             scores_i, descending_i = self.model.predict(
-                lang_feature, len_query, candidates_i_feat)
+                lang_feature_, len_query_, candidates_i_feat)
 
             # TODO: add post-processing such as NMS
             if self.nms_threshold < 1:

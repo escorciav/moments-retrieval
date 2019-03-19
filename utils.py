@@ -188,6 +188,7 @@ def setup_metrics(args, topks, iou_thresholds, topks_didemo):
     args.iou_thresholds = iou_thresholds
     args.topk_ = topks_didemo
 
+
 def setup_rng(args):
     "Init random number generators from seed in Namespace"
     if args.seed < 1:

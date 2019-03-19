@@ -29,8 +29,9 @@ parser.add_argument('--corpus-setup',
                     choices=['LoopOverKMoments'], # , 'LoopOverKVideos']
                     default='LoopOverKMoments',
                     help='Kind of two-stage retrieval approach')
-parser.add_argument('--snapshot', type=Path, required=True,
-                    help='JSON-file of model')
+parser.add_argument('--snapshot', type=Path, required=True, nargs='+',
+                    help=('JSON-file of model. Only pass two models for '
+                          'LateFusion of Chamfer and only-TEF.'))
 parser.add_argument('--h5-1ststage', type=Path, required=True,
                     help='HDF5-file of 1st stage results')
 parser.add_argument('--k-first', type=int, required=True,
@@ -85,6 +86,8 @@ def main(args):
         args.dataset = 'UntrimmedMCN'
     elif args.arch == 'SMCN':
         args.dataset = 'UntrimmedSMCN'
+    elif args.arch == 'CALChamfer' or args.arch == 'LateFusion':
+        args.dataset = 'UntrimmedCALChamfer'
     else:
         ValueError('Unknown/unsupported architecture')
 
@@ -103,7 +106,6 @@ def main(args):
         proposals_interface=proposals_interface
     )
     dataset = dataset_untrimmed.__dict__[args.dataset](**dataset_setup)
-
     logging.info('Setting up models')
     arch_setup = dict(
         visual_size=dataset.visual_size[args.feat],
@@ -113,12 +115,13 @@ def main(args):
         visual_hidden=args.visual_hidden,
         lang_hidden=args.lang_hidden,
         visual_layers=args.visual_layers,
+        bi_lstm=args.bi_lstm,
+        lang_dropout=args.lang_dropout
     )
+
     net = model.__dict__[args.arch](**arch_setup)
-    filename = args.snapshot.with_suffix('.pth.tar')
-    snapshot_ = torch.load(
-        filename, map_location=lambda storage, loc: storage)
-    net.load_state_dict(snapshot_['state_dict'])
+    model_param = setup_snapshot(args.snapshot)
+    net.load_state_dict(model_param['state_dict'])
     net.eval()
 
     logging.info('Setting up engine')
@@ -136,7 +139,7 @@ def main(args):
     judge = CorpusVideoMomentRetrievalEval(topk=args.topk)
     args.n_display = max(int(args.n_display * len(dataset.metadata)), 1)
     for it, query_metadata in tqdm(enumerate(dataset.metadata),
-                                   disable=args.disable_tqdm):
+                                disable=args.disable_tqdm):
         vid_indices, segments = engine.query(
             query_metadata['language_input'], description_ind=it)
         judge.add_single_predicted_moment_info(
@@ -165,7 +168,7 @@ def main(args):
         with open(filename, 'x') as fid:
             for key, value in result.items():
                 result[key] = float(value)
-            result['snapshot'] = str(args.snapshot)
+            result['snapshot'] = [str(i) for i in args.snapshot]
             result['corpus'] = str(args.test_list)
             result['1ststage'] = str(args.h5_1ststage)
             result['topk'] = args.topk
@@ -183,14 +186,41 @@ def main(args):
 def load_hyperparameters(args):
     "Update args with model hyperparameters"
     logging.info('Parsing JSON files with hyper-parameters')
-    with open(args.snapshot, 'r') as fid:
+    with open(args.snapshot[0], 'r') as fid:
         hyper_prm = json.load(fid)
+        # TODO: clean this hacks by updating all the JSON (after deadline)
+        if 'bi_lstm' not in hyper_prm:
+            hyper_prm['bi_lstm'] = False
+        if hyper_prm['arch'] == 'ModelD':
+            hyper_prm['arch'] = 'CALChamfer'
 
     for key, value in hyper_prm.items():
         if not hasattr(args, key):
             setattr(args, key, value)
         else:
             logging.debug(f'Ignored hyperparam: {key}')
+
+    # TODO: is there a clean way to do this?
+    if len(args.snapshot) == 2:
+        args.arch = 'LateFusion'
+
+
+def setup_snapshot(filenames):
+    # Trick to setups snapshot when multiple are provided
+    assert len(filenames) <= 2
+    filename_1 = filenames[0].with_suffix('.pth.tar')
+    snapshot_1 = torch.load(filename_1,
+                          map_location=lambda storage, loc: storage)
+    if len(filenames) == 1:
+        return snapshot_1
+    assert args.arch == 'LateFusion'
+    snapshots = {'state_dict': [snapshot_1]}
+    filename_2 = filenames[-1].with_suffix('.pth.tar')
+    snapshot_2 = torch.load(filename_2,
+                            map_location=lambda storage, loc: storage)
+    snapshots['state_dict'].append(snapshot_2)
+
+    return snapshots
 
 
 if __name__ == '__main__':

@@ -14,7 +14,7 @@ import dataset_untrimmed
 import model
 import proposals
 from evaluation import CorpusVideoMomentRetrievalEval
-from utils import setup_logging, get_git_revision_hash, setup_snapshot_
+from utils import setup_logging, get_git_revision_hash
 
 parser = argparse.ArgumentParser(
     description='Corpus Retrieval 2nd Stage Evaluation',
@@ -57,11 +57,12 @@ parser.add_argument('--enable-tb', action='store_true',
 parser.add_argument('--debug', action='store_true',
                     help=('yield incorrect results! to verify things are'
                           'glued correctly (dataset, model, eval)'))
-# Mattia
-parser.add_argument('--snapshot-tef-only', type=Path, required=False, default=None,
-                    help='JSON-file of model')                 
+# TODO: clean this. wrap it in side snapthot.
+parser.add_argument('--snapshot-tef-only', type=Path, default=None,
+                    help='JSON-file of model')
 args = parser.parse_args()
-args.bi_lstm = False        # Initialize to false for those json that do not contain it
+# TODO: remove this as it will never read it
+args.bi_lstm = False
 
 def main(args):
     "Put all the pieces together"
@@ -84,15 +85,15 @@ def main(args):
     logging.info(args)
 
     engine_prm = {}
-    if args.arch == 'ModelD':               # Mattia
-        args.arch = 'CALChamfer'            # Mattia
+    if args.arch == 'ModelD':
+        args.arch = 'CALChamfer'
 
     if args.arch == 'MCN':
         args.dataset = 'UntrimmedMCN'
     elif args.arch == 'SMCN':
         args.dataset = 'UntrimmedSMCN'
     elif args.arch == 'CALChamfer':
-        args.dataset = 'UntrimmedCALChamfer'               # Mattia
+        args.dataset = 'UntrimmedCALChamfer'
     else:
         ValueError('Unknown/unsupported architecture')
 
@@ -120,14 +121,14 @@ def main(args):
         visual_hidden=args.visual_hidden,
         lang_hidden=args.lang_hidden,
         visual_layers=args.visual_layers,
-        bi_lstm=args.bi_lstm, 
+        bi_lstm=args.bi_lstm,
         lang_dropout=args.lang_dropout
     )
 
-    if args.snapshot_tef_only is not None:  # Mattia
-        args.arch = 'LateFusion'            # Mattia
+    if args.snapshot_tef_only is not None:
+        args.arch = 'LateFusion'
     net = model.__dict__[args.arch](**arch_setup)
-    snapshot_ = setup_snapshot_(args.snapshot, args.snapshot_tef_only)  # Mattia
+    snapshot_ = setup_snapshot_(args.snapshot, args.snapshot_tef_only)
     net.load_state_dict(snapshot_['state_dict'])
     net.eval()
 
@@ -145,18 +146,15 @@ def main(args):
     num_instances_retrieved = []
     judge = CorpusVideoMomentRetrievalEval(topk=args.topk)
     args.n_display = max(int(args.n_display * len(dataset.metadata)), 1)
-    try:
-        for it, query_metadata in tqdm(enumerate(dataset.metadata),          ##### TRICK TO REMOVE
-                                    disable=args.disable_tqdm):
-            vid_indices, segments = engine.query(
-                query_metadata['language_input'], description_ind=it)
-            judge.add_single_predicted_moment_info(
-                query_metadata, vid_indices, segments, max_rank=engine.num_moments)
-            num_instances_retrieved.append(len(vid_indices))
-            if args.disable_tqdm and (it + 1) % args.n_display == 0:
-                logging.info(f'Processed queries [{it}/{len(dataset.metadata)}]')
-    except:
-        pass
+    for it, query_metadata in tqdm(enumerate(dataset.metadata),
+                                disable=args.disable_tqdm):
+        vid_indices, segments = engine.query(
+            query_metadata['language_input'], description_ind=it)
+        judge.add_single_predicted_moment_info(
+            query_metadata, vid_indices, segments, max_rank=engine.num_moments)
+        num_instances_retrieved.append(len(vid_indices))
+        if args.disable_tqdm and (it + 1) % args.n_display == 0:
+            logging.info(f'Processed queries [{it}/{len(dataset.metadata)}]')
 
     logging.info('Summarizing results')
     num_instances_retrieved = np.array(num_instances_retrieved)
@@ -204,6 +202,22 @@ def load_hyperparameters(args):
             setattr(args, key, value)
         else:
             logging.debug(f'Ignored hyperparam: {key}')
+
+
+def setup_snapshot_(snapshot, snapshot_tef_only):
+    # Trick to setups snapshot when multiple are provided
+    filename = snapshot.with_suffix('.pth.tar')
+    snapshot_ = torch.load(filename,
+                map_location=lambda storage, loc: storage)
+
+    if snapshot_tef_only is not None:
+        snapshot_={'state_dict': [snapshot_]}
+        filename = snapshot_tef_only.with_suffix('.pth.tar')
+        snap_tef = torch.load(filename,
+                        map_location=lambda storage, loc: storage)
+        snapshot_['state_dict'].append(snap_tef)
+
+    return snapshot_
 
 
 if __name__ == '__main__':

@@ -69,6 +69,103 @@ class CorpusVideoMomentRetrievalBase():
         raise NotImplementedError('Subclass and implement your indexing')
 
 
+class ClipRetrieval(CorpusVideoMomentRetrievalBase):
+    "Retrieve clips that aligns well with a particular lang query"
+
+    def __init__(self, *args, **kwargs):
+        super(ClipRetrieval, self).__init__(*args, **kwargs)
+        self.clip2video_ind = None
+        self.clip2proposal_ind = None
+        self.clip_tables = None
+        self.num_clips = None
+        if not self.dataset.decomposable:
+            raise ValueError('Dataset represenation does not admit '
+                             'clip-based retrieval')
+
+    def indexing(self):
+        "Create database of moments in videos"
+        torch.set_grad_enabled(False)
+        num_entries_per_video = []
+        all_proposals = []
+        clip2video_ind = []
+        clip2proposal_ind = {}
+        codes = {key: [] for key in self.models}
+        sample_key = list(self.models.keys())[0]
+        proposal_runner, clip_runner = 0, 0
+        # TODO (tier-2;design): define method in dataset to do this?
+        # batchify the fwd-pass
+        for video_ind, video_id in enumerate(self.dataset.videos):
+            proposals_ = self.dataset.video_proposals(video_ind)
+            representation_dict = self.dataset.video_clip_representation(
+                video_ind)
+            num_clips_i = representation_dict[sample_key].shape[0]
+            num_entries_per_video.append(num_clips_i)
+            clip2video_ind.extend([video_ind] * num_clips_i)
+
+            # Map clips to proposals
+            for clip_ind in range(num_clips_i):
+                clip_center_s = dataset.clip_length * (clip_ind + 0.5)
+                clip_ge_start = clip_center_s >= proposals_[:, 0]
+                clip_le_end = clip_center_s <= proposals_[:, 1]
+                clip_in_proposal = clip_ge_start & clip_le_end
+                proposal_inds = (
+                    clip_in_proposal.nonzero()[0] + proposal_runner).tolist()
+
+                clip_id = clip_ind + clip_runner
+                clip2proposal_ind[clip_id] = proposal_inds
+            proposal_runner += len(proposals_)
+            clip_runner += num_clips_i
+
+            # torchify
+            for key, value in representation_dict.items():
+                representation_dict[key] = torch.from_numpy(value)
+            proposals = torch.from_numpy(proposals_)
+
+            # Append items to database
+            all_proposals.append(proposals)
+            for key in self.dataset.cues:
+                clip_rep_k = representation_dict[key].unsqueeze_(0)
+                # get codes of the clips -> C_i x D matrix
+                # Given a video i with C_i clips, we encode all the clips
+                # through the visual encoder
+                code_k = self.models[key].visual_encoder(
+                    clip_rep_k).squeeze_()
+                codes[key].append(code_k)
+        # Form the C x D matrix
+        # M := number of videos, C = \sum_{i=1}^M C_i
+        # We have as many tables as visual cues
+        self.moments_tables = {key: torch.cat(value)
+                               for key, value in codes.items()}
+        # TODO (tier-2; design): organize this better
+        self.num_videos = dataset.num_videos
+        self.entries_per_video = torch.tensor(num_entries_per_video)
+        self.num_clips = self.entries_per_video.sum().item()
+        self.proposals = torch.cat(all_proposals)
+        self.num_moments = int(self.proposals.shape[0])
+        video_indices = np.repeat(np.arange(0, dataset.num_videos),
+                                  num_entries_per_video)
+        self.video_indices = torch.from_numpy(video_indices)
+        self.clip2video_ind = clip2video_ind
+        self.clip2proposal_ind = clip2proposal_ind
+
+    def query(self, description):
+        "Search clips based on a text description given as list of words"
+        descending_k = False
+        torch.set_grad_enabled(False)
+        lang_feature, len_query = self.preprocess_description(description)
+        score_list, descending_list = [], []
+        for key, model_k in self.models.items():
+            lang_code = model_k.encode_query(lang_feature, len_query)
+            scores_k = (lang_code - self.moments_tables[key]).pow(2).sum(
+                dim=-1)
+            score_list.append(scores_k * self.alpha[key])
+            descending_list.append(descending_k)
+        scores = sum(score_list)
+        # assert np.unique(descending_list).shape[0] == 1
+        scores, sorted_clip_indices = scores.sort(descending=descending_k)
+        return self.video_indices[sorted_clip_indices], sorted_clip_indices
+
+
 class DummyMomentRetrievalFromProposalsTable(CorpusVideoMomentRetrievalBase):
     """Setup moments table
     """
@@ -690,7 +787,7 @@ if __name__ == '__main__':
     dataset_setup = dict(
         json_file=f'{charades_data}/test-01.json',
         cues={'rgb': {'file': f'{charades_data}/resnet152_rgb_max_cl-3.h5'}},
-        loc=True,
+        loc=0,
         context=True,
         debug=True,
         eval=True,
@@ -710,8 +807,8 @@ if __name__ == '__main__':
         lang_hidden=1000,
         visual_layers=1
     )
-    model = {'rgb': MCN(**arch_setup)}
-    engine = MomentRetrievalFromProposalsTable(dataset, model)
+    models_dict = {'rgb': MCN(**arch_setup)}
+    engine = MomentRetrievalFromProposalsTable(dataset, models_dict)
     engine.indexing()
     ind = np.random.randint(0, len(dataset))
     engine.query(dataset.metadata[ind]['language_input'])
@@ -749,3 +846,11 @@ if __name__ == '__main__':
     ind = np.random.randint(0, len(dataset))
     engine.query(dataset.metadata[ind]['language_input'], ind)
     os.remove(h5_1ststage)
+
+    # unit-test ClipRetrieval
+    dataset = UntrimmedSMCN(**dataset_setup)
+    models_dict['rgb'] = SMCN(**arch_setup)
+    engine = ClipRetrieval(dataset, models_dict)
+    engine.indexing()
+    ind = np.random.randint(0, len(dataset))
+    engine.query(dataset.metadata[ind]['language_input'])

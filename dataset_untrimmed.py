@@ -293,11 +293,17 @@ class UntrimmedBasedMCNStyle(UntrimmedBase):
 
     def video_item(self, idx):
         "Return visual description of all possible moments in a given video"
-        assert idx < self.num_videos
         video_id = self.videos[idx]
         pos_visual_feature, segments = self._compute_visual_feature_eval(
             video_id)
         return pos_visual_feature, segments
+
+    def video_proposals(self, idx):
+        "Return proposals (candidate moments) for a given video"
+        video_id = self.videos[idx]
+        metadata = self.metadata_per_video[video_id]
+        proposals = self.proposals_interface(video_id, metadata)
+        return proposals
 
     def _compute_language_feature(self, query):
         "Get language representation of words in query"
@@ -669,6 +675,21 @@ class UntrimmedSMCN(UntrimmedBasedMCNStyle):
         if decomposable_time_features:
             return True
         return False
+
+    def video_clip_representation(self, idx):
+        "Return clip-based features of a given video as dict of numpy array"
+        video_id = self.videos[idx]
+        video_duration = self._video_duration(video_id)
+        num_clips = self._video_num_clips(video_id)
+        feature_collection = {}
+        for key, feat_db in self.features.items():
+            feature_video = feat_db[video_id]
+            moment_feat_k, _ = self.visual_interface(
+                feature_video, [0, video_duration], self.clip_length,
+                num_clips)
+            feature_collection[key] = moment_feat_k.astype(
+                np.float32, copy=False)
+        return feature_collection
 
     def _compute_visual_feature(self, video_id, moment_loc):
         """Return visual features plus TEF for a given segment in the video

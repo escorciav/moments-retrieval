@@ -26,14 +26,17 @@ parser.add_argument('--h5-path', type=Path, default='non-existent',
                     help='HDF5-file with features')
 # Architecture
 parser.add_argument('--corpus-setup',
-                    choices=['LoopOverKMoments', 'LoopOverKVideos'],
+                    choices=['LoopOverKMoments', 'LoopOverKVideos',
+                             'TwoStageClipPlusGeneric'],
                     default='LoopOverKMoments',
                     help='Kind of two-stage retrieval approach')
 parser.add_argument('--snapshot', type=Path, required=True, nargs='+',
                     help=('JSON-file of model. Only pass two models for '
                           'LateFusion of Chamfer and only-TEF.'))
-parser.add_argument('--h5-1ststage', type=Path, required=True,
+parser.add_argument('--h5-1ststage', type=Path,
                     help='HDF5-file of 1st stage results')
+parser.add_argument('--snapshot-1ststage', type=Path,
+                    help='JSON-file of model')
 parser.add_argument('--k-first', type=int, required=True,
                     help='K first retrieved resuslts')
 parser.add_argument('--all', action='store_true',
@@ -68,7 +71,7 @@ def main(args):
     if args.dump:
         args.disable_tqdm = True
         if len(args.logfile.name) == 0:
-            basename = args.snapshot.with_suffix('')
+            basename = args.snapshot[0].with_suffix('')
             args.logfile = basename.parent.joinpath(
                 args.output_prefix, basename.stem + '_corpus-2nd-eval')
             if not args.logfile.parent.exists():
@@ -91,11 +94,6 @@ def main(args):
         args.dataset = 'UntrimmedCALChamfer'
     else:
         ValueError('Unknown/unsupported architecture')
-
-    engine_prm = {}
-    chamfer_active = args.arch == 'CALChamfer' or args.arch == 'LateFusion'
-    if chamfer_active and args.corpus_setup == 'LoopOverKVideos':
-        engine_prm['repeat_lang'] = True
 
     logging.info('Loading dataset')
     if args.h5_path.exists():
@@ -131,13 +129,7 @@ def main(args):
     net.eval()
 
     logging.info('Setting up engine')
-    if args.all:
-        if args.corpus_setup != args.corpus_setup == 'LoopOverKVideos':
-            logging.error('Ignoring --all parameter')
-        args.k_first = dataset.num_videos
-    engine = corpus.__dict__[args.corpus_setup](
-        dataset, net, args.h5_1ststage, topk=args.k_first,
-        nms_threshold=args.nms_threshold, **engine_prm)
+    engine = setup_engine(args, dataset, net)
 
     logging.info('Launch evaluation...')
     # log-scale up to the end of the database
@@ -201,6 +193,8 @@ def load_hyperparameters(args):
         # TODO: clean this hacks by updating all the JSON (after deadline)
         if 'bi_lstm' not in hyper_prm:
             hyper_prm['bi_lstm'] = False
+        if 'lang_dropout' not in hyper_prm:
+            hyper_prm['lang_dropout'] = 0.0
         if hyper_prm['arch'] == 'ModelD':
             hyper_prm['arch'] = 'CALChamfer'
 
@@ -213,6 +207,61 @@ def load_hyperparameters(args):
     # TODO: is there a clean way to do this?
     if len(args.snapshot) == 2:
         args.arch = 'LateFusion'
+
+
+def setup_engine(args, dataset, net):
+    "Setup engine and deal with yet another dataset setup if any"
+    if args.all:
+        if args.corpus_setup != args.corpus_setup == 'LoopOverKVideos':
+            logging.error('Ignoring --all parameter')
+        args.k_first = dataset.num_videos
+
+    engine_prm = {}
+    if args.snapshot_1ststage is not None:
+        with open(args.snapshot_1ststage, 'r') as fid:
+            hyper_prm_1ststage = json.load(fid)
+        # We use the same visual representation among stages to not complicate
+        # things, but it's not a requirement
+        dataset_cues = {
+            hyper_prm_1ststage['feat']: {'file': args.h5_1ststage}
+        }
+        dataset_setup = dict(
+            loc=hyper_prm_1ststage['loc'],
+            context=hyper_prm_1ststage['context'],
+            cues=dataset_cues,
+            debug=args.debug,
+            json_file=args.test_list,
+            proposals_interface=dataset.proposals_interface
+        )
+        # Hard-code UntrimmedSMCN and SMCN as they are the only clip-based
+        # representation so far :)
+        dataset_1ststage = dataset_untrimmed.UntrimmedSMCN(**dataset_setup)
+        model_setup = dict(
+            visual_size=dataset_1ststage.visual_size[args.feat],
+            lang_size=dataset_1ststage.language_size,
+            max_length=dataset_1ststage.max_words,
+            embedding_size=hyper_prm_1ststage['embedding_size'],
+            visual_hidden=hyper_prm_1ststage['visual_hidden'],
+            lang_hidden=hyper_prm_1ststage['lang_hidden'],
+            visual_layers=hyper_prm_1ststage['visual_layers'],
+        )
+        model_1ststage = model.SMCN(**model_setup)
+        model_1ststage.eval()
+        engine_prm['dataset_1stage'] = dataset_1ststage
+        engine_prm['model_1ststage'] = [model_1ststage]
+    else:
+        engine_prm['h5_1ststage'] = args.h5_1ststage
+
+    chamfer_active = args.arch == 'CALChamfer' or args.arch == 'LateFusion'
+    if chamfer_active and args.corpus_setup == 'LoopOverKVideos':
+        engine_prm['repeat_lang'] = True
+
+    if args.corpus_setup == 'LoopOverKVideos':
+        engine_prm['nms_threshold'] = args.nms_threshold
+    engine_prm['topk'] = args.k_first
+
+    engine = corpus.__dict__[args.corpus_setup](dataset, net, **engine_prm)
+    return engine
 
 
 def setup_snapshot(filenames):

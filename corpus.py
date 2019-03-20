@@ -92,6 +92,7 @@ class ClipRetrieval(CorpusVideoMomentRetrievalBase):
         codes = {key: [] for key in self.models}
         sample_key = list(self.models.keys())[0]
         proposal_runner, clip_runner = 0, 0
+        clip_length = self.dataset.clip_length
         # TODO (tier-2;design): define method in dataset to do this?
         # batchify the fwd-pass
         for video_ind, video_id in enumerate(self.dataset.videos):
@@ -104,7 +105,7 @@ class ClipRetrieval(CorpusVideoMomentRetrievalBase):
 
             # Map clips to proposals
             for clip_ind in range(num_clips_i):
-                clip_center_s = dataset.clip_length * (clip_ind + 0.5)
+                clip_center_s = clip_length * (clip_ind + 0.5)
                 clip_ge_start = clip_center_s >= proposals_[:, 0]
                 clip_le_end = clip_center_s <= proposals_[:, 1]
                 clip_in_proposal = clip_ge_start & clip_le_end
@@ -137,12 +138,12 @@ class ClipRetrieval(CorpusVideoMomentRetrievalBase):
         self.moments_tables = {key: torch.cat(value)
                                for key, value in codes.items()}
         # TODO (tier-2; design): organize this better
-        self.num_videos = dataset.num_videos
+        self.num_videos = self.dataset.num_videos
         self.entries_per_video = torch.tensor(num_entries_per_video)
         self.num_clips = self.entries_per_video.sum().item()
         self.proposals = torch.cat(all_proposals)
         self.num_moments = int(self.proposals.shape[0])
-        video_indices = np.repeat(np.arange(0, dataset.num_videos),
+        video_indices = np.repeat(np.arange(0, self.dataset.num_videos),
                                   num_entries_per_video)
         self.video_indices = torch.from_numpy(video_indices)
         self.clip2video_ind = clip2video_ind
@@ -772,6 +773,94 @@ class GreedyMomentRetrievalFromClipBasedProposalsTable(
             # return self.video_indices[ind], self.proposals[ind, :], ind
             raise NotImplementedError('WIP')
         return video_indices[ind_moments], proposals[ind_moments, :]
+
+
+class TwoStageClipPlusGeneric():
+    "Two-Stage approach to retrieve moments from natural lang queries"
+
+    def __init__(self, dataset, model, dataset_1stage, model_1ststage,
+                 topk=100):
+        self.dataset = dataset
+        self.model = model
+        model_dict_1ststage = {
+            key: model_1ststage[i]
+            for i, key in enumerate(dataset_1stage.cues)
+        }
+        self.stage1 = ClipRetrieval(dataset_1stage, model_dict_1ststage)
+        self.topk = topk
+        self._setup()
+
+    @property
+    def num_moments(self):
+        return self.stage1.proposals.shape[0]
+
+    def query(self, description, *args, **kwargs):
+        "Return videos and moments aligned with a text description"
+        # TODO (tier-2): remove 2nd-stage results from 1st-stage to make them
+        # exhaustive
+        torch.set_grad_enabled(False)
+        lang_feature, len_query = preprocess_description(
+            self.dataset, description)
+        visited_proposals = {}
+
+        # 1st-stage
+        video_indices_1ststage, clip_indices = self.stage1.query(description)
+
+        # 2nd-stage
+        scores, video_indices, proposal_indices = [], [], []
+        for i in range(self.topk):
+            video_ind_i = video_indices_1ststage[i]
+            video_id = self.dataset.videos[video_ind_i]
+            moments_in_video_i = 0
+            for j in self.stage1.clip2proposal_ind[clip_indices[i].item()]:
+                if (i, j) in visited_proposals:
+                    continue
+                visited_proposals[(i, j)] = None
+
+                # Grab features for 2nd-stage
+                candidates_i_feat = self.dataset._compute_visual_feature(
+                    video_id, self.stage1.proposals[j, :].numpy())
+                for k, v in candidates_i_feat.items():
+                    if isinstance(v, np.ndarray):
+                        candidates_i_feat[k] = v[None, :]
+                proposals_i = self.stage1.proposals[i, :].unsqueeze_(dim=0)
+                # torchify
+                candidates_i_feat = {k: torch.from_numpy(v)
+                                    for k, v in candidates_i_feat.items()}
+                if isinstance(proposals_i, np.ndarray):
+                    proposals_i = torch.from_numpy(proposals_i)
+
+                # Run 2nd-stage
+                scores_i, descending_i = self.model.predict(
+                    lang_feature, len_query, candidates_i_feat)
+
+                scores.append(scores_i)
+                moments_in_video_i += 1
+                proposal_indices.append(j)
+            video_indices.append(video_ind_i.repeat(moments_in_video_i))
+
+        scores = torch.cat(scores)
+        scores, ind = scores.sort(descending=descending_i)
+        video_indices = torch.cat(video_indices)
+        retrieved_proposals = self.stage1.proposals[proposal_indices, :]
+        return video_indices, retrieved_proposals
+
+    def _setup(self):
+        self.stage1.indexing()
+
+
+def preprocess_description(dataset, description):
+    "Return tensor representing description as 1) vectors and 2) length"
+    # TODO (release): allow to tokenize description
+    assert isinstance(description, list)
+    lang_feature_, len_query_ = dataset._compute_language_feature(
+        description)
+
+    # torchify
+    lang_feature = torch.from_numpy(lang_feature_)
+    lang_feature.unsqueeze_(0)
+    len_query = torch.tensor([len_query_])
+    return lang_feature, len_query
 
 
 if __name__ == '__main__':

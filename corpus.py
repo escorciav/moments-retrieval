@@ -808,7 +808,8 @@ class TwoStageClipPlusGeneric():
 
         # 2nd-stage
         scores, video_indices, proposal_indices = [], [], []
-        for i in range(self.topk):
+        num_proposals = 0
+        for i in range(len(clip_indices)):
             video_ind_i = video_indices_1ststage[i]
             video_id = self.dataset.videos[video_ind_i]
             moments_in_video_i = 0
@@ -838,6 +839,9 @@ class TwoStageClipPlusGeneric():
                 moments_in_video_i += 1
                 proposal_indices.append(j)
             video_indices.append(video_ind_i.repeat(moments_in_video_i))
+            num_proposals += moments_in_video_i
+            if num_proposals == self.topk:
+                break
 
         scores = torch.cat(scores)
         scores, ind = scores.sort(descending=descending_i)

@@ -74,7 +74,6 @@ class ClipRetrieval(CorpusVideoMomentRetrievalBase):
 
     def __init__(self, *args, **kwargs):
         super(ClipRetrieval, self).__init__(*args, **kwargs)
-        self.clip2video_ind = None
         self.clip2proposal_ind = None
         self.clip_tables = None
         self.num_clips = None
@@ -87,7 +86,6 @@ class ClipRetrieval(CorpusVideoMomentRetrievalBase):
         torch.set_grad_enabled(False)
         num_entries_per_video = []
         all_proposals = []
-        clip2video_ind = []
         clip2proposal_ind = {}
         codes = {key: [] for key in self.models}
         sample_key = list(self.models.keys())[0]
@@ -101,7 +99,6 @@ class ClipRetrieval(CorpusVideoMomentRetrievalBase):
                 video_ind)
             num_clips_i = representation_dict[sample_key].shape[0]
             num_entries_per_video.append(num_clips_i)
-            clip2video_ind.extend([video_ind] * num_clips_i)
 
             # Map clips to proposals
             for clip_ind in range(num_clips_i):
@@ -146,7 +143,6 @@ class ClipRetrieval(CorpusVideoMomentRetrievalBase):
         video_indices = np.repeat(np.arange(0, self.dataset.num_videos),
                                   num_entries_per_video)
         self.video_indices = torch.from_numpy(video_indices)
-        self.clip2video_ind = clip2video_ind
         self.clip2proposal_ind = clip2proposal_ind
 
     def query(self, description):
@@ -801,7 +797,7 @@ class TwoStageClipPlusGeneric():
         torch.set_grad_enabled(False)
         lang_feature, len_query = preprocess_description(
             self.dataset, description)
-        visited_proposals = {}
+        visited_proposals = set()
 
         # 1st-stage
         video_indices_1ststage, clip_indices = self.stage1.query(description)
@@ -814,28 +810,22 @@ class TwoStageClipPlusGeneric():
             video_id = self.dataset.videos[video_ind_i]
             moments_in_video_i = 0
             for j in self.stage1.clip2proposal_ind[clip_indices[i].item()]:
-                if (i, j) in visited_proposals:
+                if j in visited_proposals:
                     continue
-                visited_proposals[(i, j)] = None
+                visited_proposals.add(j)
 
-                # Grab features for 2nd-stage
-                candidates_i_feat = self.dataset._compute_visual_feature(
+                # Grab features for 2nd-stage.
+                # Make articifical batch and torchify.
+                candidates_ij_feat = self.dataset._compute_visual_feature(
                     video_id, self.stage1.proposals[j, :].numpy())
                 for k, v in candidates_i_feat.items():
-                    if isinstance(v, np.ndarray):
-                        candidates_i_feat[k] = v[None, :]
-                proposals_i = self.stage1.proposals[i, :].unsqueeze_(dim=0)
-                # torchify
-                candidates_i_feat = {k: torch.from_numpy(v)
-                                    for k, v in candidates_i_feat.items()}
-                if isinstance(proposals_i, np.ndarray):
-                    proposals_i = torch.from_numpy(proposals_i)
+                    candidates_ij_feat[k] = torch.from_numpy(v[None, :])
 
                 # Run 2nd-stage
-                scores_i, descending_i = self.model.predict(
-                    lang_feature, len_query, candidates_i_feat)
+                scores_ij, descending_i = self.model.predict(
+                    lang_feature, len_query, candidates_ij_feat)
 
-                scores.append(scores_i)
+                scores.append(scores_ij)
                 moments_in_video_i += 1
                 proposal_indices.append(j)
             if moments_in_video_i > 0:

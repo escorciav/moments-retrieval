@@ -841,7 +841,7 @@ class TwoStageClipPlusGeneric():
             if moments_in_video_i > 0:
             video_indices.append(video_ind_i.repeat(moments_in_video_i))
             num_proposals += moments_in_video_i
-            if num_proposals == self.topk:
+            if num_proposals >= self.topk:
                 break
 
         scores = torch.cat(scores)

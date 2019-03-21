@@ -838,6 +838,7 @@ class TwoStageClipPlusGeneric():
                 scores.append(scores_i)
                 moments_in_video_i += 1
                 proposal_indices.append(j)
+            if moments_in_video_i > 0:
             video_indices.append(video_ind_i.repeat(moments_in_video_i))
             num_proposals += moments_in_video_i
             if num_proposals == self.topk:

@@ -818,7 +818,7 @@ class TwoStageClipPlusGeneric():
                 # Make articifical batch and torchify.
                 candidates_ij_feat = self.dataset._compute_visual_feature(
                     video_id, self.stage1.proposals[j, :].numpy())
-                for k, v in candidates_i_feat.items():
+                for k, v in candidates_ij_feat.items():
                     candidates_ij_feat[k] = torch.from_numpy(v[None, :])
 
                 # Run 2nd-stage

@@ -246,6 +246,9 @@ def setup_engine(args, dataset, net):
             visual_layers=hyper_prm_1ststage['visual_layers'],
         )
         model_1ststage = model.SMCN(**model_setup)
+        snapshot = torch.load(args.snapshot_1ststage.with_suffix('.pth.tar'),
+                              map_location=lambda storage, loc: storage)
+        model_1ststage.load_state_dict(snapshot['state_dict'])
         model_1ststage.eval()
         engine_prm['dataset_1stage'] = dataset_1ststage
         engine_prm['model_1ststage'] = [model_1ststage]

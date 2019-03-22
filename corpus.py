@@ -838,7 +838,7 @@ class TwoStageClipPlusGeneric():
         scores, ind = scores.sort(descending=descending_i)
         video_indices = torch.cat(video_indices)
         retrieved_proposals = self.stage1.proposals[proposal_indices, :]
-        return video_indices, retrieved_proposals
+        return video_indices[ind], retrieved_proposals[ind, :]
 
     def _setup(self):
         self.stage1.indexing()

@@ -6,6 +6,7 @@ from pathlib import Path
 
 import h5py
 import numpy as np
+import pandas as pd
 import torch
 from tqdm import tqdm
 
@@ -54,6 +55,8 @@ parser.add_argument('--disable-tqdm', action='store_true',
                     help='Disable progress-bar')
 parser.add_argument('--dump-per-instance-results', action='store_true',
                     help='HDF5 with results')
+parser.add_argument('--reduced-dump', action='store_true',
+                    help='Only dump video indices per query')
 parser.add_argument('--enable-tb', action='store_true',
                     help='Log to tensorboard. Nothing logged by this program')
 # Debug
@@ -171,20 +174,36 @@ def main(args):
             logging.info(f'Processed queries [{it}/{len(dataset.metadata)}]')
 
         if args.dump_per_instance_results:
+            # TODO: wrap-up this inside a class. We could even dump in a
+            # non-blocking thread using a Queue
             if it == 0:
                 filename = args.logfile.with_suffix('.h5')
                 fid = h5py.File(filename, 'x')
-                fid.create_dataset(
-                    name='proposals', data=engine.proposals, chunks=True)
-                fid_vi = fid.create_dataset(
-                    name='vid_indices', chunks=True,
-                    shape=(len(dataset),) + vid_indices.shape, dtype='int64')
-                fid_pi = fid.create_dataset(
-                    name='proposals_ind', chunks=True,
-                    shape=(len(dataset),) + proposals_ind.shape, dtype='int64')
+                if args.reduced_dump:
+                    fid_vi = fid.create_dataset(
+                        name='vid_indices',
+                        chunks=True,
+                        shape=(len(dataset), dataset.num_videos),
+                        dtype='int64')
+                else:
+                    fid.create_dataset(
+                        name='proposals', data=engine.proposals, chunks=True)
+                    fid_vi = fid.create_dataset(
+                        name='vid_indices',
+                        chunks=True,
+                        shape=(len(dataset),) + vid_indices.shape,
+                        dtype='int64')
+                    fid_pi = fid.create_dataset(
+                        name='proposals_ind',
+                        chunks=True,
+                        shape=(len(dataset),) + proposals_ind.shape,
+                        dtype='int64')
 
-            fid_vi[it, ...] = vid_indices
-            fid_pi[it, ...] = proposals_ind
+            if args.reduced_dump:
+                fid_vi[it, ...] = pd.unique(vid_indices.numpy())
+            else:
+                fid_vi[it, ...] = vid_indices
+                fid_pi[it, ...] = proposals_ind
 
     if args.dump_per_instance_results:
         fid.close()

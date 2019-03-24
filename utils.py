@@ -4,6 +4,7 @@ import logging
 import random
 import subprocess
 import time
+from pathlib import Path
 
 import h5py
 import numpy as np
@@ -13,6 +14,8 @@ import yaml
 from tensorboardX import SummaryWriter
 from torch.utils.data.sampler import Sampler
 from torch.utils.data.dataloader import default_collate
+
+PATH_VARS = {'h5_path_nis', 'test_list', 'val_list', 'train_list'}
 
 
 def collate_data(batch):
@@ -115,7 +118,7 @@ def dump_tensors_as_hdf5(filename, tensors_as_dict_values):
             fid.create_dataset(name=key, data=value.numpy())
 
 
-def load_args_from_snapshot(args):
+def load_args_from_snapshot(args, path_vars=PATH_VARS):
     "Update arguments with those from snapshot JSON"
     if not args.snapshot.exists():
         return False
@@ -126,6 +129,9 @@ def load_args_from_snapshot(args):
     with open(args.snapshot, 'r') as fid:
         hyper_prm = json.load(fid)
     for key, value in hyper_prm.items():
+        # PR welcome if you know a more elegant way to do this
+        if key in path_vars:
+            value = Path(value)
         setattr(args, key, value)
     args.snapshot, args.logfile = snapshot, logfile
     return True

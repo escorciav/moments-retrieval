@@ -40,16 +40,16 @@ parser = argparse.ArgumentParser(
     formatter_class=argparse.ArgumentDefaultsHelpFormatter
 )
 # Data
-parser.add_argument('--train-list', type=Path, default='non-existent',
+parser.add_argument('--train-list', type=Path, default=Path('non-existent'),
                     help='JSON-file with training instances')
-parser.add_argument('--val-list', type=Path, default='non-existent',
+parser.add_argument('--val-list', type=Path, default=Path('non-existent'),
                     help='JSON-file with validation instances')
-parser.add_argument('--test-list', type=Path, default='non-existent',
+parser.add_argument('--test-list', type=Path, default=Path('non-existent'),
                     help='JSON-file with testing instances')
 # Architecture
 parser.add_argument('--arch', choices=model.MOMENT_RETRIEVAL_MODELS,
                     default='MCN', help='model architecture')
-parser.add_argument('--snapshot', type=Path, default='',
+parser.add_argument('--snapshot', type=Path, default=Path(''),
                     help=('JSON with hyper-parameters. It also expects  a '
                           '.pth.tar file in the same directory to load the'
                           'model parameters. Those are placed into a '
@@ -182,7 +182,8 @@ parser.add_argument('--save-on-epoch', type=int, default=-1,
 parser.add_argument('--force-eval-end', action='store_true',
                     help='Force eval at the end of training')
 # Logging
-parser.add_argument('--logfile', type=Path, default='', help='Logging file')
+parser.add_argument('--logfile', type=Path, default=Path(''),
+                    help='Logging file')
 parser.add_argument('--n-display', type=float, default=0.1,
                     help='logging rate during epoch')
 parser.add_argument('--enable-tb', action='store_true',
@@ -251,8 +252,8 @@ def main(args):
         args.logfile = args.snapshot.with_suffix('')
         args.logfile = args.logfile.with_name(args.logfile.stem + '_eval')
         rst, per_sample_rst = evaluate(args, net, test_loader)
-        dumping_arguments(args, val_performance=rst,
-                          perf_per_sample_val=per_sample_rst)
+        dumping_arguments(args, test_performance=rst,
+                          perf_per_sample_test=per_sample_rst)
         return
 
     lr_schedule = torch.optim.lr_scheduler.StepLR(
@@ -470,11 +471,19 @@ def setup_dataset(args):
 
     # Make sure test_list doesn't cheating
     search_for = 'test'
+    risk_of_cheating = (not args.evaluate and
+                        search_for in args.test_list.name and
+                        args.eval_on_epoch > 0)
     if 'activitynet' in args.test_list.name:
         search_for = 'val.json'
-    if (not args.evaluate and search_for in args.test_list.name and
-        args.eval_on_epoch > 0):
+    if risk_of_cheating:
         raise ValueError('Risk of cheating. Please read prolog.')
+
+    # Save loading time in case [train, val]-list exits
+    if args.evaluate:
+        logging.info('Overriding [train, val]-list to save time :)')
+        args.train_list = Path('non-existent')
+        args.val_list = Path('non-existent')
 
     subset_files = [('train', args.train_list), ('val', args.val_list),
                     ('test', args.test_list)]

@@ -236,14 +236,9 @@ class UntrimmedBasedMCNStyle(UntrimmedBase):
         self.proposals_interface = proposals_interface
         self._ground_truth_rate = ground_truth_rate
         self._prob_neg_proposal_next_to = prob_nproposal_nextto
-        # negative importance sampling
         self.h5_nis = h5_nis
         self.nis_k = nis_k
-        self._query2vid_ind = None
-        self._query2proposal_ind = None
-        self._all_proposals = None
-        if h5_nis is not None and nis_k is None:
-            raise ValueError('Provide an integer value for nis_k')
+        self._prob_querytovideo = None
         # clean this, glove of original MCN is really slow, it kills fast
         # iteration during debugging :) (yes, I could cache but dahh)
         self.lang_interface = FakeLanguageRepresentation(
@@ -261,8 +256,7 @@ class UntrimmedBasedMCNStyle(UntrimmedBase):
                     'Please provide the clip length (seconds) as this is a'
                     'property grabbed from the HDF5. Missing in this case.')
             self.clip_length = clip_length
-        if h5_nis is not None:
-            self._setup_neg_importance_sampling()
+        self._setup_neg_importance_sampling()
 
     @property
     def decomposable(self):
@@ -371,32 +365,6 @@ class UntrimmedBasedMCNStyle(UntrimmedBase):
         "Sample another moment inside the video"
         moment_i = self.metadata[idx]
         video_id = moment_i['video']
-
-        # Try negative importance sampling from corpus results if possible
-        # or fallback into default mode.
-        # This is bunch of indexing stuff and checks. The strategy is to pick
-        # proposal/candidate retrieved within the top-k that is inside the
-        # same video of the moment. We need to ensure that the overlap btw
-        # the moment and the proposal is low enough such that the candidate
-        # can be considered as negative. The magic number 0.5 try to
-        # bring a bit of diversity to the sampling strategy.
-        if self._query2vid_ind is not None and random.random() >= 0.5:
-            metadata = self.metadata_per_video[video_id]
-            pos_vid_ind = self.metadata[idx]['video_index']
-            video_indices = self._query2vid_ind[idx, :]
-            indices_of_pos_indices = (
-                video_indices == pos_vid_ind).nonzero()[0]
-            if len(indices_of_pos_indices) > 0:
-                prop_ind = self._query2proposal_ind[
-                    idx, indices_of_pos_indices]
-                candidates_neg = self._all_proposals[prop_ind, :]
-                iou_matrix = segment_iou(candidates_neg, moment_loc[None, :])
-                indices = (iou_matrix < self.sampling_iou).nonzero()[0]
-                if len(indices) > 0:
-                    ind = indices[random.randint(0, len(indices) - 1)]
-                    sampled_loc = candidates_neg[ind, :]
-                    return self._compute_visual_feature(video_id, sampled_loc)
-
         if random.random() <= self._prob_neg_proposal_next_to:
             sampled_loc = self._proposal_next_to_moment(idx, moment_loc)
         elif self.proposals_interface is None:
@@ -446,43 +414,21 @@ class UntrimmedBasedMCNStyle(UntrimmedBase):
 
     def _negative_inter_sampling(self, idx, moment_loc):
         "Sample another moment from other video as in original MCN paper"
-        default_neg_video_sampling = True
-        moment_i = self.metadata[idx]
-        video_id = moment_i['video']
+        prob_videos = self._prob_querytovideo[idx, :]
+        # tech taming humam: Bug in numpy
+        # https://github.com/numpy/numpy/issues/8317
+        prob_videos = prob_videos.astype(float, copy=False)
+        prob_videos /= prob_videos.sum()
+        neg_video_ind = np.random.multinomial(1, prob_videos).nonzero()[0][0]
+        other_video = self.videos[neg_video_ind]
+        video_id = self.metadata[idx]['video']
 
-        # Try negative importance sampling from corpus results if possible
-        # or fallback into default mode.
-        # This is bunch of indexing stuff and checks. The strategy is to
-        # sample a video different to the one containing the moment and a
-        # particular proposal inside that video. The magic number 0.75 try to
-        # bring a bit of diversity to the sampling strategy.
-        if self._query2vid_ind is not None:
-            pos_vid_ind = self.metadata[idx]['video_index']
-            video_indices = self._query2vid_ind[idx, :]
-            indices_of_other_video_indices = (
-                video_indices != pos_vid_ind).nonzero()[0]
-            if len(indices_of_other_video_indices) > 0:
-                default_neg_video_sampling = False
-                ind = random.randint(
-                    0, len(indices_of_other_video_indices) - 1)
-                other_video = self.videos[video_indices[ind]]
-                prop_ind = self._query2proposal_ind[idx, ind]
-                sampled_loc = self._all_proposals[prop_ind, :]
-
-        if default_neg_video_sampling:
-            other_video = video_id
-            while other_video == video_id:
-                idx = int(random.random() * len(self.metadata))
-                other_video = self.metadata[idx]['video']
-
-        if default_neg_video_sampling or random.random() > 0.75:
-            # MCN-ICCV2017 strategy as close as possible
-            video_duration = self._video_duration(video_id)
-            other_video_duration = self._video_duration(other_video)
-            sampled_loc = moment_loc
-            if other_video_duration < video_duration:
-                sampled_loc = self._random_proposal_sampling(
-                    other_video_duration)
+        # MCN-ICCV2017 strategy as close as possible
+        video_duration = self._video_duration(video_id)
+        other_video_duration = self._video_duration(other_video)
+        sampled_loc = moment_loc
+        if other_video_duration < video_duration:
+            sampled_loc = self._random_proposal_sampling(other_video_duration)
         return self._compute_visual_feature(other_video, sampled_loc)
 
     def _proposal_augmentation(self, moment_loc, video_id):
@@ -537,12 +483,66 @@ class UntrimmedBasedMCNStyle(UntrimmedBase):
 
     def _setup_neg_importance_sampling(self):
         "Define sampling prob for videos and moments"
+        # 1. Init neg sampling to uniform dist
+        num_queries = len(self)
+        num_videos = self.num_videos
+        prob_querytovideoid = np.empty(
+            (num_queries, num_videos), dtype=np.float32)
+        prob_querytovideoid[:None, :] = 1 / num_videos
+        # 1.1 zero-out prob of sampling the same video
+        for query_ind, query_data in enumerate(self.metadata):
+            video_ind = query_data['video_index']
+            prob_querytovideoid[query_ind, video_ind] = 0
+        # 1.2 re-normalize probability
+        prob_querytovideoid /= prob_querytovideoid.sum(axis=1, keepdims=True)
+
+        # TODO: prob_querytomoment
+        # max_num_proposals = None
+        # self._prior_querytomomentid = np.zeros(
+        #     (num_queries, num_videos, max_num_proposals), dtype=np.float32)
+        # raise NotImplementedError('WIP')
+
+        # No importance sampling
+        if self.h5_nis is None:
+            self._prob_querytovideo = prob_querytovideoid
+            return
+
+        # 2. Importance sampling can be casted as updating P(video) based on
+        #   P(query | video).
+        # 2.1 Generate P(query | video) from video ranking from each query
+        #   Here. we will use the a pdf derived from 1 / x i.e. videos
+        #   retrieved first will be sampled often but this will decay rapidly
         with h5py.File(self.h5_nis, 'r') as fid:
             # Num-queries x Num-moments matrix, i-th columns correspond to
             # rank-ith
-            self._query2vid_ind = fid['vid_indices'][:, :self.nis_k]
-            self._query2proposal_ind = fid['proposals_ind'][:, :self.nis_k]
-            self._all_proposals = fid['proposals'][:]
+            ranked_video_indices_per_query = fid['vid_indices'][:]
+        if ranked_video_indices_per_query.shape[1] > self.num_videos:
+            ranked_video_indices_per_query = unique2d_perserve_order(
+                ranked_video_indices_per_query)
+        if self.nis_k:
+            self.nis_k = min(self.nis_k, self.num_videos)
+            ranked_video_indices_per_query = ranked_video_indices_per_query[
+                :, :self.nis_k].reshape(-1)
+            ind = np.repeat(np.arange(num_queries), self.nis_k)
+            prob_query_given_video = np.zeros(
+                (num_queries, num_videos), dtype=np.float32)
+            prob_query_given_video[
+                ind, ranked_video_indices_per_query] = 1 / self.nis_k
+
+        else:
+            rank_prob = 1 / np.arange(1, num_videos + 1, dtype=np.float32)
+            rank_prob /= sum(rank_prob)
+            prob_query_given_video = np.empty(
+                (num_queries, num_videos), dtype=np.float32)
+            # TODO: vectorize this
+            for i in range(num_queries):
+                prob_query_given_video[
+                    i, ranked_video_indices_per_query[i]] = rank_prob
+        # 2.2 Update P(video) with P(video) * P(query | video)
+        #   Shall we wrap this inside a for loop?
+        prob_querytovideoid = prob_query_given_video * prob_querytovideoid
+        prob_querytovideoid /= prob_querytovideoid.sum(axis=1, keepdims=True)
+        self._prob_querytovideo = prob_querytovideoid
 
     def _set_tef_interface(self, loc):
         "Setup interface to get moment location feature"

@@ -1,14 +1,16 @@
 # test
 
-Files used to ensure packing/shipping went well (our dummy ContinousIntegration XD). This could also help us to track changes in the data a.k.a. software 2.0 these days.
+Files used to ensure packing/shipping went well (our dummy ContinousIntegration XD). This could also help us to track changes in the data a.k.a. towards software 2.0.
 
 # didemo
 
-- cba83ad0e4c18de677a5e6c1e274a5d2  didemo/rgb_resnet152_max.h5
-- 093870e4d8c4c311f98e11cec2fc007f  didemo/rgb_resnet152_mean.h5
-- 0b38083c32be4dcbf2671d02d245dcca  didemo/test.json
-- a2a9317c98f94cc638996cc4ee4eb95e  didemo/train.json
-- e9fcb12660724678730c29089ce902bb  didemo/val.json
+- a58ff3f9ff67b5c727d602e7d2a2b236  didemo/resnet152_rgb_max_cl-2.5.h5
+- 78215344f7cedb2e19d35b45e1375774  didemo/resnet152_rgb_max_cl-5.h5
+- 3a0455d9af16b14b2a3b3ee285b62512  didemo/vgg16_rgb_max_cl-2.5.h5
+- 929d7747d4f3b00ddf7b979c19eb5961  didemo/vgg16_rgb_max_cl-5.h5
+- c8712421a837951d74adc8a5a011cb5a  didemo/test-03.json
+- 010d79522f2b496a7d77df877ec465cf  didemo/train-03.json
+- 62ee89251542ca8afee120132f47d4c5  didemo/val-03.json
 - 740f0eb910621394edd65bef486b5d33  didemo/freq_prior.npz
 
 ```

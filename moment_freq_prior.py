@@ -84,10 +84,10 @@ def main(args):
         logging.info(f'{meters_old.report()}')
 
     logging.info('Dumping model and parameters')
-    dumping_arguments_and_model(args, moment_freq_prior)
+    dumping_arguments_and_model(args, moment_freq_prior, meters)
 
 
-def dumping_arguments_and_model(args, model):
+def dumping_arguments_and_model(args, model, meters):
     "Save model and serialized parameters into JSON"
     if len(args.logfile.name) == 0:
         return
@@ -95,12 +95,15 @@ def dumping_arguments_and_model(args, model):
     model.save(file_model)
 
     file_args = args.logfile.with_suffix('.json')
-    if hasattr(args, 'topk_'): delattr(args, 'topk_')
+    if hasattr(args, 'topk_'):
+        delattr(args, 'topk_')
     args.topk = args.topk.tolist()
     args.logfile = str(args.logfile)
     args.train_list = str(args.train_list) if args.train_list.exists() else None
     args.test_list = str(args.test_list) if args.test_list.exists() else None
     args_dict = vars(args)
+    for key, value in meters.dump().items():
+        args_dict[key] = value
     with open(file_args, 'x') as fid:
         json.dump(args_dict, fid, skipkeys=True, indent=1, sort_keys=True)
 

@@ -90,13 +90,10 @@ def dumping_arguments(args, val_performance=None, test_performance=None,
     args.val_list = str(args.val_list) if args.val_list.exists() else None
     args.test_list = str(args.test_list) if args.test_list.exists() else None
     args.snapshot = str(args.snapshot) if args.snapshot.exists() else None
-<<<<<<< HEAD
     args.h5_path_nis = str(args.h5_path_nis) if args.h5_path_nis else None
-=======
     args.train_lang = str(args.train_lang) if args.train_lang.exists() else None
     args.val_lang = str(args.val_lang) if args.val_lang.exists() else None
     args.test_lang = str(args.test_lang) if args.test_lang.exists() else None
->>>>>>> [src] Q&D language interface refactor
     args.device = None
     args.topk = args.topk.tolist()
     args_dict = vars(args)
@@ -157,7 +154,6 @@ def setup_hyperparameters(args):
     args_dview = vars(args)
 
     # Random search over single parameter of tied variables
-<<<<<<< HEAD
     slack_tied = {'w_intra': 'w_inter',
                   'c_intra': 'c_inter'}
     for slack, tied in slack_tied.items():
@@ -165,13 +161,6 @@ def setup_hyperparameters(args):
             if isinstance(config.get(slack), list):
                 logging.warning(f'Ignoring {tied}')
                 del config[tied]
-=======
-    tied, slack = 'w_inter', 'w_intra'
-    if tied in config:
-        if isinstance(config.get(slack), list):
-            logging.warning(f'Ignoring {tied}')
-            del config[tied]
->>>>>>> [src] Q&D language interface refactor
 
     for k, v in config.items():
         if not isinstance(v, list):

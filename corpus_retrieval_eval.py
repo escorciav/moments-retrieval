@@ -32,6 +32,8 @@ parser.add_argument('--h5-path', type=Path, nargs='+',
                     help='HDF5-file with features')
 parser.add_argument('--tags', nargs='+',
                     help='Tag for h5-file features')
+parser.add_argument('--h5-lang', type=Path, default=Path('not-exist'),
+                    help='HDF5 with word-vectors per query')
 # Architecture
 parser.add_argument('--snapshot', type=Path, required=True, nargs='+',
                     help='JSON files of model')
@@ -121,6 +123,8 @@ def main(args):
         proposals_interface=proposals_interface,
         clip_length=clip_length
     )
+    if args.h5_lang.exists():
+        dataset_setup['lang_h5'] = args.h5_lang
     dataset = dataset_untrimmed.__dict__[args.dataset](**dataset_setup)
     if args.arch == 'SMCN':
         logging.info('Set padding on UntrimmedSMCN dataset')
@@ -161,7 +165,7 @@ def main(args):
     for it, query_metadata in tqdm(enumerate(dataset.metadata),
                                    disable=args.disable_tqdm):
         result_per_query = engine.query(
-            query_metadata['language_input'],
+            [it],
             return_indices=args.dump_per_instance_results)
         if args.dump_per_instance_results:
             vid_indices, segments, proposals_ind = result_per_query

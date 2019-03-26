@@ -1234,6 +1234,8 @@ class WordVectorsOfDescriptions():
 
     def __call__(self, moment_index):
         "Return padded word-vectors"
+        if isinstance(moment_index, list):
+            moment_index = moment_index[0]
         return (self.lookup_table[moment_index]['vectors'],
                 self.lookup_table[moment_index]['num_words'])
 

@@ -130,7 +130,7 @@ def load_args_from_snapshot(args, path_vars=PATH_VARS):
         hyper_prm = json.load(fid)
     for key, value in hyper_prm.items():
         # PR welcome if you know a more elegant way to do this
-        if key in path_vars:
+        if value and key in path_vars:
             value = Path(value)
         setattr(args, key, value)
     args.snapshot, args.logfile = snapshot, logfile

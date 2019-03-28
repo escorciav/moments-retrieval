@@ -28,6 +28,8 @@ data_files=(
   data/processed/activitynet-captions/train-01_01.json
   data/processed/didemo/resnet152_rgb_max_cl-2.5.h5
   data/processed/didemo/resnet152_rgb_max_cl-5.h5
+  data/processed/didemo/vgg16_rgb_max_cl-2.5.h5
+  data/processed/didemo/vgg16_rgb_max_cl-5.h5
   # additional HDF5s for DiDeMo
   # data/raw/average_fc7.h5
   # data/raw/average_global_flow.h5

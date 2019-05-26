@@ -231,7 +231,8 @@ def setup_engine(args, dataset, net):
             cues=dataset_cues,
             debug=args.debug,
             json_file=args.test_list,
-            proposals_interface=dataset.proposals_interface
+            proposals_interface=dataset.proposals_interface,
+            eval=True
         )
         # Hard-code UntrimmedSMCN and SMCN as they are the only clip-based
         # representation so far :)

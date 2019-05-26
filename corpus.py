@@ -122,12 +122,12 @@ class ClipRetrieval(CorpusVideoMomentRetrievalBase):
             # Append items to database
             all_proposals.append(proposals)
             for key in self.dataset.cues:
-                clip_rep_k = representation_dict[key].unsqueeze_(0)
+                clip_rep_k = representation_dict[key].unsqueeze_(dim=0)
                 # get codes of the clips -> C_i x D matrix
                 # Given a video i with C_i clips, we encode all the clips
                 # through the visual encoder
                 code_k = self.models[key].visual_encoder(
-                    clip_rep_k).squeeze_()
+                    clip_rep_k).squeeze_(dim=0)
                 codes[key].append(code_k)
         # Form the C x D matrix
         # M := number of videos, C = \sum_{i=1}^M C_i

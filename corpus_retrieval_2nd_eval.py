@@ -237,6 +237,8 @@ def setup_engine(args, dataset, net):
         # Hard-code UntrimmedSMCN and SMCN as they are the only clip-based
         # representation so far :)
         dataset_1ststage = dataset_untrimmed.UntrimmedSMCN(**dataset_setup)
+        dataset_1ststage.set_padding(False)
+
         model_setup = dict(
             visual_size=dataset_1ststage.visual_size[args.feat],
             lang_size=dataset_1ststage.language_size,

@@ -2,8 +2,10 @@
 import itertools
 
 import numpy as np
+import json
+import random
 
-PROPOSAL_SCHEMES = ['DidemoICCV17SS', 'SlidingWindowMSRSS']
+PROPOSAL_SCHEMES = ['DidemoICCV17SS', 'SlidingWindowMSRSS','RC3D']
 
 
 class TemporalProposalsBase():
@@ -124,6 +126,94 @@ class SlidingWindowMSRSS(TemporalProposalsBase):
         duration = metadata.get('duration')
         assert duration is not None
         return self.sliding_windows(duration)
+
+
+class RC3D(TemporalProposalsBase):
+
+    def __init__(self, length, scales, stride=0.5, dtype=np.float32):
+        self.SW_proposals_gen = SlidingWindowMSRSS(length, scales)
+        #Load R-C3D proposals
+        self.RC3D_proposals = {}
+        filename = './data/raw/RC3D_ranked_proposals_charades.json'
+        with open(filename, 'r') as f:
+            self.RC3D_proposals = json.load(f)
+        self.complete_proposals = True #Enable or disable the generation of random proposals 
+ 
+    def get_RC3D_proposals(self, video_id, duration, number_sliding_window_proposals):
+        '''
+        The function uses the precoumputed proposals using RC3D to generate a number of proposals 
+        that is the same as the number of proposals we would have generated through a sliding window 
+        procedure. 
+        We match the number of proposals and the vale inside the proposals to be coherent with what we desider.
+        '''
+        proposals = self.RC3D_proposals[video_id]                   # Retrieve proposals for specific video
+        missing = number_sliding_window_proposals - len(proposals)  # Check the number of proposals
+        missing = missing * (missing>0)                             # Just apply relu
+        # Check the proposals and reduce the time in the right interval
+        proposals, removed = self._check_duration_vs_proposals(proposals, duration)
+        # Generate data if missing
+        if missing+removed > 0 and self.complete_proposals:
+            proposals = self._generate_missing_proposals(missing+removed, proposals, duration)
+        # cut the number of RC3D proposals to the number of proposals of the sliding windonw
+        proposals = proposals[:number_sliding_window_proposals]    
+        if self.complete_proposals: 
+            assert number_sliding_window_proposals-len(proposals)>= 0 # Check that sizes are ok
+        return np.asarray(proposals, dtype=np.float32)
+
+    def _generate_missing_proposals(self, missing, proposals, duration):
+        '''
+        The fuction is used to generate random proposals such that the number 
+        is the same as the sliding window procedure
+        '''
+        for _ in range(missing):
+            t_start, t_end = 0,0
+            while not t_end-t_start > 0:
+                t_start=random.randint(0,duration*10)/10
+                t_end=random.randint(0,duration*10)/10
+            proposals.append([t_start,t_end])
+        return proposals
+
+    def _check_duration_vs_proposals(self, proposals, duration):
+        '''
+        The function check is the values of the proposals are in the range [0, duration]
+        if both the values are outside the range the proposal get discarded.
+        If only the second value is outside the range the we cut it down to duration.
+        '''
+        new_proposals = []
+        for p in proposals:
+            if p[0] < duration and p[1] < duration:
+                new_proposals.append(p)
+            elif p[0] > duration and p[1] > duration:
+                pass
+            elif p[0] < duration and p[1] > duration:
+                new_proposals.append([p[0], duration])
+        return new_proposals, len(proposals)-len(new_proposals)
+
+    def _devel(self, video_id, metadata, feature_collection, duration):
+        '''
+            DEPRECATED
+        '''
+        #Check that all keys are in there:
+        RC3D_keys = list(self.RC3D_proposals.keys())
+        feature_keys = list(feature_collection["rgb"].keys())
+        num_sliding, num_RC3D = 0, 0
+        for k in feature_keys:
+            num_sliding += len(feature_collection['rgb'][video_id])
+            if not k in RC3D_keys:
+                print('Key {} is missing'.format(k))
+            num_RC3D += len(self.get_RC3D_proposals(k, duration, len(self.SW_proposals_gen(
+                video_id, metadata=metadata, feature_collection=feature_collection))))
+        print('Tot number of sliding window proposals: {}'.format(num_sliding))
+        print('Tot number of RC3D proposals: {}'.format(num_RC3D))
+
+    def __call__(self, video_id, metadata=None, feature_collection=None):
+        duration = metadata.get('duration')
+        assert duration is not None
+        sliding_window_proposals = self.SW_proposals_gen(
+            video_id, metadata=metadata, feature_collection=feature_collection)
+        number_sliding_window_proposals = len(sliding_window_proposals)
+        # self._devel(self, video_id, metadata, feature_collection, duration)   DEPRECATED
+        return self.get_RC3D_proposals(video_id, duration, number_sliding_window_proposals)
 
 
 if __name__ == '__main__':

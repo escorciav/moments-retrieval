@@ -172,7 +172,9 @@ def main(args):
                 result[key] = float(value)
             result['snapshot'] = [str(i) for i in args.snapshot]
             result['corpus'] = str(args.test_list)
-            result['1ststage'] = str(args.h5_1ststage)
+            result['h5_path'] = str(args.h5_path)
+            result['h5_1ststage'] = str(args.h5_1ststage)
+            result['snapshot_1ststage'] = str(args.snapshot_1ststage)
             result['topk'] = args.topk
             result['iou_threshold'] = judge.iou_thresholds
             result['k_first'] = args.k_first
@@ -182,7 +184,7 @@ def main(args):
             result['corpus_setup'] = args.corpus_setup
             result['date'] = datetime.now().isoformat()
             result['git_hash'] = get_git_revision_hash()
-            json.dump(result, fid, indent=1)
+            json.dump(result, fid, indent=1, sort_keys=True)
 
 
 def load_hyperparameters(args):

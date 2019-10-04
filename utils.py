@@ -99,7 +99,7 @@ def dumping_arguments(args, val_performance=None, test_performance=None,
     if test_performance is not None:
         args_dict.update({f'test_{k}': v for k, v in test_performance.items()})
 
-    with open(result_file, 'x') as fid:
+    with open(result_file, 'w') as fid:
         json.dump(args_dict, fid, skipkeys=True, indent=1, sort_keys=True)
     if args.dump_results and perf_per_sample_val is not None:
         dump_tensors_as_hdf5(args.logfile + '_instances_rst_val.h5',
@@ -180,7 +180,7 @@ def setup_logging(args):
                    level=logging.DEBUG)
     if len(args.logfile.name) >= 1:
         log_prm['filename'] = args.logfile.with_suffix('.log')
-        log_prm['filemode'] = 'x'
+        log_prm['filemode'] = 'w'
     logging.basicConfig(**log_prm)
     args.writer = None
     if args.enable_tb:

@@ -5,6 +5,7 @@ import numpy as np
 import torch
 
 from np_segments_ops import torch_iou
+import sys
 
 IOU_THRESHOLDS = (0.5, 0.7)
 TOPK = (1, 5)
@@ -162,6 +163,29 @@ class CorpusVideoMomentRetrievalEval():
         # Lock query-id and record index for debugging
         self.map_query[query_id] = ind
 
+    def oracle_reranking(self, query_info, vid_indices, pred_segments, metadata, map):
+        '''
+        The function rerankes the moments such that we have at the top the moments 
+        related to the concepts present in the query
+        '''
+        push_up_indices, other_indices = [], []
+        query_tokens = query_info["concepts"]
+        num_tokens = len(query_tokens)
+        for i,v_id in enumerate(vid_indices):
+            match, idx = False, 0
+            while not match and idx < num_tokens:
+                if v_id in map[query_tokens[idx]]:
+                    match = True
+                    push_up_indices.append(i)
+                idx+=1
+            if not match:
+                other_indices.append(i)
+        indices = push_up_indices + other_indices
+        # Rerank
+        new_vid_indices   = torch.stack([vid_indices[i] for i in indices])
+        new_pred_segments = torch.stack([pred_segments[i] for i in indices])
+        return new_vid_indices, new_pred_segments
+
     def evaluate(self):
         "Compute MedRank@IOU and R@IOU,k accross the dataset"
         if self.performance is not None:
@@ -190,3 +214,104 @@ class CorpusVideoMomentRetrievalEval():
             for j, topk in enumerate(self.topk):
                 self.performance[f'Recall@{topk},{iou}'] = (
                     self.recall_iou_k[i][j])
+
+
+class CorpusConceptVideoMomentRetrievalEval(CorpusVideoMomentRetrievalEval):
+    
+    def __init__(self, topk=(1, 5), iou_thresholds=IOU_THRESHOLDS):
+        super(CorpusConceptVideoMomentRetrievalEval, self).__init__(
+            topk=topk,iou_thresholds=iou_thresholds) 
+
+    def add_single_predicted_moment_info(
+            self, query_info, ordered_video_indices, pred_segments, max_rank=None):
+        """Compute rank@IOU and hit@IOU,k per query
+            TBD
+        """
+        if max_rank is None:
+            max_rank = len(pred_segments)
+        query_id = query_info.get('annotation_id')
+        if query_id in self.map_query:
+            raise ValueError('query was already added to the list')
+        ind = len(self._rank_iou)
+        true_videos_indices = query_info['video_index']
+        true_segments = query_info['times']
+        concensus_among_annotators = 1
+        if len(true_segments[0]) > 1:
+            concensus_among_annotators = 2
+        _hit_iou_k = [[torch.zeros_like(self.topk_, dtype=torch.uint8)] for i in self.iou_thresholds]
+        M = len(true_videos_indices)
+
+        for rank, video_indice in enumerate(ordered_video_indices):
+            if video_indice in true_videos_indices:
+                idxs = self._check_duplicates(video_indice, true_videos_indices)
+                hits = [self._determine_hit(true_segments, pred_segments[rank], idx) for idx in idxs]
+                best = [sum(elem) for elem in hits]
+                best_indice = best.index(max(best))
+                boolean_hit = False
+                
+                for ii, _ in enumerate(self.iou_thresholds):
+                    hit_segment = (hits[best_indice][ii] >= concensus_among_annotators)
+                    if hit_segment:
+                        self._rank_iou[ii].append(rank)
+                        _hit_iou_k[ii].append(self.topk_ >= rank)
+                        boolean_hit = True
+
+                if boolean_hit:
+                    del true_videos_indices[idxs[best_indice]]
+                    del true_segments[idxs[best_indice]]
+
+        for ii, _ in enumerate(self.iou_thresholds):
+            temp = torch.stack(_hit_iou_k[ii]).type(torch.float).sum(dim=0)/M
+            self._hit_iou_k[ii].append(temp)
+
+        self.map_query[query_id] = ind
+
+
+    def _determine_hit(self,true_segments, pred_segment, idx):
+        hit_segment = [] 
+        true_segments_ = torch.FloatTensor(true_segments[idx])
+        pred_segment_ = pred_segment.unsqueeze(0)
+        iou_vector = torch_iou(pred_segment_, true_segments_)
+        for ii, iou_threshold in enumerate(self.iou_thresholds):
+            hit_segment.append((iou_vector >= iou_threshold).sum(dim=1))
+        return hit_segment
+
+
+    def evaluate(self):
+        "Compute MedRank@IOU and R@IOU,k accross the dataset"
+        if self.performance is not None:
+            return self.performance
+        num_queries = len(self.map_query)
+        for i, _ in enumerate(self.iou_thresholds):
+            # report results as 1-indexed ranks for humans
+            ranks_i = torch.FloatTensor(self._rank_iou[i])+1
+            self.medrank_iou[i] = torch.median(ranks_i)
+            self.stdrank_iou[i] = torch.std(ranks_i.float())
+            self._hit_iou_k[i] = torch.stack(self._hit_iou_k[i])
+            recall_i = self._hit_iou_k[i].sum(dim=0).float() / num_queries
+            self.recall_iou_k[i] = recall_i
+        # self._rank_iou = torch.stack(self._rank_iou).transpose_(0, 1)
+        # self._hit_iou_k = torch.stack(self._hit_iou_k).transpose_(0, 1)
+        self._consolidate_results()
+        return self.performance
+
+
+    def _consolidate_results(self):
+        "Create dict with all the metrics"
+        self.performance = {}
+        for i, iou in enumerate(self.iou_thresholds):
+            self.performance[f'MedRank@{iou}'] = self.medrank_iou[i]
+            self.performance[f'StdRand@{iou}'] = self.stdrank_iou[i]
+            for j, topk in enumerate(self.topk):
+                self.performance[f'Recall@{topk},{iou}'] = (
+                    self.recall_iou_k[i][j])
+
+
+    def _check_duplicates(self, video_indice, true_videos_indices):
+        cnt = true_videos_indices.count(video_indice)
+        if cnt == 1:
+            return [true_videos_indices.index(video_indice)]
+        else:
+            indices = [i for i,value in enumerate(true_videos_indices) 
+                        if value==video_indice]
+            return indices

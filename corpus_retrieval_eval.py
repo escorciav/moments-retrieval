@@ -14,13 +14,13 @@ import corpus
 import dataset_untrimmed
 import model
 import proposals
-from evaluation import CorpusVideoMomentRetrievalEval
+from evaluation import CorpusVideoMomentRetrievalEval, CorpusConceptVideoMomentRetrievalEval
 from utils import setup_logging, get_git_revision_hash
 
 # TODO(tier-2;clean): remove this hard-coded approach
 # we not only use the same arch, but also the same hyper-prm
 UNIQUE_VARS = {key: [] for key in
-               ['arch', 'loc', 'context', 'proposal_interface']}
+               ['arch', 'loc', 'context', 'proposal_interface']}        
 
 parser = argparse.ArgumentParser(
     description='Corpus Retrieval Evaluation',
@@ -41,9 +41,14 @@ parser.add_argument('--snapshot-tags', nargs='+',
 parser.add_argument('--topk', nargs='+', type=int,
                     default=[1, 10, 100, 1000, 10000],
                     help='top-k values to compute')
+parser.add_argument('--concepts', action='store_true',
+                    help='Enable evaluation of concepts, must provide the right input data.')                                     
 # Extra
 parser.add_argument('--greedy', type=int, default=0,
                     help='Top-k seed clips for greedy search over clips')
+parser.add_argument('--concepts-oracle', type=int, choices=[0,1,2],
+                    help='Index to select which concepts to compute:\n0-Nouns and Verbs \n1-Nouns \n2-Verbs')  
+parser.add_argument('--oracle-map', type=Path, help='JSON that map concepts to videos')                
 # Dump results and logs
 parser.add_argument('--dump', action='store_true',
                     help='Save log in text file and json')
@@ -89,10 +94,16 @@ def main(args):
 
     engine_prm = {}
     if args.arch == 'MCN':
-        args.dataset = 'UntrimmedMCN'
+        if args.concepts: 
+            args.dataset = 'UntrimmedCoceptsMCN'
+        else:
+            args.dataset = 'UntrimmedMCN'
         args.engine = 'MomentRetrievalFromProposalsTable'
     elif args.arch == 'SMCN':
-        args.dataset = 'UntrimmedSMCN'
+        if args.concepts: 
+            args.dataset = 'UntrimmedCoceptsSMCN'
+        else:
+            args.dataset = 'UntrimmedSMCN'
         args.engine = 'MomentRetrievalFromClipBasedProposalsTable'
         if args.greedy > 0:
             args.engine = 'GreedyMomentRetrievalFromClipBasedProposalsTable'
@@ -119,7 +130,9 @@ def main(args):
         context=args.context, debug=args.debug, eval=True,
         no_visual=dataset_novisual,
         proposals_interface=proposals_interface,
-        clip_length=clip_length
+        clip_length=clip_length,
+        oracle=args.concepts_oracle,
+        oracle_map=args.oracle_map
     )
     dataset = dataset_untrimmed.__dict__[args.dataset](**dataset_setup)
     if args.arch == 'SMCN':
@@ -156,7 +169,10 @@ def main(args):
         args.topk = [10**i for i in range(0, exp + 1)]
         args.topk.append(engine.num_moments)
     num_instances_retrieved = []
-    judge = CorpusVideoMomentRetrievalEval(topk=args.topk)
+    if args.concepts: 
+        judge = CorpusConceptVideoMomentRetrievalEval(topk=args.topk)
+    else:
+        judge = CorpusVideoMomentRetrievalEval(topk=args.topk)
     args.n_display = max(int(args.n_display * len(dataset.metadata)), 1)
     for it, query_metadata in tqdm(enumerate(dataset.metadata),
                                    disable=args.disable_tqdm):
@@ -167,6 +183,9 @@ def main(args):
             vid_indices, segments, proposals_ind = result_per_query
         else:
             vid_indices, segments = result_per_query
+        if type(args.concepts_oracle) == int:
+            vid_indices, segments = judge.oracle_reranking(query_metadata, 
+                        vid_indices, segments, dataset.metadata, dataset.oracle_map)
         judge.add_single_predicted_moment_info(
             query_metadata, vid_indices, segments, max_rank=engine.num_moments)
         num_instances_retrieved.append(len(vid_indices))
@@ -178,7 +197,7 @@ def main(args):
             # non-blocking thread using a Queue
             if it == 0:
                 filename = args.logfile.with_suffix('.h5')
-                fid = h5py.File(filename, 'x')
+                fid = h5py.File(filename, 'w')
                 if args.reduced_dump:
                     fid_vi = fid.create_dataset(
                         name='vid_indices',

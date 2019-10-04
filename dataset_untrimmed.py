@@ -6,6 +6,7 @@ from enum import IntEnum, unique
 
 import h5py
 import numpy as np
+import spacy
 from scipy.signal import convolve
 from torch.utils.data import Dataset
 
@@ -13,6 +14,7 @@ from glove import RecurrentEmbedding
 from np_segments_ops import iou as segment_iou
 from utils import dict_of_lists, unique2d_perserve_order
 
+WORD_TYPE = [['NOUN', 'VERB'], ['NOUN'],['VERB']]
 
 class FakeLanguageRepresentation():
     "Allow faster iteration while I learn to cache stuff ;P"
@@ -71,6 +73,8 @@ class UntrimmedBase(Dataset):
         self.metadata_per_video = None
         self._video_list = None
         self.clip_length = None
+        self.oracle = None
+        self.oracle_map = None
 
     def max_number_of_clips(self):
         "Return maximum number of clips/chunks over all videos in dataset"
@@ -148,6 +152,11 @@ class UntrimmedBase(Dataset):
             self._update_metadata()
         self._preprocess_descriptions()
 
+    def _setup_map(self, filename):
+        "Read JSON file with the mapping concept to videos"
+        with open(filename, 'r') as fid:
+            self.oracle_map = json.load(fid)
+
     def _shrink_dataset(self):
         "Make single video dataset to debug video corpus moment retrieval"
         # TODO(tier-2;release): log if someone triggers this
@@ -175,6 +184,26 @@ class UntrimmedBase(Dataset):
             self.metadata_per_video[video_id]['moment_indices'].append(i)
             # `time` field may get deprecated
             self.metadata[i]['time'] = None
+            if type(self.oracle) == int: 
+                tokens =  self.nlp(self.metadata[i]['description'])
+                self.metadata[i]['concepts'] = [t.lemma_ for t in tokens 
+                                    if t.pos_ in WORD_TYPE[self.oracle]]
+                self._update_oracle_map(self.metadata[i])
+
+    def _update_oracle_map(self, metadata):
+        concepts = metadata['concepts']
+        video_index = metadata['video_index']
+        for c in concepts:
+            self.oracle_map[c].append(video_index)
+    
+    def _prune_oracle_map(self):
+        '''
+        Remove all concept entries that are not associated with any video in 
+        the considered split of the dataset.
+
+        This speeds up the search in the dictionary.
+        '''
+        self.oracle_map = {k:v for k,v in self.oracle_map.items() if v}
 
     def _update_metadata_per_video(self):
         """Add keys to items in attribute:metadata_per_video
@@ -188,7 +217,7 @@ class UntrimmedBase(Dataset):
             self.metadata_per_video[key]['index'] = i
             # This field is populated by _update_metadata
             self.metadata_per_video[key]['moment_indices'] = []
-
+            
     def _video_duration(self, video_id):
         "Return duration of a given video"
         return self.metadata_per_video[video_id]['duration']
@@ -221,9 +250,15 @@ class UntrimmedBasedMCNStyle(UntrimmedBase):
                  max_words=50, eval=False, context=True,
                  proposals_interface=None, no_visual=False, sampling_iou=0.35,
                  ground_truth_rate=1, prob_nproposal_nextto=-1,
-                 clip_length=None, h5_nis=None, nis_k=None, debug=False):
+                 clip_length=None, h5_nis=None, nis_k=None, oracle=None, 
+                 debug=False, oracle_map=None):
         super(UntrimmedBasedMCNStyle, self).__init__()
+        self.oracle = oracle
+        if type(oracle) == int:
+            self.nlp = spacy.load('en_core_web_sm')
+            self._setup_map(oracle_map)
         self._setup_list(json_file)
+        self._prune_oracle_map()
         self._load_features(cues)
         self.eval = eval
         self.loc = loc
@@ -782,6 +817,200 @@ class UntrimmedSMCN(UntrimmedBasedMCNStyle):
             feature_collection[key] = padded_data
         feature_collection['mask'] = mask
         return feature_collection
+
+    def _set_feat_dim(self):
+        "Set visual and language size"
+        ind = 2 if self.debug else 0
+        instance = self[0]
+        if self.eval:
+            instance = ((instance[0 + ind][0, ...],) +
+                        instance[1 + ind:3 + ind])
+            ind = 0
+        self.feat_dim = {'language_size': instance[0 + ind].shape[1]}
+        for key in self.features:
+            self.feat_dim.update(
+                {f'visual_size_{key}': instance[2 + ind][key].shape[-1]}
+            )
+
+
+class UntrimmedCoceptsMCN(UntrimmedMCN):
+    
+    def __init__(self, *args, max_clips=None, padding=True, w_size=None,
+                 clip_mask=False, **kwargs):
+        super(UntrimmedCoceptsMCN, self).__init__(*args, **kwargs)
+
+    def _update_metadata(self):
+        """Add keys to items in attribute:metadata plus extra update of videos
+
+        `video_index` field corresponds to the unique identifier of the video
+        that contains the moment.
+        Transforms `times` into numpy array for training.
+        """
+        for i, moment in enumerate(self.metadata):
+            video_id = self.metadata[i]['video']
+            self.metadata[i]['times'] = moment['times']
+            self.metadata[i]['video_index'] = [
+                self.metadata_per_video[v_id]['index'] for v_id in video_id]
+            [self.metadata_per_video[v_id]['moment_indices'].append(i) for v_id in video_id]
+            # `time` field may get deprecated
+            self.metadata[i]['time'] = None
+
+    def _compute_visual_feature_eval(self, video_id):
+        "Return visual features plus TEF for candidate segments in video"
+        # We care about corpus video moment retrieval thus our
+        # `proposals_interface` does not receive language queries.
+        candidates_rep_list, candidates_list = [], []
+        single_id=False
+        if type(video_id) is not list:
+            video_id = [video_id]
+            single_id=True
+        for v_id in video_id:
+            metadata = self.metadata_per_video[v_id]
+            candidates = self.proposals_interface(
+                v_id, metadata=metadata, feature_collection=self.features)
+            candidates_rep = dict_of_lists(
+                [self._compute_visual_feature(v_id, t) for t in candidates]
+            )
+            num_segments = len(candidates)
+            for k, v in candidates_rep.items():
+                candidates_rep[k] = np.concatenate(v).reshape((num_segments, -1))
+            candidates_rep_list.append(candidates_rep)
+            candidates_list.append(candidates)
+        if single_id:
+            return candidates_rep_list[0], candidates_list[0]
+        else:
+            return candidates_rep_list, candidates_list
+
+    def _eval_item(self, idx):
+        "Return anchor, positive, None*2, gt_segments, candidate_segments"
+        moment_i = self.metadata[idx]
+        gt_segments = moment_i['times']
+        query = moment_i['language_input']
+        video_id = moment_i['video']
+
+        pos_visual_feature, segments = self._compute_visual_feature_eval(
+            video_id)
+        neg_intra_visual_feature = None
+        neg_inter_visual_feature = None
+        words_feature, len_query = self._compute_language_feature(query)
+        num_segments = len(segments[0])
+        len_query = [len_query] * num_segments
+        words_feature = np.tile(words_feature, (num_segments, 1, 1))
+
+        # TODO: return a dict to avoid messing around with indices
+        argout = (words_feature, len_query, pos_visual_feature,
+                  neg_intra_visual_feature, neg_inter_visual_feature,
+                  gt_segments, segments)
+        if self.debug:
+            # TODO: deprecate source_id
+            source_id = moment_i.get('source', float('nan'))
+            return (idx, source_id) + argout
+        return argout
+
+    def _set_feat_dim(self):
+        "Set visual and language size"
+        ind = 2 if self.debug else 0
+        instance = self[0]
+        if self.eval:
+            instance = ((instance[0 + ind][0, ...],) +
+                        instance[1 + ind:3 + ind])
+            ind = 0
+        self.feat_dim = {'language_size': instance[0 + ind].shape[1]}
+        for key in self.features:
+            self.feat_dim.update(
+                {f'visual_size_{key}': instance[2 + ind][0][key].shape[-1]}
+            )
+
+
+class UntrimmedCoceptsSMCN(UntrimmedSMCN):
+
+    def __init__(self, *args, max_clips=None, padding=True, w_size=None,
+                 clip_mask=False, **kwargs):
+        super(UntrimmedCoceptsSMCN, self).__init__(*args, **kwargs)
+        
+    def _update_metadata(self):
+        """Add keys to items in attribute:metadata plus extra update of videos
+
+        `video_index` field corresponds to the unique identifier of the video
+        that contains the moment.
+        Transforms `times` into numpy array for training.
+        """
+        for i, moment in enumerate(self.metadata):
+            video_id = self.metadata[i]['video']
+            self.metadata[i]['times'] = moment['times']
+            self.metadata[i]['video_index'] = [
+                self.metadata_per_video[v_id]['index'] for v_id in video_id]
+            [self.metadata_per_video[v_id]['moment_indices'].append(i) for v_id in video_id]
+            # `time` field may get deprecated
+            self.metadata[i]['time'] = None
+
+    def _compute_visual_feature_eval(self, video_id):
+        "Return visual features plus TEF for all candidate segments in video"
+        # We care about corpus video moment retrieval thus our
+        # `proposals_interface` does not receive language queries.
+        candidates_rep_list, candidates_list = [], []
+        single_id=False
+        if type(video_id) is not list:
+            video_id = [video_id]
+            single_id=True
+        for v_id in video_id:
+            metadata = self.metadata_per_video[v_id]
+            candidates = self.proposals_interface(
+                v_id, metadata=metadata, feature_collection=self.features)
+            candidates_rep = dict_of_lists(
+                [self._compute_visual_feature(v_id, t) for t in candidates]
+            )
+            for k, v in candidates_rep.items():
+                if self.padding:
+                    candidates_rep[k] = np.stack(v)
+                else:
+                    candidates_rep[k] = np.concatenate(v, axis=0)
+            candidates_rep_list.append(candidates_rep)
+            candidates_list.append(candidates)
+        if single_id:
+            return candidates_rep_list[0], candidates_list[0]
+        else:
+            return candidates_rep_list, candidates_list
+
+    def _eval_item(self, idx):
+        "Return anchor, positive, None*2, gt_segments, candidate_segments"
+        moment_i = self.metadata[idx]
+        gt_segments = moment_i['times']
+        query = moment_i['language_input']
+        video_id = moment_i['video']
+
+        pos_visual_feature, segments = self._compute_visual_feature_eval(
+            video_id)
+        neg_intra_visual_feature = None
+        neg_inter_visual_feature = None
+        words_feature, len_query = self._compute_language_feature(query)
+        num_segments = len(segments[0])
+        len_query = [len_query] * num_segments
+        words_feature = np.tile(words_feature, (num_segments, 1, 1))
+
+        # TODO: return a dict to avoid messing around with indices
+        argout = (words_feature, len_query, pos_visual_feature,
+                  neg_intra_visual_feature, neg_inter_visual_feature,
+                  gt_segments, segments)
+        if self.debug:
+            # TODO: deprecate source_id
+            source_id = moment_i.get('source', float('nan'))
+            return (idx, source_id) + argout
+        return argout
+
+    def _set_feat_dim(self):
+        "Set visual and language size"
+        ind = 2 if self.debug else 0
+        instance = self[0]
+        if self.eval:
+            instance = ((instance[0 + ind][0, ...],) +
+                        instance[1 + ind:3 + ind])
+            ind = 0
+        self.feat_dim = {'language_size': instance[0 + ind].shape[1]}
+        for key in self.features:
+            self.feat_dim.update(
+                {f'visual_size_{key}': instance[2 + ind][0][key].shape[-1]}
+            )
 
 
 class UntrimmedCALChamfer(UntrimmedBasedMCNStyle):

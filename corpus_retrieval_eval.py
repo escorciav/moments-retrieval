@@ -185,7 +185,7 @@ def main(args):
             vid_indices, segments = result_per_query
         if type(args.concepts_oracle) == int:
             vid_indices, segments = judge.oracle_reranking(query_metadata, 
-                        vid_indices, segments, dataset.metadata, dataset.oracle_map)
+                        vid_indices, segments, dataset.metadata, dataset.reverse_map)
         judge.add_single_predicted_moment_info(
             query_metadata, vid_indices, segments, max_rank=engine.num_moments)
         num_instances_retrieved.append(len(vid_indices))

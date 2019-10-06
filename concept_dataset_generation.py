@@ -10,8 +10,9 @@ import utils
 import os
 import warnings
 import pandas as pd 
+import argparse
 
-def count_noun_didemo(dataset, word_type):
+def count_noun_didemo(dataset, concept_type):
     '''
     DEPRECATED
     '''
@@ -30,28 +31,28 @@ def count_noun_didemo(dataset, word_type):
             doc_i = nlp(d_i)
             doc_i_nouns = Counter()
             for token in doc_i:
-                if token.pos_ in word_type:  
+                if token.pos_ in concept_type:  
                     doc_i_nouns.update({token.lemma_: 1})
             didemo_nouns.update(doc_i_nouns)
         print('Number of descriptions', num_descriptions)
-        print(f'Number of {" and ".join(word_type)}', len(didemo_nouns))
+        print(f'Number of {" and ".join(concept_type)}', len(didemo_nouns))
 
         # Comment the following lines if you are not interested in
         # dumping CSV with counts of NOUNs
-        filename_d = f'./data/processed/{dataset}/concepts/{"_".join(word_type)}_{subset}_count.csv'
+        filename_d = f'./data/processed/{dataset}/concepts/{"_".join(concept_type)}_{subset}_count.csv'
         with open(filename_d, 'w') as fid:
             fid.write('tag,count\n')
             for i in didemo_nouns.most_common():
                 fid.write(f'{i[0]},{i[1]}\n')
 
 
-def map_noun_to_videos(dataset, word_type):
+def map_noun_to_videos(dataset, concept_type):
     '''
     DEPRECATED
     '''
     warnings.warn('DEPRECATED FUNCTION')
     # Count will be dumped here
-    filename_d = f'data/processed/{dataset}/{"_".join(word_type)}_to_videos.json'
+    filename_d = f'data/processed/{dataset}/{"_".join(concept_type)}_to_videos.json'
     # Make sure you downloaded DiDeMo data and place it in
     # data/raw/{}_data.json
 
@@ -71,7 +72,7 @@ def map_noun_to_videos(dataset, word_type):
             doc_i = nlp(d_i)
             doc_i_nouns = Counter()
             for token in doc_i:
-                if token.pos_ in word_type:        
+                if token.pos_ in concept_type:        
                     doc_i_nouns.update({token.lemma_: 1})
                     random.shuffle(d['times'])
                     time_i = d['times'][0]
@@ -90,12 +91,12 @@ def map_noun_to_videos(dataset, word_type):
         json.dump({'nouns': didemo_nouns, 'videos': videos, 'time': time}, fid)
 
 
-def histogram(dataset, word_type):
+def histogram(dataset, concept_type):
     ''' 
     DEPRECATED
     '''
     warnings.warn('DEPRECATED FUNCTION')
-    filename = f'./data/processed/{dataset}/{"_".join(word_type)}_count.csv'
+    filename = f'./data/processed/{dataset}/{"_".join(concept_type)}_count.csv'
     f = open(filename, "r").readlines()
     data = np.asarray([f[i+1].strip('\n').split(',') for i in range(len(f)-1)])
 
@@ -109,10 +110,10 @@ def histogram(dataset, word_type):
     y = np.asarray(data[:num_bins,1], dtype=np.int32)
     plt.bar(x, y)
     plt.xticks(rotation='vertical')
-    plt.savefig(f'./data/images/{word_type}_frequency_{dataset}.pdf')
+    plt.savefig(f'./data/images/{concept_type}_frequency_{dataset}.pdf')
 
 
-def create_json(dataset, word_type):
+def create_json(dataset, concept_type):
     if dataset == 'didemo':
         subsets = ['train-01.json', 'val-01.json', 'test-01.json']
     elif dataset == 'charades-sta':
@@ -138,7 +139,7 @@ def create_json(dataset, word_type):
         concept_id = 0
         for moment in original_data['moments']:
             for token in nlp(moment['description']):
-                if token.pos_ in word_type: 
+                if token.pos_ in concept_type: 
                     concept = token.lemma_  #text
                     if concept not in list_of_concepts:
                         list_of_concepts.append(concept)
@@ -155,14 +156,14 @@ def create_json(dataset, word_type):
 
         print('Number of unique concept/moments: {}'.format(len(data['moments'])))
 
-        filename_d = f'./data/processed/{dataset}/concepts/{"_".join(word_type)}_{subset}'
+        filename_d = f'./data/processed/{dataset}/concepts/{"_".join(concept_type)}_{subset}'
         print(f'Dumping new json...({filename_d})')
         with open(filename_d, 'w') as fid:
             json.dump(data, fid)
 
         ordered_count = _ordered_count(data)
         subset = subset.split('-')[0]
-        filename_d = f'./data/processed/{dataset}/concepts/{"_".join(word_type)}_{subset}_count.csv'
+        filename_d = f'./data/processed/{dataset}/concepts/{"_".join(concept_type)}_{subset}_count.csv'
         with open(filename_d, 'w') as fid:
             fid.write('tag,count\n')
             for i in ordered_count.most_common():
@@ -176,7 +177,7 @@ def create_new_concept(token,concept, moment, concept_id, dataset):
                     'time'  : [moment['time']],
                     'annotation_id' : concept_id,
                     'counter': 1,
-                    'word_type': token.pos_
+                    'concept_type': token.pos_
     }
     if dataset == 'didemo':
         new_concept['annotation_id_original'] = [moment['annotation_id_original']]
@@ -191,7 +192,7 @@ def create_new_concept_single(token, concept, moment, concept_id, dataset):
                     'time'  : moment['time'],
                     'annotation_id' : concept_id,
                     'counter': 1,
-                    'word_type': token.pos_
+                    'concept_type': token.pos_
     }
     if dataset == 'didemo':
         new_concept['annotation_id_original'] = [moment['annotation_id_original']]
@@ -229,20 +230,20 @@ def merge_outpud_didemo(dataset):
         print('a')
 
 
-def filter_top_50(dataset, word_type):
+def filter_top_50(dataset, concept_type):
     # subsets = ['train', 'val', 'test']
     if dataset == 'didemo':
         subsets = ['train-01.json', 'val-01.json', 'test-01.json']
     elif dataset == 'charades-sta':
         subsets = ['train-01.json', 'val-02_01.json', 'test-01.json']
     
-    f = open(f'./data/processed/{dataset}/concepts/{"_".join(word_type)}_top_50.txt', "r")
+    f = open(f'./data/processed/{dataset}/concepts/{"_".join(concept_type)}_top_50.txt', "r")
     top_50 = f.readlines()
     top_50 = [i.strip('\n') for i in top_50]
 
     for subset in subsets:
-        print(f'\nLoading original data... ({"_".join(word_type)}_{subset})')
-        filename = f'./data/processed/{dataset}/concepts/{"_".join(word_type)}_{subset}'
+        print(f'\nLoading original data... ({"_".join(concept_type)}_{subset})')
+        filename = f'./data/processed/{dataset}/concepts/{"_".join(concept_type)}_{subset}'
         data = json.load(open(filename, 'r'))
         top_data = {'date': str(datetime.datetime.now()),
                     'videos': data['videos'],
@@ -256,7 +257,7 @@ def filter_top_50(dataset, word_type):
 
         assert(len(top_data["moments"])==50)
         subset = subset.split('.').split('_')[0]
-        filename_d = f'./data/processed/{dataset}/concepts/{"_".join(word_type)}_{subset}_top_50.json'
+        filename_d = f'./data/processed/{dataset}/concepts/{"_".join(concept_type)}_{subset}_top_50.json'
         print(f'Dumping new json...({filename_d})')
         with open(filename_d, 'w') as fid:
             json.dump(top_data, fid)        
@@ -269,28 +270,43 @@ def _ordered_count(data):
     return count
     
 
-def create_map(dataset):
-    if dataset == 'didemo':
-        subsets = ['test-01.json']
-    elif dataset == 'charades-sta':
-        subsets = ['test-01.json']
-    f = open(f'./data/processed/{dataset}/concepts/list_of_concepts.txt', "r")
+def create_map(dataset, concept_type):
+    filename = f"{'_'.join(concept_type)}_top_50" 
+    if concept_type[0] == 'ALL':
+        filename = 'list_of_concepts'
+    f = open(f'./data/processed/{dataset}/concepts/{filename}.txt', "r")
     concepts = f.readlines()
     concepts = {c.strip('\n'):[] for c in concepts}
-    filename_d = f'./data/processed/{dataset}/concepts/concepts_map.json'
+    if filename == 'list_of_concepts':
+        filename = 'all_words'
+    filename_d = f'./data/processed/{dataset}/concepts/concepts_map_{filename}.json'
     print(f'Dumping new json...({filename_d})')
     with open(filename_d, 'w') as fid:
         json.dump(concepts, fid)        
     
 
 if __name__ == '__main__':
-    word_type = ['NOUN', 'VERB']            # ['NOUN'], ['VERB'], ['NOUN', 'VERB']
-    dataset = 'didemo'                #'didemo', 'charades-sta'
+
+    parser = argparse.ArgumentParser(formatter_class=argparse.ArgumentDefaultsHelpFormatter)
+
+    parser.add_argument('--dataset',
+                    choices= ['didemo', 'charades-sta'],
+                    help='Name of dataset to evaluate.')
+    parser.add_argument('--concept-type', type=int, choices= [0,1,2,3],
+                    help='Enable or disable reservation.')
+
+    args = parser.parse_args()
+    concept_type_list = [['NOUN', 'VERB'],['NOUN'], ['VERB'],['ALL']]
+    concept_type = concept_type_list[args.concept_type]
+    dataset = args.dataset               
+
+
+    ########################### FUNCTIONS CALL 
     # create_directory(dataset=dataset)
-    # count_noun_didemo(dataset=dataset, word_type=word_type)
-    # histogram(dataset=dataset, word_type=word_type)
-    # map_noun_to_videos(dataset=dataset, word_type=word_type)
-    #create_json(dataset=dataset, word_type=word_type)
+    # count_noun_didemo(dataset=dataset, concept_type=concept_type)
+    # histogram(dataset=dataset, concept_type=concept_type)
+    # map_noun_to_videos(dataset=dataset, concept_type=concept_type)
+    #create_json(dataset=dataset, concept_type=concept_type)
     # merge_outpud_didemo(dataset)
-    #filter_top_50(dataset=dataset, word_type=word_type)
-    create_map(dataset=dataset)
+    #filter_top_50(dataset=dataset, concept_type=concept_type)
+    create_map(dataset=dataset, concept_type=concept_type)

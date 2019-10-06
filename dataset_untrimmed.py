@@ -73,8 +73,9 @@ class UntrimmedBase(Dataset):
         self.metadata_per_video = None
         self._video_list = None
         self.clip_length = None
-        self.oracle = None
-        self.oracle_map = None
+        self.oracle = None          # Boolean to enable oracle
+        self.oracle_map = None      # From concepts to videos
+        self.reverse_map = None     # From videos to concepts
 
     def max_number_of_clips(self):
         "Return maximum number of clips/chunks over all videos in dataset"
@@ -157,6 +158,15 @@ class UntrimmedBase(Dataset):
         with open(filename, 'r') as fid:
             self.oracle_map = json.load(fid)
 
+    def _create_reverse_map(self):
+        concepts = list(self.oracle_map.keys())
+        reverse_map = {v:[] for v in range(len(self.metadata_per_video.keys()))}
+        for k,v_id_list in self.oracle_map.items():
+            for v_id in v_id_list:
+                reverse_map[v_id].append(k)
+        #reverse_map = {k:c for k,c in reverse_map.items() if c} # pruning
+        return reverse_map
+
     def _shrink_dataset(self):
         "Make single video dataset to debug video corpus moment retrieval"
         # TODO(tier-2;release): log if someone triggers this
@@ -193,8 +203,10 @@ class UntrimmedBase(Dataset):
     def _update_oracle_map(self, metadata):
         concepts = metadata['concepts']
         video_index = metadata['video_index']
+        list_of_available_concepts = list(self.oracle_map.keys())
         for c in concepts:
-            self.oracle_map[c].append(video_index)
+            if c in list_of_available_concepts:
+                self.oracle_map[c].append(video_index)
     
     def _prune_oracle_map(self):
         '''
@@ -258,7 +270,9 @@ class UntrimmedBasedMCNStyle(UntrimmedBase):
             self.nlp = spacy.load('en_core_web_sm')
             self._setup_map(oracle_map)
         self._setup_list(json_file)
-        self._prune_oracle_map()
+        if type(oracle) == int:
+            self._prune_oracle_map()
+            self.reverse_map = self._create_reverse_map()
         self._load_features(cues)
         self.eval = eval
         self.loc = loc

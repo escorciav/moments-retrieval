@@ -170,15 +170,11 @@ class CorpusVideoMomentRetrievalEval():
         '''
         push_up_indices, other_indices = [], []
         query_tokens = query_info["concepts"]
-        num_tokens = len(query_tokens)
         for i,v_id in enumerate(vid_indices):
-            match, idx = False, 0
-            while not match and idx < num_tokens:
-                if v_id in map[query_tokens[idx]]:
-                    match = True
-                    push_up_indices.append(i)
-                idx+=1
-            if not match:
+            video_concepts = map[int(v_id)]
+            if any(item in query_tokens for item in video_concepts):
+                push_up_indices.append(i)
+            else:
                 other_indices.append(i)
         indices = push_up_indices + other_indices
         # Rerank

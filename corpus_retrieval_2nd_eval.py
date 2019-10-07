@@ -27,7 +27,8 @@ parser.add_argument('--h5-path', type=Path, default='non-existent',
 # Architecture
 parser.add_argument('--corpus-setup',
                     choices=['LoopOverKMoments', 'LoopOverKVideos',
-                             'TwoStageClipPlusGeneric'],
+                             'TwoStageClipPlusGeneric',
+                             'TwoStageClipPlusCAL'],
                     default='LoopOverKMoments',
                     help='Kind of two-stage retrieval approach')
 parser.add_argument('--snapshot', type=Path, required=True, nargs='+',
@@ -141,7 +142,7 @@ def main(args):
     judge = CorpusVideoMomentRetrievalEval(topk=args.topk)
     args.n_display = max(int(args.n_display * len(dataset.metadata)), 1)
     for it, query_metadata in tqdm(enumerate(dataset.metadata),
-                                disable=args.disable_tqdm):
+                                   disable=args.disable_tqdm):
         vid_indices, segments = engine.query(
             query_metadata['language_input'], description_ind=it)
         judge.add_single_predicted_moment_info(

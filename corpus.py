@@ -1,6 +1,7 @@
 import hashlib
 import itertools
 import json
+import math
 
 import h5py
 import numpy as np
@@ -77,6 +78,7 @@ class ClipRetrieval(CorpusVideoMomentRetrievalBase):
         self.clip2proposal_ind = None
         self.clip_tables = None
         self.num_clips = None
+        self.max_moments_per_clip = None
         if not self.dataset.decomposable:
             raise ValueError('Dataset represenation does not admit '
                              'clip-based retrieval')
@@ -89,7 +91,7 @@ class ClipRetrieval(CorpusVideoMomentRetrievalBase):
         clip2proposal_ind = {}
         codes = {key: [] for key in self.models}
         sample_key = list(self.models.keys())[0]
-        proposal_runner, clip_runner = 0, 0
+        proposal_runner, clip_runner, max_moments_per_clip = 0, 0, 0
         clip_length = self.dataset.clip_length
         # TODO (tier-2;design): define method in dataset to do this?
         # batchify the fwd-pass
@@ -110,9 +112,10 @@ class ClipRetrieval(CorpusVideoMomentRetrievalBase):
                     clip_in_proposal.nonzero()[0] + proposal_runner).tolist()
 
                 clip_id = clip_ind + clip_runner
-                clip2proposal_ind[clip_id] = proposal_inds
+                clip2proposal_ind[clip_id] = torch.tensor(proposal_inds)
             proposal_runner += len(proposals_)
             clip_runner += num_clips_i
+            max_moments_per_clip = max(max_moments_per_clip, len(proposals_))
 
             # torchify
             for key, value in representation_dict.items():
@@ -144,6 +147,7 @@ class ClipRetrieval(CorpusVideoMomentRetrievalBase):
                                   num_entries_per_video)
         self.video_indices = torch.from_numpy(video_indices)
         self.clip2proposal_ind = clip2proposal_ind
+        self.max_moments_per_clip = max_moments_per_clip
 
     def query(self, description):
         "Search clips based on a text description given as list of words"
@@ -842,6 +846,262 @@ class TwoStageClipPlusGeneric():
 
     def _setup(self):
         self.stage1.indexing()
+
+
+class TwoStageClipPlusMCN():
+    "[WIP-Deprecate?] Approx CAL + MCN in single shot"
+
+    def __init__(self, dataset, model, dataset_1stage, model_1ststage,
+                 topk=100):
+        self.topk = topk
+        # 1st stage
+        model_dict_1ststage = {
+            key: model_1ststage[i]
+            for i, key in enumerate(dataset_1stage.cues)
+        }
+        self.stage1 = ClipRetrieval(dataset_1stage, model_dict_1ststage)
+        # 2nd stage
+        self.dataset = dataset
+        self.model = model
+        self.num_videos = None
+        self.video_indices = None
+        self.entries_per_video = None
+        self.proposals = None
+        self.moments_table = None
+        # Buffers
+        self._moment_indices = None
+        self._setup()
+
+    @property
+    def num_moments(self):
+        return self.stage1.proposals.shape[0]
+
+    def query(self, description, *args, **kwargs):
+        "Return videos and moments aligned with a text description"
+        # TODO (tier-2): remove 2nd-stage results from 1st-stage to make them
+        # exhaustive
+        torch.set_grad_enabled(False)
+        lang_feature, len_query = preprocess_description(
+            self.dataset, description)
+        visited_proposals = set()
+
+        # 1st-stage
+        video_indices_1ststage, clip_indices = self.stage1.query(description)
+        moment_indices = self._clip2moments(clip_indices[:self.topk])
+
+        # 2nd-stage
+        subset = self.moments_table[moment_indices, :]
+        lang_code = self.model.encode_query(lang_feature, len_query)
+        scores, descending_k = self.model.search(lang_code, subset)
+
+        _, ind_ = scores.sort(descending=descending_k)
+        ind = moment_indices[ind_]
+        return self.video_indices[ind], self.proposals[ind, :]
+
+    def _clip2moments(self, clip_indices):
+        # TODO: fix this size with max moments among all clips
+        moment_runner = 0
+        for i in clip_indices:
+            moments_from_i = self.stage1.clip2proposal_ind[i.item()]
+            n_i = len(moments_from_i)
+            self._moment_indices[
+                moment_runner:moment_runner + n_i] = moments_from_i
+            moment_runner += n_i
+        return torch.unique(self._moment_indices[:moment_runner])
+
+    def _setup(self):
+        "Indexing"
+        self.stage1.indexing()
+        self._stage2_indexing()
+        self._moment_indices = torch.empty(
+            self.topk * self.stage1.max_moments_per_clip,
+            dtype=torch.int64
+        )
+
+    def _stage2_indexing(self):
+        "Create index for 2nd stage"
+        torch.set_grad_enabled(False)
+        num_entries_per_video = []
+        codes = []
+        all_proposals = []
+        key = list(self.dataset.cues.keys())
+        assert len(key) == 1
+        key = key[0]
+        for video_id in self.dataset.videos:
+            representation_dict, proposals_ = (
+                self.dataset._compute_visual_feature_eval(video_id))
+            num_entries_per_video.append(len(proposals_))
+
+            # torchify
+            segment_rep_k = torch.from_numpy(representation_dict[key])
+            proposals = torch.from_numpy(proposals_)
+
+            # Append items to database
+            all_proposals.append(proposals)
+            # get codes of the proposals -> S_i x D matrix
+            # S_i := num proposals in ith-video
+            codes.append(self.model.visual_encoder(segment_rep_k))
+
+        # Form the S x D matrix.
+        # M := number of videos
+        # S := all (candidate) moments in the database. S = \sum_{i=1}^M S_i
+        self.moments_table = torch.cat(codes)
+        # TODO (tier-2; design): organize this better. psss pa' jodelo, we
+        # need to close the loop. Ta' loco ... XD
+        proposals = torch.cat(all_proposals)
+        self.num_videos = len(num_entries_per_video)
+        self.entries_per_video = torch.tensor(num_entries_per_video)
+        video_indices = np.repeat(
+            np.arange(0, len(self.dataset.videos)),
+            num_entries_per_video)
+        self.video_indices = torch.from_numpy(video_indices)
+        eps = torch.nn.functional.mse_loss(self.stage1.proposals, proposals)
+        assert eps < 1e-6
+        self.proposals = self.stage1.proposals
+
+
+class TwoStageClipPlusCAL():
+    "Approx CAL + CAL in single shot"
+
+    def __init__(self, dataset, model, dataset_1stage, model_1ststage,
+                 topk=100):
+        assert dataset.tef_interface is not None
+        self.topk = topk
+        # 1st stage
+        model_dict_1ststage = {
+            key: model_1ststage[i]
+            for i, key in enumerate(dataset_1stage.cues)
+        }
+        self.stage1 = ClipRetrieval(dataset_1stage, model_dict_1ststage)
+        # 2nd stage
+        self.dataset = dataset
+        self.model = model
+        self.num_videos = None
+        self.video_indices = None
+        self.entries_per_video = None
+        self.proposals = None
+        self.moments_table = None
+        self.moments_clip_mask = None
+        # Buffers
+        self._moment_indices = None
+        self._setup()
+
+    @property
+    def num_moments(self):
+        return self.stage1.proposals.shape[0]
+
+    def query(self, description, *args, **kwargs):
+        "Return videos and moments aligned with a text description"
+        # TODO (tier-2): remove 2nd-stage results from 1st-stage to make them
+        # exhaustive
+        torch.set_grad_enabled(False)
+        lang_feature, len_query = preprocess_description(
+            self.dataset, description)
+
+        # 1st-stage
+        video_indices_1ststage, clip_indices = self.stage1.query(description)
+        moment_indices = self._clip2moments(clip_indices[:self.topk])
+
+        # 2nd-stage
+        codes = self.moments_table[moment_indices, ...]
+        mask = self.moments_clip_mask[moment_indices, ...]
+        lang_code = self.model.encode_query(lang_feature, len_query)
+        # scores, descending_k = self.model.search(lang_code, codes)
+        # CAL search method is tailored to other kind of retrieval. Thus, we
+        # end up using a collection of methods to perform the retrieval of
+        # our interest here.
+        # TODO: refactor this by adding a new search method and organizing all
+        # the different retrieval schemes in this repo.
+        lang_code.unsqueeze_(dim=0)
+        scores = self.model.pool_compared_snippets(
+            self.model.compare_emdeddings(lang_code, codes), mask)
+        sorted_scores, ind_ = scores.sort(descending=False)
+        ind = moment_indices[ind_]
+        if 'return_scores' in kwargs and kwargs['return_scores']:
+            return self.video_indices[ind], self.proposals[ind, :], sorted_scores
+        return self.video_indices[ind], self.proposals[ind, :]
+
+    def _clip2moments(self, clip_indices):
+        # TODO: fix this size with max moments among all clips
+        moment_runner = 0
+        for i in clip_indices:
+            moments_from_i = self.stage1.clip2proposal_ind[i.item()]
+            n_i = len(moments_from_i)
+            self._moment_indices[
+                moment_runner:moment_runner + n_i] = moments_from_i
+            moment_runner += n_i
+        cev = torch.unique(self._moment_indices[:moment_runner])
+        return cev
+        # return torch.unique(self._moment_indices[:moment_runner])
+
+
+    def _setup(self):
+        "Indexing"
+        self.stage1.indexing()
+        self._stage2_indexing()
+        self._moment_indices = torch.empty(
+            self.topk * self.stage1.max_moments_per_clip,
+            dtype=torch.int64
+        )
+
+    def _stage2_indexing(self):
+        """Create index for 2nd stage
+
+        Create 'table' with representation of moments in the video corpus.
+        Given a video i with S_i number of proposals, each proposal s_ij spans
+        c_ij clips of the i-th video. Let denote the max number of moments in
+        the corpus by M = sum_i S_i . Similarly, the max num clips over all
+        proposals in the corpus by C = argmax_{i,j} c_ij . We represent each
+        clip with a vector of length D. Thus, the table size of the table is
+        M x C x D .
+
+        """
+        torch.set_grad_enabled(False)
+        num_entries_per_video, all_proposals = [], []
+        codes, masks = [], []
+        key = list(self.dataset.cues.keys())
+        assert len(key) == 1
+        key = key[0]
+        # TODO: formalize this hack. We use the least amount of padding to
+        # form a dense table. Code-wise is done in a dirty way without any
+        # checks or logging.
+        max_proposal_duration = (
+            self.stage1.proposals[:, 1] - self.stage1.proposals[:, 0]).max()
+        self.dataset.visual_interface.max_clips = math.ceil(
+            max_proposal_duration.item() / self.dataset.clip_length)
+
+        for video_id in self.dataset.videos:
+            representation_dict, proposals_ = (
+                self.dataset._compute_visual_feature_eval(video_id))
+            num_entries_per_video.append(len(proposals_))
+            mask_ = representation_dict['mask']
+
+            # torchify
+            segment_rep_k = torch.from_numpy(representation_dict[key])
+            proposals = torch.from_numpy(proposals_)
+            mask = torch.from_numpy(mask_)
+
+            # Append items to database
+            all_proposals.append(proposals)
+            masks.append(mask)
+            # get codes of the S_i proposals -> S_i x C x D tensor
+            codes.append(self.model.visual_encoder(segment_rep_k))
+
+        self.moments_table = torch.cat(codes)
+        self.moments_clip_mask = torch.cat(masks)
+        proposals = torch.cat(all_proposals)
+
+        # TODO (tier-2; design): organize this better.
+        assert self.stage1.num_videos == len(self.dataset.videos)
+        assert torch.nn.functional.l1_loss(
+            proposals, self.stage1.proposals) <= 1e-9
+        self.num_videos = self.stage1.num_videos
+        self.entries_per_video = torch.tensor(num_entries_per_video)
+        video_indices = np.repeat(
+            np.arange(0, len(self.dataset.videos)),
+            num_entries_per_video)
+        self.video_indices = torch.from_numpy(video_indices)
+        self.proposals = self.stage1.proposals
 
 
 def preprocess_description(dataset, description):

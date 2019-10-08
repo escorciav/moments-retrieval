@@ -124,6 +124,14 @@ parser.add_argument('--h5-path-nis', type=Path, default=None,
                     help='HDF5-file for negative importance sampling')
 parser.add_argument('--nis-k', type=int, default=None,
                     help='Only sample negative videos from top-k')
+parser.add_argument('--language-model', default='glove',
+                    choices=dataset_untrimmed.LANGUAGE,
+                    help='Language model to be use for embeddings.' )
+parser.add_argument('--bert-name', default='bert-base-uncased',
+                    choices=['bert-base-uncased', 'bert-large-uncased'],
+                    help='Select base or large bert.' )
+parser.add_argument('--bert-feat-comb',type=int, default = 0,choices=[0,1,2],
+                    help='Select how to combine bert layer features. 0-Concat last 4 layers 1-Sum last 4 layers 2-Last layer' )                
 # Hyper-parameters concerning proposals (candidates) to score
 parser.add_argument('--proposal-interface', default='SlidingWindowMSRSS',
                     choices=proposals.PROPOSAL_SCHEMES,
@@ -505,9 +513,13 @@ def setup_dataset(args):
          'ground_truth_rate': args.ground_truth_rate,
          'prob_nproposal_nextto': args.prob_proposal_nextto,
          'sampling_iou': args.negative_sampling_iou,
-         'h5_nis': args.h5_path_nis, 'nis_k': args.nis_k},
+         'h5_nis': args.h5_path_nis, 'nis_k': args.nis_k,
+         'language_model': args.language_model, 
+         'bert_name' : args.bert_name, 
+         'bert_feat_comb' : args.bert_feat_comb},
         # Validation or Testing
-        {'eval': True, 'proposals_interface': proposal_generator}
+        {'eval': True, 'proposals_interface': proposal_generator,
+         'language_model': args.language_model}
     ]
     extras_loaders_configs = [
         # Training

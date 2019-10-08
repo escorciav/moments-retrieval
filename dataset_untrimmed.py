@@ -11,38 +11,69 @@ from scipy.signal import convolve
 from torch.utils.data import Dataset
 
 from glove import RecurrentEmbedding
+from bert import BERT 
 from np_segments_ops import iou as segment_iou
 from utils import dict_of_lists, unique2d_perserve_order
 
 WORD_TYPE = [['NOUN', 'VERB'], ['NOUN'],['VERB']]
+LANGUAGE = ['glove', 'bert']
 
-class FakeLanguageRepresentation():
+class LanguageRepresentation(object):
+    def __init__(self, max_words=50):
+        self.max_words = max_words
+        self.dim = None
+        self.embedding = None
+
+    def __call__(self, query):
+        raise('Not implemented')
+
+
+class FakeLanguageRepresentation(LanguageRepresentation):
     "Allow faster iteration while I learn to cache stuff ;P"
 
     def __init__(self, max_words=50, dim=300):
-        self.max_words = max_words
+        super(FakeLanguageRepresentation, self).__init__(max_words)
         self.dim = dim
 
     def __call__(self, query):
         return np.random.rand(self.max_words, self.dim).astype(np.float32)
 
 
-class LanguageRepresentationMCN(object):
+class LanguageRepresentationMCN_glove(LanguageRepresentation):
     "Get representation of sentence"
 
     def __init__(self, max_words):
-        self.max_words = max_words
-        self.rec_embedding = RecurrentEmbedding()
-        self.dim = self.rec_embedding.embedding.glove_dim
+        super(LanguageRepresentationMCN_glove, self).__init__(max_words)
+        self.embedding = RecurrentEmbedding()
+        self.dim = self.embedding.embedding.glove_dim
 
     def __call__(self, query):
         "Return padded sentence feature"
         feature = np.zeros((self.max_words, self.dim), dtype=np.float32)
         len_query = min(len(query), self.max_words)
         for i, word in enumerate(query[:len_query]):
-            if word in self.rec_embedding.vocab_dict:
-                feature[i, :] = self.rec_embedding.vocab_dict[word]
-        return feature
+            if word in self.embedding.vocab_dict:
+                feature[i, :] = self.embedding.vocab_dict[word]
+        return feature, len_query
+
+
+class LanguageRepresentationMCN_bert(LanguageRepresentation):
+    "Get representation of sentence for BERT"
+
+    def __init__(self, max_words, model_name='bert-base-uncased', 
+                features_combination_mode=0):
+        super(LanguageRepresentationMCN_bert, self).__init__(max_words)
+        self.embedding = BERT(model_name=model_name,
+                    features_combination_mode=features_combination_mode)
+        self.dim = self.embedding.dim
+
+    def __call__(self, query):
+        "Return padded sentence feature"
+        feature = np.asarray(self.embedding(query)).astype(np.float32)
+        len_query = min(feature.shape[0], self.max_words)
+        padding_size = self.max_words - len_query
+        feature = np.pad(feature, [(0,padding_size),(0,0)], mode='constant')
+        return feature, len_query
 
 
 @unique
@@ -135,12 +166,16 @@ class UntrimmedBase(Dataset):
         else:
             self.clip_length = time_units[0]
 
-    def _preprocess_descriptions(self):
+    def _preprocess_descriptions(self, apply_custom_tokenization):
         "Tokenize descriptions into words"
         for moment_i in self.metadata:
             # TODO: update to use spacy or allennlp
-            moment_i['language_input'] = sentences_to_words(
-                [moment_i['description']])
+            if apply_custom_tokenization:
+                moment_i['language_input'] = sentences_to_words(
+                    [moment_i['description']])
+            else:
+                # Tokenization is provided withing the BERT object
+                moment_i['language_input'] = moment_i['description']
 
     def _setup_list(self, filename):
         "Read JSON file with all moments i.e. segment and description"
@@ -151,7 +186,6 @@ class UntrimmedBase(Dataset):
             self.metadata_per_video = data['videos']
             self._update_metadata_per_video()
             self._update_metadata()
-        self._preprocess_descriptions()
 
     def _setup_map(self, filename):
         "Read JSON file with the mapping concept to videos"
@@ -263,7 +297,8 @@ class UntrimmedBasedMCNStyle(UntrimmedBase):
                  proposals_interface=None, no_visual=False, sampling_iou=0.35,
                  ground_truth_rate=1, prob_nproposal_nextto=-1,
                  clip_length=None, h5_nis=None, nis_k=None, oracle=None, 
-                 debug=False, oracle_map=None):
+                 debug=False, oracle_map=None, language_model='glove', 
+                 bert_name=None, bert_feat_comb=None):
         super(UntrimmedBasedMCNStyle, self).__init__()
         self.oracle = oracle
         if type(oracle) == int:
@@ -290,10 +325,17 @@ class UntrimmedBasedMCNStyle(UntrimmedBase):
         self._prob_querytovideo = None
         # clean this, glove of original MCN is really slow, it kills fast
         # iteration during debugging :) (yes, I could cache but dahh)
-        self.lang_interface = FakeLanguageRepresentation(
-            max_words=max_words)
+        self.lang_interface = FakeLanguageRepresentation(max_words=max_words)
+        apply_custom_tokenization = False  
         if not debug:
-            self.lang_interface = LanguageRepresentationMCN(max_words)
+            if language_model == 'glove':
+                self.lang_interface = LanguageRepresentationMCN_glove(max_words)
+                apply_custom_tokenization = True
+            if language_model == 'bert':
+                # We will use the standard BERT tokenizer
+                self.lang_interface = LanguageRepresentationMCN_bert(
+                                            max_words, bert_name, bert_feat_comb)
+        self._preprocess_descriptions(apply_custom_tokenization)
         if self.eval:
             self.eval = True
             assert self.proposals_interface is not None
@@ -351,8 +393,7 @@ class UntrimmedBasedMCNStyle(UntrimmedBase):
     def _compute_language_feature(self, query):
         "Get language representation of words in query"
         # TODO: pack next two vars into a dict
-        feature = self.lang_interface(query)
-        len_query = min(len(query), self.max_words)
+        feature, len_query = self.lang_interface(query)
         return feature, len_query
 
     def _compute_visual_feature(self, video_id, moment_loc):

@@ -4,6 +4,7 @@ import logging
 import time
 from itertools import product
 from pathlib import Path
+import math
 
 import torch
 from torch.utils.data import DataLoader
@@ -131,7 +132,9 @@ parser.add_argument('--bert-name', default='bert-base-uncased',
                     choices=['bert-base-uncased', 'bert-large-uncased'],
                     help='Select base or large bert.' )
 parser.add_argument('--bert-feat-comb',type=int, default = 0,choices=[0,1,2],
-                    help='Select how to combine bert layer features. 0-Concat last 4 layers 1-Sum last 4 layers 2-Last layer' )                
+                    help='Select how to combine bert layer features. 0-Last layer 1-Sum last 4 layers 2-Concat last 4 layers' )                
+parser.add_argument('--bert-load-precomputed-features', action='store_true',
+                    help='Enable loading precomputed text features otherwise they will be computed previous to training. Avoid using if interested in a deploiment for the website.')
 # Hyper-parameters concerning proposals (candidates) to score
 parser.add_argument('--proposal-interface', default='SlidingWindowMSRSS',
                     choices=proposals.PROPOSAL_SCHEMES,
@@ -395,9 +398,11 @@ def validation(args, net, loader):
                 idx = non_maxima_suppresion(
                     segments.numpy(), -scores.numpy(), args.nms_threshold)
                 sorted_segments = segments[idx]
+                scores = scores[idx] 
             else:
                 scores, idx = results.sort(descending=descending)
                 sorted_segments = segments[idx, :]
+                scores = scores[idx]
 
             hit_k_iou = single_moment_retrieval(
                 gt_segment, sorted_segments, topk=args.topk)
@@ -412,10 +417,10 @@ def validation(args, net, loader):
             if tracker:
                 # artifact to ease Tracker job for few number of segments
                 if scores.shape[0] < MAX_TOPK:
-                    n_times = round(MAX_TOPK / scores.shape[0])
+                    n_times = math.ceil(MAX_TOPK / scores.shape[0])
                     scores = scores.repeat(n_times)
                     sorted_segments = sorted_segments.repeat(n_times, 1)
-                tracker.append(it, hit_k_iou, scores[: MAX_TOPK],
+                tracker.append(it, hit_k_iou, scores[:MAX_TOPK],
                                sorted_segments[:MAX_TOPK, :])
             end = time.time()
     logging.info(f'{time_meters.report()}\t{meters_1.report()}')
@@ -496,6 +501,16 @@ def setup_dataset(args):
 
     subset_files = [('train', args.train_list), ('val', args.val_list),
                     ('test', args.test_list)]
+    data_directory = None
+    if args.bert_load_precomputed_features:
+        if 'didemo' in str(args.train_list) or 'didemo' in str(args.test_list):
+            data_directory = 'didemo'
+        elif 'charades-sta' in str(args.train_list) or 'charades-sta' in str(args.test_list):
+            data_directory = 'charades-sta'
+        elif 'activitynet-captions' in str(args.train_list) or 'activitynet-captions' in str(args.test_list):
+            data_directory = 'activitynet-captions'
+        else:
+            raise('Cannot load precomputed language features for unknown dataset.')    
     cues, no_visual = {args.feat: None}, True
     if args.h5_path.exists():
         no_visual = False
@@ -516,10 +531,14 @@ def setup_dataset(args):
          'h5_nis': args.h5_path_nis, 'nis_k': args.nis_k,
          'language_model': args.language_model, 
          'bert_name' : args.bert_name, 
-         'bert_feat_comb' : args.bert_feat_comb},
+         'bert_feat_comb' : args.bert_feat_comb,
+         'data_directory': data_directory},
         # Validation or Testing
         {'eval': True, 'proposals_interface': proposal_generator,
-         'language_model': args.language_model}
+         'language_model': args.language_model, 
+         'bert_name' : args.bert_name, 
+         'bert_feat_comb' : args.bert_feat_comb,
+         'data_directory': data_directory}
     ]
     extras_loaders_configs = [
         # Training
@@ -532,7 +551,7 @@ def setup_dataset(args):
 
     logging.info('Setting-up datasets and loaders')
     logging.info('Pre-loading features... '
-                 'It may take a couple of minutes (Glove!)')
+                 'It may take a couple of minutes (Language features!)')
     loaders = []
     for i, (subset, filename) in enumerate(subset_files):
         index_config = 0 if i == 0 else -1

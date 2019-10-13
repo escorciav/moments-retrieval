@@ -3,8 +3,8 @@ from collections import Counter
 import spacy
 import random
 import numpy as np
-import matplotlib.mlab as mlab
-import matplotlib.pyplot as plt
+# import matplotlib.mlab as mlab
+# import matplotlib.pyplot as plt
 import datetime 
 import utils
 import os
@@ -306,7 +306,7 @@ if __name__ == '__main__':
     # count_noun_didemo(dataset=dataset, concept_type=concept_type)
     # histogram(dataset=dataset, concept_type=concept_type)
     # map_noun_to_videos(dataset=dataset, concept_type=concept_type)
-    #create_json(dataset=dataset, concept_type=concept_type)
+    create_json(dataset=dataset, concept_type=concept_type)
     # merge_outpud_didemo(dataset)
     #filter_top_50(dataset=dataset, concept_type=concept_type)
-    create_map(dataset=dataset, concept_type=concept_type)
+    #create_map(dataset=dataset, concept_type=concept_type)

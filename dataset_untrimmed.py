@@ -1,9 +1,9 @@
 "Dataset abstractions to deal with data of various length"
-import json
 import random
 import re
 from enum import IntEnum, unique
 
+from joblib import Parallel, delayed, parallel_backend
 import h5py
 import numpy as np
 import spacy
@@ -11,12 +11,17 @@ from scipy.signal import convolve
 from torch.utils.data import Dataset
 
 from glove import RecurrentEmbedding
-from bert import BERT 
+from bert import BERTEmbedding
+from grovle import GrOVLEEmbedding
 from np_segments_ops import iou as segment_iou
 from utils import dict_of_lists, unique2d_perserve_order
 
 WORD_TYPE = [['NOUN', 'VERB'], ['NOUN'],['VERB']]
-LANGUAGE = ['glove', 'bert']
+LANGUAGE = ['glove', 'bert', 'grovle']
+
+import json
+import time as time
+
 
 class LanguageRepresentation(object):
     def __init__(self, max_words=50):
@@ -36,7 +41,9 @@ class FakeLanguageRepresentation(LanguageRepresentation):
         self.dim = dim
 
     def __call__(self, query):
-        return np.random.rand(self.max_words, self.dim).astype(np.float32)
+        feature = np.random.rand(self.max_words, self.dim).astype(np.float32)
+        len_query = self.max_words
+        return feature, len_query
 
 
 class LanguageRepresentationMCN_glove(LanguageRepresentation):
@@ -57,13 +64,28 @@ class LanguageRepresentationMCN_glove(LanguageRepresentation):
         return feature, len_query
 
 
+class LanguageRepresentationMCN_grovle(LanguageRepresentation):
+    "Get representation of sentence"
+
+    def __init__(self, max_words):
+        super(LanguageRepresentationMCN_grovle, self).__init__(max_words)
+        self.embedding = GrOVLEEmbedding()
+        self.dim = self.embedding.grovle_dim
+
+    def __call__(self, query):
+        "Return padded sentence feature"
+        len_query = min(len(query), self.max_words)
+        feature = self.embedding(query, self.max_words)
+        return feature, len_query
+
+
 class LanguageRepresentationMCN_bert(LanguageRepresentation):
     "Get representation of sentence for BERT"
 
-    def __init__(self, max_words, model_name='bert-base-uncased', 
+    def __init__(self, max_words,  data_directory=None, model_name='bert-base-uncased', 
                 features_combination_mode=0):
         super(LanguageRepresentationMCN_bert, self).__init__(max_words)
-        self.embedding = BERT(model_name=model_name,
+        self.embedding = BERTEmbedding(data_directory=data_directory, model_name=model_name,
                     features_combination_mode=features_combination_mode)
         self.dim = self.embedding.dim
 
@@ -107,6 +129,7 @@ class UntrimmedBase(Dataset):
         self.oracle = None          # Boolean to enable oracle
         self.oracle_map = None      # From concepts to videos
         self.reverse_map = None     # From videos to concepts
+        self.language_features = {}
 
     def max_number_of_clips(self):
         "Return maximum number of clips/chunks over all videos in dataset"
@@ -166,16 +189,20 @@ class UntrimmedBase(Dataset):
         else:
             self.clip_length = time_units[0]
 
-    def _preprocess_descriptions(self, apply_custom_tokenization):
-        "Tokenize descriptions into words"
-        for moment_i in self.metadata:
-            # TODO: update to use spacy or allennlp
-            if apply_custom_tokenization:
-                moment_i['language_input'] = sentences_to_words(
-                    [moment_i['description']])
-            else:
-                # Tokenization is provided withing the BERT object
-                moment_i['language_input'] = moment_i['description']
+    def _preprocess_descriptions(self, apply_custom_tokenization, debug):
+        "Tokenize descriptions into words and precompute every language feature"
+        if self.data_directory and isinstance(self.lang_interface, LanguageRepresentationMCN_bert):
+            for moment_i in self.metadata:
+                idx = moment_i['annotation_id']
+                self.language_features[idx] = self.lang_interface.embedding(idx)                                                                     
+        else:
+            tokenization = sentences_to_words
+            if not apply_custom_tokenization and not debug:
+                tokenization = self.lang_interface.embedding._tokenization
+            for i, moment_i in enumerate(self.metadata):
+                # TODO: update to use spacy or allennlp
+                tokens = tokenization(moment_i['description'])
+                self.language_features[moment_i['annotation_id']] = self.lang_interface(tokens)
 
     def _setup_list(self, filename):
         "Read JSON file with all moments i.e. segment and description"
@@ -298,9 +325,10 @@ class UntrimmedBasedMCNStyle(UntrimmedBase):
                  ground_truth_rate=1, prob_nproposal_nextto=-1,
                  clip_length=None, h5_nis=None, nis_k=None, oracle=None, 
                  debug=False, oracle_map=None, language_model='glove', 
-                 bert_name=None, bert_feat_comb=None):
+                 bert_name=None, bert_feat_comb=None, data_directory=None):
         super(UntrimmedBasedMCNStyle, self).__init__()
         self.oracle = oracle
+        self.data_directory = data_directory
         if type(oracle) == int:
             self.nlp = spacy.load('en_core_web_sm')
             self._setup_map(oracle_map)
@@ -328,14 +356,9 @@ class UntrimmedBasedMCNStyle(UntrimmedBase):
         self.lang_interface = FakeLanguageRepresentation(max_words=max_words)
         apply_custom_tokenization = False  
         if not debug:
-            if language_model == 'glove':
-                self.lang_interface = LanguageRepresentationMCN_glove(max_words)
-                apply_custom_tokenization = True
-            if language_model == 'bert':
-                # We will use the standard BERT tokenizer
-                self.lang_interface = LanguageRepresentationMCN_bert(
-                                            max_words, bert_name, bert_feat_comb)
-        self._preprocess_descriptions(apply_custom_tokenization)
+            apply_custom_tokenization = self._select_language_interface(data_directory,
+                        language_model, max_words, bert_name, bert_feat_comb)
+        self._preprocess_descriptions(apply_custom_tokenization, debug)
         if self.eval:
             self.eval = True
             assert self.proposals_interface is not None
@@ -390,10 +413,11 @@ class UntrimmedBasedMCNStyle(UntrimmedBase):
         proposals = self.proposals_interface(video_id, metadata)
         return proposals
 
-    def _compute_language_feature(self, query):
-        "Get language representation of words in query"
+    def _compute_language_feature(self, idx):
+        "Get language representation for query with index idx in self.metadata"
         # TODO: pack next two vars into a dict
-        feature, len_query = self.lang_interface(query)
+        # feature, len_query = self.lang_interface(query)
+        feature, len_query = self.language_features[idx]
         return feature, len_query
 
     def _compute_visual_feature(self, video_id, moment_loc):
@@ -406,14 +430,13 @@ class UntrimmedBasedMCNStyle(UntrimmedBase):
         "Return anchor, positive, None*2, gt_segments, candidate_segments"
         moment_i = self.metadata[idx]
         gt_segments = moment_i['times']
-        query = moment_i['language_input']
         video_id = moment_i['video']
 
         pos_visual_feature, segments = self._compute_visual_feature_eval(
             video_id)
         neg_intra_visual_feature = None
         neg_inter_visual_feature = None
-        words_feature, len_query = self._compute_language_feature(query)
+        words_feature, len_query = self._compute_language_feature(moment_i['annotation_id'])
         num_segments = len(segments)
         len_query = [len_query] * num_segments
         words_feature = np.tile(words_feature, (num_segments, 1, 1))
@@ -650,7 +673,6 @@ class UntrimmedBasedMCNStyle(UntrimmedBase):
     def _train_item(self, idx):
         "Return anchor, positive, negatives"
         moment_i = self.metadata[idx]
-        query = moment_i['language_input']
         video_id = moment_i['video']
         # Sample a positive annotations if there are multiple
         t_start_end = moment_i['times'][0, :]
@@ -666,7 +688,7 @@ class UntrimmedBasedMCNStyle(UntrimmedBase):
             idx, t_start_end)
         neg_inter_visual_feature = self._negative_inter_sampling(
             idx, t_start_end)
-        words_feature, len_query = self._compute_language_feature(query)
+        words_feature, len_query = self._compute_language_feature(moment_i['annotation_id'])
 
         argout = (words_feature, len_query, pos_visual_feature,
                   neg_intra_visual_feature, neg_inter_visual_feature)
@@ -675,6 +697,26 @@ class UntrimmedBasedMCNStyle(UntrimmedBase):
             source_id = moment_i.get('source', float('nan'))
             return (idx, source_id) + argout
         return argout
+    
+    def _select_language_interface(self, data_directory, language_model, 
+                        max_words, bert_name, bert_feat_comb):
+        apply_custom_tokenization = False
+        if language_model == 'glove':
+            self.lang_interface = LanguageRepresentationMCN_glove(max_words)
+            apply_custom_tokenization = True
+
+        elif language_model == 'bert':
+            # We will use the standard BERT tokenizer
+            self.lang_interface = LanguageRepresentationMCN_bert(max_words=max_words,
+                                    data_directory=data_directory, model_name=bert_name, 
+                                    features_combination_mode=bert_feat_comb)
+        elif language_model == 'grovle':
+            self.lang_interface = LanguageRepresentationMCN_grovle(max_words)
+            apply_custom_tokenization = True
+        else: 
+            print(f'Unknown language model {language_model}')
+            raise()
+        return apply_custom_tokenization
 
 
 class UntrimmedMCN(UntrimmedBasedMCNStyle):
@@ -940,14 +982,16 @@ class UntrimmedCoceptsMCN(UntrimmedMCN):
         "Return anchor, positive, None*2, gt_segments, candidate_segments"
         moment_i = self.metadata[idx]
         gt_segments = moment_i['times']
-        query = moment_i['language_input']
         video_id = moment_i['video']
 
         pos_visual_feature, segments = self._compute_visual_feature_eval(
             video_id)
         neg_intra_visual_feature = None
         neg_inter_visual_feature = None
-        words_feature, len_query = self._compute_language_feature(query)
+        # We might want to write a self._compute_language_feature to be used in evaluation
+        # Right now it is a look up dictionary with precomputed features, not suited for online
+        # querying as in the scope of the website.
+        words_feature, len_query = self._compute_language_feature(moment_i['annotation_id'])
         num_segments = len(segments[0])
         len_query = [len_query] * num_segments
         words_feature = np.tile(words_feature, (num_segments, 1, 1))
@@ -1031,14 +1075,13 @@ class UntrimmedCoceptsSMCN(UntrimmedSMCN):
         "Return anchor, positive, None*2, gt_segments, candidate_segments"
         moment_i = self.metadata[idx]
         gt_segments = moment_i['times']
-        query = moment_i['language_input']
         video_id = moment_i['video']
 
         pos_visual_feature, segments = self._compute_visual_feature_eval(
             video_id)
         neg_intra_visual_feature = None
         neg_inter_visual_feature = None
-        words_feature, len_query = self._compute_language_feature(query)
+        words_feature, len_query = self._compute_language_feature(moment_i['annotation_id'])
         num_segments = len(segments[0])
         len_query = [len_query] * num_segments
         words_feature = np.tile(words_feature, (num_segments, 1, 1))
@@ -1488,6 +1531,8 @@ def normalization1d(start, end, features):
 
 def sentences_to_words(sentences):
     words = []
+    if type(sentences) == str:
+        sentences = [sentences]
     for s in sentences:
         words.extend(word_tokenize(str(s.lower())))
     return words

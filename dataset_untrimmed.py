@@ -3,7 +3,6 @@ import random
 import re
 from enum import IntEnum, unique
 
-from joblib import Parallel, delayed, parallel_backend
 import h5py
 import numpy as np
 import spacy
@@ -65,10 +64,13 @@ class LanguageRepresentationMCN_glove(LanguageRepresentation):
 
 
 class LanguageRepresentationMCN_grovle(LanguageRepresentation):
-    "Get representation of sentence"
+    '''
+    DEPRECATED
+    '''
 
     def __init__(self, max_words):
         super(LanguageRepresentationMCN_grovle, self).__init__(max_words)
+        raise('GROVLE IS DEPRECATED')
         self.embedding = GrOVLEEmbedding()
         self.dim = self.embedding.grovle_dim
 
@@ -130,6 +132,8 @@ class UntrimmedBase(Dataset):
         self.oracle_map = None      # From concepts to videos
         self.reverse_map = None     # From videos to concepts
         self.language_features = {}
+        self.objects_detection = {}
+        self.map_concepts_to_obj_class = {}
 
     def max_number_of_clips(self):
         "Return maximum number of clips/chunks over all videos in dataset"
@@ -219,6 +223,14 @@ class UntrimmedBase(Dataset):
         with open(filename, 'r') as fid:
             self.oracle_map = json.load(fid)
 
+    def _load_obj_detection(self, filename):
+        "Read JSON file with the detections of objects per clip"
+        with open(filename, 'r') as fid:
+            self.objects_detection = json.load(fid)
+        filename = './data/raw/concepts_map_to_coco_classes.json'
+        with open(filename, 'r') as fid:  
+            self.map_concepts_to_obj_class = json.load(fid)
+    
     def _create_reverse_map(self):
         concepts = list(self.oracle_map.keys())
         reverse_map = {v:[] for v in range(len(self.metadata_per_video.keys()))}
@@ -255,7 +267,7 @@ class UntrimmedBase(Dataset):
             self.metadata_per_video[video_id]['moment_indices'].append(i)
             # `time` field may get deprecated
             self.metadata[i]['time'] = None
-            if type(self.oracle) == int: 
+            if type(self.oracle) == int and self.oracle_map: 
                 tokens =  self.nlp(self.metadata[i]['description'])
                 self.metadata[i]['concepts'] = [t.lemma_ for t in tokens 
                                     if t.pos_ in WORD_TYPE[self.oracle]]
@@ -290,6 +302,8 @@ class UntrimmedBase(Dataset):
             self.metadata_per_video[key]['index'] = i
             # This field is populated by _update_metadata
             self.metadata_per_video[key]['moment_indices'] = []
+            if self.objects_detection:
+                self.metadata_per_video[key]['detected_objs_per_clip'] = self.objects_detection[key]
             
     def _video_duration(self, video_id):
         "Return duration of a given video"
@@ -324,18 +338,23 @@ class UntrimmedBasedMCNStyle(UntrimmedBase):
                  proposals_interface=None, no_visual=False, sampling_iou=0.35,
                  ground_truth_rate=1, prob_nproposal_nextto=-1,
                  clip_length=None, h5_nis=None, nis_k=None, oracle=None, 
-                 debug=False, oracle_map=None, language_model='glove', 
-                 bert_name=None, bert_feat_comb=None, data_directory=None):
+                 debug=False, oracle_map=None, obj_detection_path=None, 
+                 language_model='glove', bert_name=None, bert_feat_comb=None, 
+                 data_directory=None):
         super(UntrimmedBasedMCNStyle, self).__init__()
         self.oracle = oracle
         self.data_directory = data_directory
         if type(oracle) == int:
             self.nlp = spacy.load('en_core_web_sm')
-            self._setup_map(oracle_map)
+            if oracle_map:
+                self._setup_map(oracle_map)
+            if obj_detection_path:
+                self._load_obj_detection(obj_detection_path)
         self._setup_list(json_file)
-        if type(oracle) == int:
+        if type(oracle) == int and self.oracle_map:
             self._prune_oracle_map()
             self.reverse_map = self._create_reverse_map()
+
         self._load_features(cues)
         self.eval = eval
         self.loc = loc
@@ -1542,7 +1561,6 @@ def word_tokenize(s):
     sent = s.lower()
     sent = re.sub('[^A-Za-z0-9\s]+', ' ', sent)
     return sent.split()
-
 
 
 if __name__ == '__main__':

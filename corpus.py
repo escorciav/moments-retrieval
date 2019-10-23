@@ -51,7 +51,7 @@ class CorpusVideoMomentRetrievalBase():
     def preprocess_description(self, description):
         "Return tensors representing description as 1) vectors and 2) length"
         # TODO (release): allow to tokenize description
-        assert isinstance(description, list)
+        # assert isinstance(description, list)
         lang_feature_, len_query_ = self.dataset._compute_language_feature(
             description)
         # torchify

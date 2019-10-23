@@ -6,6 +6,7 @@ import torch
 
 from np_segments_ops import torch_iou
 import sys
+import math
 
 IOU_THRESHOLDS = (0.5, 0.7)
 TOPK = (1, 5)
@@ -163,7 +164,7 @@ class CorpusVideoMomentRetrievalEval():
         # Lock query-id and record index for debugging
         self.map_query[query_id] = ind
 
-    def oracle_reranking(self, query_info, vid_indices, pred_segments, metadata, map):
+    def oracle_concept_reranking(self, query_info, vid_indices, pred_segments, metadata, map):
         '''
         The function rerankes the moments such that we have at the top the moments 
         related to the concepts present in the query
@@ -181,6 +182,51 @@ class CorpusVideoMomentRetrievalEval():
         new_vid_indices   = torch.stack([vid_indices[i] for i in indices])
         new_pred_segments = torch.stack([pred_segments[i] for i in indices])
         return new_vid_indices, new_pred_segments
+
+    def oracle_object_reranking(self, query_info, vid_indices, pred_segments, 
+                                    metadata, map_concepts_to_obj_class, clip_length,
+                                    use_concepts_and_obj_predictions):
+        '''
+        The function rerankes the moments such that we have at the top the moments 
+        related to the concepts present in the query
+        '''
+        reranking_indices = [[],[]]
+        maps_keys = list(map_concepts_to_obj_class.keys())
+        
+        list_of_video_id = list(metadata.keys())
+        # get the coco id of the concepts that are in the sentence
+        obj_class_of_query_concepts = [0]
+        if use_concepts_and_obj_predictions:
+            obj_class_of_query_concepts = [map_concepts_to_obj_class[t] for t in query_info['concepts'] if t in maps_keys]
+            num_classes = len(list(set([map_concepts_to_obj_class[k] for k in maps_keys])))
+            reranking_indices = [[] for elem in range(num_classes)]
+        # If they have been detected we push the clip to the top
+        for i,v_id in enumerate(vid_indices):
+            #get predicted object for video
+            predicted_obj_per_clip_in_video = metadata[list_of_video_id[int(v_id)]]['detected_objs_per_clip']
+            segment = pred_segments[i].tolist()             # get predited segments
+            start_idx = int(segment[0]/clip_length)         # get initial index of window
+            end_idx = int(math.ceil(segment[1]/clip_length))# get final index of window
+            last_window_idx = int(list(predicted_obj_per_clip_in_video.keys())[-1])
+            end_idx = min(end_idx, last_window_idx)
+            if start_idx == end_idx: 
+                end_idx += 1
+            detected_obj_class_in_moment = []                 # list of objects detected in moment
+            for ii in range(start_idx,end_idx):
+                detected_obj_class_in_moment.extend(predicted_obj_per_clip_in_video[str(ii)])
+            # DETERMINE CONDITION TO USE:
+            matching_objects = list(set([obj for obj in obj_class_of_query_concepts if obj in detected_obj_class_in_moment]))
+            reranking_indices[len(matching_objects)].append(i)
+            # if len(matching_objects)>1:
+            #     a = 0
+        indices = []
+        for index_list in reversed(reranking_indices):
+            indices.extend(index_list)
+            
+        # Rerank
+        new_vid_indices   = torch.stack([vid_indices[i] for i in indices])
+        new_pred_segments = torch.stack([pred_segments[i] for i in indices])
+        return new_vid_indices, new_pred_segments    
 
     def evaluate(self):
         "Compute MedRank@IOU and R@IOU,k accross the dataset"

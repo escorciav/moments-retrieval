@@ -48,7 +48,11 @@ parser.add_argument('--greedy', type=int, default=0,
                     help='Top-k seed clips for greedy search over clips')
 parser.add_argument('--concepts-oracle', type=int, choices=[0,1,2],
                     help='Index to select which concepts to compute:\n0-Nouns and Verbs \n1-Nouns \n2-Verbs')  
-parser.add_argument('--oracle-map', type=Path, help='JSON that map concepts to videos')                
+parser.add_argument('--oracle-map', type=Path, help='JSON that map concepts to videos')  
+parser.add_argument('--obj-detection-path', type=Path, 
+                    help='JSON with information of detected objects in clips, output of Detectron 2.')   
+parser.add_argument('--use-concepts-and-obj-predictions', action='store_true',
+                    help='Enable usage of both obj info and concept info for reranking.')
 # Dump results and logs
 parser.add_argument('--dump', action='store_true',
                     help='Save log in text file and json')
@@ -132,7 +136,8 @@ def main(args):
         proposals_interface=proposals_interface,
         clip_length=clip_length,
         oracle=args.concepts_oracle,
-        oracle_map=args.oracle_map
+        oracle_map=args.oracle_map,
+        obj_detection_path=args.obj_detection_path
     )
     dataset = dataset_untrimmed.__dict__[args.dataset](**dataset_setup)
     if args.arch == 'SMCN':
@@ -162,6 +167,13 @@ def main(args):
     engine = corpus.__dict__[args.engine](dataset, models_dict, **engine_prm)
     engine.indexing()
 
+    # with open('./data/didemo_train_corpus_information.json','w') as f:
+    #     json.dump({'proposals':engine.proposals.tolist(), 
+    #             'video_indices':engine.video_indices.tolist()}, f)
+
+    # import sys
+    # sys.exit(0)
+
     logging.info('Launch evaluation...')
     # log-scale up to the end of the database
     if len(args.topk) == 1 and args.topk[0] == 0:
@@ -177,15 +189,28 @@ def main(args):
     for it, query_metadata in tqdm(enumerate(dataset.metadata),
                                    disable=args.disable_tqdm):
         result_per_query = engine.query(
-            query_metadata['language_input'],
+            description = query_metadata['annotation_id'],
             return_indices=args.dump_per_instance_results)
         if args.dump_per_instance_results:
             vid_indices, segments, proposals_ind = result_per_query
         else:
             vid_indices, segments = result_per_query
-        if type(args.concepts_oracle) == int:
-            vid_indices, segments = judge.oracle_reranking(query_metadata, 
+        if type(args.concepts_oracle) == int and not args.obj_detection_path:
+            vid_indices, segments = judge.oracle_concept_reranking(query_metadata, 
                         vid_indices, segments, dataset.metadata, dataset.reverse_map)
+        elif type(args.concepts_oracle) == int and args.obj_detection_path:
+            clip_length = dataset.clip_length
+            if clip_length == 2.5:
+                clip_length = 5
+            if clip_length == 1.5:
+                clip_length = 3
+            clip_length = int(clip_length)
+            
+            vid_indices, segments = judge.oracle_object_reranking(query_metadata, 
+                                    vid_indices, segments, dataset.metadata_per_video, 
+                                    dataset.map_concepts_to_obj_class, clip_length,
+                                    args.use_concepts_and_obj_predictions)
+        
         judge.add_single_predicted_moment_info(
             query_metadata, vid_indices, segments, max_rank=engine.num_moments)
         num_instances_retrieved.append(len(vid_indices))
@@ -292,6 +317,7 @@ def load_hyperparameters(args):
 
     for value in UNIQUE_VARS.values():
         assert len(np.unique(value)) == 1
+
 
 
 if __name__ == '__main__':

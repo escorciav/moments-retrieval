@@ -131,7 +131,7 @@ parser.add_argument('--language-model', default='glove',
 parser.add_argument('--bert-name', default='bert-base-uncased',
                     choices=['bert-base-uncased', 'bert-large-uncased'],
                     help='Select base or large bert.' )
-parser.add_argument('--bert-feat-comb',type=int, default = 0,choices=[0,1,2],
+parser.add_argument('--bert-feat-comb',type=int, default = 0,choices=[0,1,2,3],
                     help='Select how to combine bert layer features. 0-Last layer 1-Sum last 4 layers 2-Concat last 4 layers' )                
 parser.add_argument('--bert-load-precomputed-features', action='store_true',
                     help='Enable loading precomputed text features otherwise they will be computed previous to training. Avoid using if interested in a deploiment for the website.')
@@ -398,11 +398,11 @@ def validation(args, net, loader):
                 idx = non_maxima_suppresion(
                     segments.numpy(), -scores.numpy(), args.nms_threshold)
                 sorted_segments = segments[idx]
-                scores = scores[idx] 
+                #scores = scores[idx] 
             else:
                 scores, idx = results.sort(descending=descending)
                 sorted_segments = segments[idx, :]
-                scores = scores[idx]
+                #scores = scores[idx]
 
             hit_k_iou = single_moment_retrieval(
                 gt_segment, sorted_segments, topk=args.topk)
@@ -417,7 +417,7 @@ def validation(args, net, loader):
             if tracker:
                 # artifact to ease Tracker job for few number of segments
                 if scores.shape[0] < MAX_TOPK:
-                    n_times = math.ceil(MAX_TOPK / scores.shape[0])
+                    n_times = round(MAX_TOPK / scores.shape[0])
                     scores = scores.repeat(n_times)
                     sorted_segments = sorted_segments.repeat(n_times, 1)
                 tracker.append(it, hit_k_iou, scores[:MAX_TOPK],

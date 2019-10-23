@@ -47,7 +47,7 @@ class BERTEmbedding(object):
         tokens_tensor, segments_tensors, num_tokens = tokens
         # Predict hidden states features for each layer
         with torch.no_grad():
-            encoded_layers, _ = self.model(tokens_tensor, segments_tensors)
+            encoded_layers, check = self.model(tokens_tensor, segments_tensors)
         # Convert the hidden state embeddings into single token vectors [# tokens, # layers, # features]
         token_embeddings = self._compute_tokens_vectors(encoded_layers, num_tokens)
         # Word Vectors, compute features for each token
@@ -101,6 +101,8 @@ class BERTEmbedding(object):
             self.features_combination = self._summation_last_four_layers
         elif mode == 2:
             self.features_combination = self._concatenation_last_four_layers
+        elif mode == 3:
+            self.features_combination = self._summation_second_to_last
         else:
             raise('Feature combination modality unknown, specify value in list [0,1]')
         
@@ -112,6 +114,9 @@ class BERTEmbedding(object):
     
     def _last_layer(self, token_embeddings):
         return [layer[-1] for layer in token_embeddings]
+    
+    def _summation_second_to_last(self, token_embeddings):
+        return [torch.sum(torch.stack(layer)[1:], 0) for layer in token_embeddings] 
 
     def _setup_dim(self):
         self.dim = 768
@@ -135,7 +140,7 @@ def _precompute_language_features(data_directory, max_words):
         subsets = ['train-01.json', 'val-02_01.json', 'test-01.json']
 
     for model_name in ['bert-base-uncased','bert-large-uncased']:
-        for features_combination_mode in [0,1,2]:
+        for features_combination_mode in [0,1,2,3]:
             BERT = BERTEmbedding(data_directory=None,model_name=model_name, 
                         features_combination_mode=features_combination_mode)
             print(f'\nProcessing model {model_name} and feature aggregation {features_combination_mode}')
@@ -162,7 +167,7 @@ if __name__ == '__main__':
     # Instantiate object
     model_name = 'bert-base-uncased'
     #model_name = 'bert-large-uncased'
-    features_combination_mode = 0
+    features_combination_mode = 3
     BERT = BERTEmbedding(model_name=model_name, 
             features_combination_mode=features_combination_mode)
     # Define sentence to encode
@@ -176,7 +181,7 @@ if __name__ == '__main__':
 
     # TEST PRECOMPUTED FEATURES
     model_name = 'bert-base-uncased'
-    features_combination_mode = 0
+    features_combination_mode = 3
     BERT = BERTEmbedding(data_directory='didemo', model_name=model_name, 
             features_combination_mode=features_combination_mode)
     feat = BERT(0)

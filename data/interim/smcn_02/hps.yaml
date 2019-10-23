@@ -1,8 +1,0 @@
-# Reference for epoch dependent hyper-prm
-epochs: 108
-# search space
-seed: [-1, 1701]
-patience: [-1, 12, 36]
-lr: [0.05, 0.5, 0.005]
-original_setup: [true, false]
-momemtum: [0.9, 0.95, 0.99]

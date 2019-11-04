@@ -117,6 +117,7 @@ class CorpusVideoMomentRetrievalEval():
         self.stdrank_iou = [None] * len(iou_thresholds)
         self.recall_iou_k = [None] * len(iou_thresholds)
         self.performance = None
+        self.number_of_reranked_clips_per_query = []
 
     def add_single_predicted_moment_info(
             self, query_info, video_indices, pred_segments, max_rank=None):
@@ -181,9 +182,11 @@ class CorpusVideoMomentRetrievalEval():
         # Rerank
         new_vid_indices   = torch.stack([vid_indices[i] for i in indices])
         new_pred_segments = torch.stack([pred_segments[i] for i in indices])
+
+        self.number_of_reranked_clips_per_query.append(len(other_indices))
         return new_vid_indices, new_pred_segments
 
-    def oracle_object_reranking(self, query_info, vid_indices, pred_segments, 
+    def oracle_object_reranking(self, query_info, vid_indices, pred_segments, scores,
                                     metadata, map_concepts_to_obj_class, clip_length,
                                     use_concepts_and_obj_predictions):
         '''
@@ -191,6 +194,7 @@ class CorpusVideoMomentRetrievalEval():
         related to the concepts present in the query
         '''
         reranking_indices = [[],[]]
+        maps_keys = None
         maps_keys = list(map_concepts_to_obj_class.keys())
         
         list_of_video_id = list(metadata.keys())
@@ -199,7 +203,7 @@ class CorpusVideoMomentRetrievalEval():
         if use_concepts_and_obj_predictions:
             obj_class_of_query_concepts = [map_concepts_to_obj_class[t] for t in query_info['concepts'] if t in maps_keys]
             num_classes = len(list(set([map_concepts_to_obj_class[k] for k in maps_keys])))
-            reranking_indices = [[] for elem in range(num_classes)]
+            reranking_indices = [[] for elem in range(num_classes+1)]
         # If they have been detected we push the clip to the top
         for i,v_id in enumerate(vid_indices):
             #get predicted object for video
@@ -217,8 +221,6 @@ class CorpusVideoMomentRetrievalEval():
             # DETERMINE CONDITION TO USE:
             matching_objects = list(set([obj for obj in obj_class_of_query_concepts if obj in detected_obj_class_in_moment]))
             reranking_indices[len(matching_objects)].append(i)
-            # if len(matching_objects)>1:
-            #     a = 0
         indices = []
         for index_list in reversed(reranking_indices):
             indices.extend(index_list)
@@ -226,7 +228,37 @@ class CorpusVideoMomentRetrievalEval():
         # Rerank
         new_vid_indices   = torch.stack([vid_indices[i] for i in indices])
         new_pred_segments = torch.stack([pred_segments[i] for i in indices])
-        return new_vid_indices, new_pred_segments    
+        new_scores        = torch.stack([scores[i] for i in indices])
+        
+        #compute number of reranked moments
+        self.number_of_reranked_clips_per_query.append(len(vid_indices)-len(reranking_indices[0]))
+        return new_vid_indices, new_pred_segments, new_scores
+
+    def merge_rankings(self, vid_indices, segments, scores,rerank_vid_indices, 
+                    rerank_segments, rerank_scores, k1, k2, reordering):
+        new_scores      = torch.cat((rerank_scores[:k2],scores[:k1]),0).numpy()
+        new_vid_indices = torch.cat((rerank_vid_indices[:k2],vid_indices[:k1]),0).numpy()
+        new_segments    = torch.cat((rerank_segments[:k2],segments[:k1]),0).numpy()
+
+        if reordering:
+            concat          = np.asarray(list(set(zip(new_scores,new_segments[:,0],new_segments[:,1],new_vid_indices))))
+            # new_scores      = torch.tensor(concat[:,0])
+            new_vid_indices = torch.tensor(concat[:,3],dtype=vid_indices.dtype)
+            new_segments    = torch.tensor(concat[:,1:3],dtype=segments.dtype)
+            # new_segments    = torch.cat([[concat[i,1],concat[i,2]] for i in range(concat.shape[0])])
+            a = 0
+
+        else:
+            concat          = np.concatenate((np.expand_dims(new_scores,axis=1),
+                                            np.expand_dims(new_segments[:,0],axis=1),
+                                            np.expand_dims(new_segments[:,1],axis=1),
+                                            np.expand_dims(new_vid_indices,axis=1)),axis=1)
+            unique, ind     = np.unique(concat,return_index=True,axis=0)
+            # new_scores      = torch.tensor([new_scores[i] for i in ind])
+            new_vid_indices = torch.tensor([new_vid_indices[i] for i in ind],dtype=vid_indices.dtype)
+            new_segments    = torch.tensor([new_segments[i] for i in ind],dtype=segments.dtype)
+        return new_vid_indices, new_segments
+
 
     def evaluate(self):
         "Compute MedRank@IOU and R@IOU,k accross the dataset"

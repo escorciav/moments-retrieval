@@ -485,8 +485,8 @@ class MomentRetrievalFromProposalsTable(CorpusVideoMomentRetrievalBase):
         scores, ind = scores.sort(descending=descending_k)
         # TODO (tier-1): enable bell and whistles
         if return_indices:
-            return self.video_indices[ind], self.proposals[ind, :], ind
-        return self.video_indices[ind], self.proposals[ind, :]
+            return self.video_indices[ind], self.proposals[ind, :], ind, scores
+        return self.video_indices[ind], self.proposals[ind, :], scores
 
 
 class MomentRetrievalFromClipBasedProposalsTable(
@@ -582,8 +582,8 @@ class MomentRetrievalFromClipBasedProposalsTable(
         scores, ind = scores.sort(descending=descending_k)
         # TODO (tier-1): enable bell and whistles
         if return_indices:
-            return self.video_indices[ind], self.proposals[ind, :], ind
-        return self.video_indices[ind], self.proposals[ind, :]
+            return self.video_indices[ind], self.proposals[ind, :], ind, scores
+        return self.video_indices[ind], self.proposals[ind, :], scores
 
 
 class GreedyMomentRetrievalFromClipBasedProposalsTable(

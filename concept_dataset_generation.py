@@ -11,6 +11,7 @@ import os
 import warnings
 import pandas as pd 
 import argparse
+import tqdm
 
 def count_noun_didemo(dataset, concept_type):
     '''
@@ -118,6 +119,8 @@ def create_json(dataset, concept_type):
         subsets = ['train-01.json', 'val-01.json', 'test-01.json']
     elif dataset == 'charades-sta':
         subsets = ['train-01.json', 'val-02_01.json', 'test-01.json']
+    elif dataset == 'activitynet-captions':
+        subsets = ['train.json', 'val.json']
 
 
     for subset in subsets:
@@ -137,7 +140,7 @@ def create_json(dataset, concept_type):
         unique_concepts = {}
         list_of_concepts = []
         concept_id = 0
-        for moment in original_data['moments']:
+        for moment in tqdm.tqdm(original_data['moments']):
             for token in nlp(moment['description']):
                 if token.pos_ in concept_type: 
                     concept = token.lemma_  #text
@@ -271,9 +274,9 @@ def _ordered_count(data):
     
 
 def create_map(dataset, concept_type):
-    filename = f"{'_'.join(concept_type)}_top_50" 
-    if concept_type[0] == 'ALL':
-        filename = 'list_of_concepts'
+    # filename = f"{'_'.join(concept_type)}_top_50" 
+    # if concept_type[0] == 'ALL':
+    filename = 'list_of_concepts'
     f = open(f'./data/processed/{dataset}/concepts/{filename}.txt', "r")
     concepts = f.readlines()
     concepts = {c.strip('\n'):[] for c in concepts}
@@ -290,7 +293,7 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(formatter_class=argparse.ArgumentDefaultsHelpFormatter)
 
     parser.add_argument('--dataset',
-                    choices= ['didemo', 'charades-sta'],
+                    choices= ['didemo', 'charades-sta', 'activitynet-captions'],
                     help='Name of dataset to evaluate.')
     parser.add_argument('--concept-type', type=int, choices= [0,1,2,3],
                     help='Enable or disable reservation.')
@@ -306,7 +309,7 @@ if __name__ == '__main__':
     # count_noun_didemo(dataset=dataset, concept_type=concept_type)
     # histogram(dataset=dataset, concept_type=concept_type)
     # map_noun_to_videos(dataset=dataset, concept_type=concept_type)
-    create_json(dataset=dataset, concept_type=concept_type)
+    # create_json(dataset=dataset, concept_type=concept_type)
     # merge_outpud_didemo(dataset)
     #filter_top_50(dataset=dataset, concept_type=concept_type)
-    #create_map(dataset=dataset, concept_type=concept_type)
+    create_map(dataset=dataset, concept_type=concept_type)

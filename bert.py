@@ -122,7 +122,7 @@ class BERTEmbedding(object):
         self.dim = 768
         if 'large' in self.model_name:
             self.dim = 1024
-        if self.features_combination_mode == 0:
+        if self.features_combination_mode == 2:
             self.dim = self.dim * 4
         
     def compute_text_tokens(self, text):

@@ -30,14 +30,19 @@ class IntraInterMarginLoss(nn.Module):
         self.w_inter = w_inter
 
     def forward(self, p, n_intra, n_inter, iw_intra=None, iw_inter=None):
-        intra_loss = F.relu(self.margin + (p - n_intra))
-        inter_loss = F.relu(self.margin + (p - n_inter))
-        if iw_intra is not None:
-            intra_loss = intra_loss * iw_intra
-        if iw_inter is not None:
-            inter_loss = inter_loss * iw_inter
-        loss = (self.w_intra * intra_loss.mean() +
-                self.w_inter * inter_loss.mean())
+        stream_keys = p.keys()
+        loss, intra_loss, inter_loss = 0, 0, 0
+        for k in stream_keys:
+            intra_loss_ = F.relu(self.margin + (p[k] - n_intra[k]))
+            inter_loss_ = F.relu(self.margin + (p[k] - n_inter[k]))
+            if iw_intra is not None:
+                intra_loss_ = intra_loss_ * iw_intra
+            if iw_inter is not None:
+                inter_loss_ = inter_loss_ * iw_inter
+            intra_loss += intra_loss_
+            inter_loss += inter_loss_
+            loss += (self.w_intra * intra_loss_.mean() +
+                    self.w_inter * inter_loss_.mean())
         return loss, intra_loss, inter_loss
 
 

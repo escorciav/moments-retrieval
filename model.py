@@ -16,7 +16,7 @@ class MCN(nn.Module):
         (pr): compare runtime with LSTM cell
     """
 
-    def __init__(self, visual_size=4096, lang_size=300, embedding_size=100,
+    def __init__(self, visual_size={'rgb':4096}, lang_size=300, embedding_size=100,
                  dropout=0.3, max_length=None, visual_hidden=500,
                  lang_hidden=1000, visual_layers=1, unit_vector=False,
                  bi_lstm=False, lang_dropout=0.0):
@@ -33,17 +33,20 @@ class MCN(nn.Module):
         if self.bi_lstm:
             bi_norm = 2
 
-        visual_encoder = [nn.Linear(visual_size, visual_hidden),
+        self.visual_encoder = nn.ModuleDict({})
+        for key in visual_size.keys():
+            
+            visual_encoder = [nn.Linear(visual_size[key], visual_hidden),
                           nn.ReLU(inplace=True)]
-        # (optional) add depth to visual encoder (capacity)
-        for i in  range(visual_layers - 1):
-            visual_encoder += [nn.Linear(visual_hidden, visual_hidden),
-                               nn.ReLU(inplace=True)]
-        self.visual_encoder = nn.Sequential(
-            *visual_encoder,
-            nn.Linear(visual_hidden, embedding_size),
-            nn.Dropout(dropout)
-        )
+            # (optional) add depth to visual encoder (capacity)
+            for i in  range(visual_layers - 1):
+                visual_encoder += [nn.Linear(visual_hidden, visual_hidden),
+                                nn.ReLU(inplace=True)]
+            self.visual_encoder[key] = nn.Sequential(
+                *visual_encoder,
+                nn.Linear(visual_hidden, embedding_size),
+                nn.Dropout(dropout)
+            )
         # self.visual_embedding = nn.Sequential(
         #     nn.Linear(visual_hidden, embedding_size),
         #     nn.Dropout(dropout)
@@ -63,14 +66,17 @@ class MCN(nn.Module):
              visual_pos, visual_neg_intra, visual_neg_inter)
 
         l_embedded = self.encode_query(padded_query, query_length)
-        c_pos = self.compare_emdeddings(l_embedded, v_embedded_pos)
+        c_pos = {k:self.compare_emdeddings(l_embedded, v) 
+                                for k,v in v_embedded_pos.items()}
         c_neg_intra, c_neg_inter = None, None
-        if v_embedded_neg_intra is not None:
-            c_neg_intra = self.compare_emdeddings(
-                l_embedded, v_embedded_neg_intra)
-        if v_embedded_neg_inter is not None:
-            c_neg_inter = self.compare_emdeddings(
-                l_embedded, v_embedded_neg_inter)
+        condition_neg_intra = v_embedded_neg_intra[list(v_embedded_neg_intra.keys())[0]]
+        if condition_neg_intra is not None:
+            c_neg_intra = {k:self.compare_emdeddings(l_embedded, v) 
+                            for k,v in v_embedded_neg_intra.items()}
+        condition_neg_inter = v_embedded_neg_inter[list(v_embedded_neg_inter.keys())[0]]
+        if condition_neg_inter is not None:
+            c_neg_inter = {k:self.compare_emdeddings(l_embedded, v) 
+                            for k,v in v_embedded_neg_inter.items()}
         return c_pos, c_neg_intra, c_neg_inter
 
     def encode_visual(self, pos, neg_intra, neg_inter):
@@ -78,23 +84,24 @@ class MCN(nn.Module):
             pos, neg_intra, neg_inter)
         embedded_neg_intra, embedded_neg_inter = None, None
 
-        embedded_pos = self.visual_encoder(pos)
-        # pos_encoded = self.visual_encoder(pos)
-        # embedded_pos = self.visual_embedding(pos_encoded)
+        embedded_pos = {k:self.visual_encoder[k](v) for k,v in pos.items()}
         if self.unit_vector:
-            embedded_pos = F.normalize(embedded_pos, dim=-1)
-        if neg_intra is not None:
-            embedded_neg_intra = self.visual_encoder(neg_intra)
-            # neg_intra_encoded = self.visual_encoder(neg_intra)
-            # embedded_neg_intra = self.visual_embedding(neg_intra_encoded)
+            embedded_pos = {k:F.normalize(v, dim=-1) 
+                                        for k,v in embedded_pos.items()}
+        condition_neg_intra = neg_intra[list(neg_intra.keys())[0]]
+        if condition_neg_intra is not None:
+            embedded_neg_intra = {k:self.visual_encoder[k](v) 
+                                            for k,v in neg_intra.items()}
             if self.unit_vector:
-                embedded_neg_intra = F.normalize(embedded_neg_intra, dim=-1)
-        if neg_inter is not None:
-            embedded_neg_inter = self.visual_encoder(neg_inter)
-            # neg_inter_encoded = self.visual_encoder(neg_inter)
-            # embedded_neg_inter = self.visual_embedding(neg_inter_encoded)
+                embedded_neg_intra = {k:F.normalize(v, dim=-1) 
+                                    for k,v in embedded_neg_intra.items()}
+        condition_neg_inter = neg_inter[list(neg_inter.keys())[0]]
+        if condition_neg_inter is not None:
+            embedded_neg_inter = {k:self.visual_encoder[k](v) 
+                                            for k,v in neg_inter.items()}
             if self.unit_vector:
-                embedded_neg_inter = F.normalize(embedded_neg_inter, dim=-1)
+                embedded_neg_inter = {k:F.normalize(v, dim=-1) 
+                                    for k,v in embedded_neg_inter.items()}
 
         return embedded_pos, embedded_neg_intra, embedded_neg_inter
 
@@ -137,9 +144,10 @@ class MCN(nn.Module):
         prm_policy = [
             {'params': self.sentence_encoder.parameters(),
              'lr': initial_lr * 10},
-            {'params': self.visual_encoder.parameters()},
             {'params': self.lang_encoder.parameters()},
         ]
+        prm_policy.extend([{'params': self.visual_encoder[k].parameters()} 
+                                        for k in self.visual_encoder.keys()])
         return prm_policy
 
     def optimization_parameters_original(
@@ -172,6 +180,7 @@ class MCN(nn.Module):
     def predict(self, *args):
         "Compute distance between visual and sentence"
         d_pos, *_ = self.forward(*args)
+        d_pos = torch.stack([v for _,v in d_pos.items()]).sum(dim=0)
         return d_pos, False
 
     def search(self, query, table):
@@ -180,14 +189,15 @@ class MCN(nn.Module):
 
     def _unpack_visual(self, *args):
         "Get visual feature inside a dict"
-        argout = ()
+        argout = []
         for i in args:
             if isinstance(i, dict):
-                assert len(i) == 1
-                j = next(iter(i))
-                argout += (i[j],)
+                # assert len(i) == 1 or len(i)==2
+                # j = next(iter(i))
+                # argout += (i[j],)
+                argout.append(i)
             else:
-                argout += (i,)
+                argout.append(i)
         return argout
 
 
@@ -215,22 +225,23 @@ class SMCN(MCN):
         return c_pos, c_neg_intra, c_neg_inter
 
     def encode_visual(self, pos, neg_intra, neg_inter):
-        pos, _, neg_intra, _, neg_inter, _ = self._unpack_visual(
-            pos, neg_intra, neg_inter)
+        pos, neg_intra, neg_inter = self._unpack_visual(pos, neg_intra, neg_inter)
         embedded_neg_intra, embedded_neg_inter = None, None
 
-        embedded_pos = self.fwd_visual_snippets(pos)
-        if neg_intra is not None:
-            embedded_neg_intra = self.fwd_visual_snippets(neg_intra)
-        if neg_inter is not None:
-            embedded_neg_inter = self.fwd_visual_snippets(neg_inter)
+        embedded_pos = {k:self.fwd_visual_snippets(k,v) 
+                                for k,v in pos.items() if k != 'mask'}
+        if neg_intra['mask'] is not None:
+            embedded_neg_intra = {k:self.fwd_visual_snippets(k,v) 
+                                    for k,v in neg_intra.items() if k != 'mask'}   
+        if neg_inter['mask'] is not None:
+            embedded_neg_inter = {k:self.fwd_visual_snippets(k,v) 
+                                    for k,v in neg_inter.items() if k != 'mask'}
         return embedded_pos, embedded_neg_intra, embedded_neg_inter
 
-    def fwd_visual_snippets(self, x):
+    def fwd_visual_snippets(self, key, x):
         B, N, D = x.shape
         x_ = x.view(-1, D)
-        x_ = self.visual_encoder(x_)
-        # x_ = self.visual_embedding(x_)
+        x_ = self.visual_encoder[key](x_)
         if self.unit_vector:
             x_ = F.normalize(x_)
         return x_.view((B, N, -1))
@@ -243,20 +254,19 @@ class SMCN(MCN):
     def compare_emdedded_snippets(self, embedded_p, embedded_n_intra,
                                   embedded_n_inter, embedded_a,
                                   pos, neg_intra, neg_inter):
-        _, mask_p, _, mask_n_intra, _, mask_n_inter = self._unpack_visual(
-            pos, neg_intra, neg_inter)
+        pos, neg_intra, neg_inter = self._unpack_visual(pos, neg_intra, neg_inter)
+
+        mask_p, mask_n_intra, mask_n_inter = pos['mask'], neg_intra['mask'], neg_inter['mask']
         c_neg_intra, c_neg_inter = None, None
 
-        c_pos = self.pool_compared_snippets(
-            self.compare_emdeddings(embedded_a, embedded_p), mask_p)
-        if embedded_n_intra is not None:
-            c_neg_intra = self.pool_compared_snippets(
-                self.compare_emdeddings(embedded_a, embedded_n_intra),
-                mask_n_intra)
-        if embedded_n_inter is not None:
-            c_neg_inter = self.pool_compared_snippets(
-                self.compare_emdeddings(embedded_a, embedded_n_inter),
-                mask_n_inter)
+        c_pos = {k:self.pool_compared_snippets(
+                self.compare_emdeddings(embedded_a, v), mask_p) for k,v in embedded_p.items()}
+        if mask_n_intra is not None:
+            c_neg_intra = {k:self.pool_compared_snippets(
+                self.compare_emdeddings(embedded_a, v),mask_n_intra) for k,v in embedded_n_intra.items()}
+        if mask_n_inter is not None:
+            c_neg_inter = {k:self.pool_compared_snippets(
+                self.compare_emdeddings(embedded_a, v),mask_n_inter) for k,v in embedded_n_inter.items()}
         return c_pos, c_neg_intra, c_neg_inter
 
     def search(self, query, table, clips_per_segment, clips_per_segment_list):
@@ -279,16 +289,17 @@ class SMCN(MCN):
 
     def _unpack_visual(self, *args):
         "Get visual feature inside a dict"
-        argout = ()
+        argout = []
+        keys = args[0].keys()
         for i in args:
             if isinstance(i, dict):
-                assert len(i) == 2
+                # assert len(i) == 2 or len(i)==3
                 # only works in cpython >= 3.6
-                argout += tuple(i.values())
+                argout.append(i)
             elif i is None:
-                argout += (None, None)
+                argout.append({k:None for k in keys})
             else:
-                argout += (i,)
+                argout.append(i)
         return argout
 
 

@@ -73,11 +73,11 @@ parser.add_argument('--unit-vector', action='store_true',
 parser.add_argument('--evaluate', action='store_true',
                     help='only run the model in the val set')
 # Features
-parser.add_argument('--feat', default='rgb',
+parser.add_argument('--feat', default='rgb', nargs='+',
                     help='Record the type of feature used (modality)')
 parser_visual_info_grp = parser.add_mutually_exclusive_group()
 parser_visual_info_grp.add_argument(
-    '--h5-path', type=Path, default='non-existent',
+    '--h5-path', type=Path, default='non-existent', nargs='+',
     help='HDF5-file with features')
 parser_visual_info_grp.add_argument(
     '--clip-length', type=float, default=None,
@@ -511,11 +511,20 @@ def setup_dataset(args):
             data_directory = 'activitynet-captions'
         else:
             raise('Cannot load precomputed language features for unknown dataset.')    
-    cues, no_visual = {args.feat: None}, True
-    if args.h5_path.exists():
-        no_visual = False
-        cues = {args.feat: {'file': args.h5_path}}
-    elif args.clip_length is None:
+
+    if isinstance(args.feat, str):
+        args.feat = [args.feat]
+    if len(args.feat) != len(args.h5_path):
+        raise('Number of features name and features files mismatch, check your parameters!')
+    cues, no_visual = {k: None for k in args.feat}, True
+    for feat_name,feat_file in zip(args.feat,args.h5_path):
+        if feat_file.exists():
+            no_visual = False
+            cues[feat_name] = {'file':feat_file}
+        else:
+            logging.info(f'{feat_file} not found, proceeding without it. Check the file path!!')
+    cues = { k:v for k,v in cues.items() if v is not None }
+    if no_visual and args.clip_length is None:
         raise ValueError('clip-length is required without visual features')
     proposal_generator = proposals.__dict__[args.proposal_interface](
         args.min_length, args.scales, args.stride)
@@ -593,7 +602,7 @@ def setup_model(args, train_loader=None, test_loader=None):
         raise ValueError('Either train or test list must exists')
     logging.info('Setting-up model')
     arch_setup = dict(
-        visual_size=dataset.visual_size[args.feat],
+        visual_size={feat:dataset.visual_size[feat] for feat in args.feat},
         lang_size=dataset.language_size,
         max_length=dataset.max_words,
         embedding_size=args.embedding_size,

@@ -42,7 +42,15 @@ parser.add_argument('--topk', nargs='+', type=int,
                     default=[1, 10, 100, 1000, 10000],
                     help='top-k values to compute')
 parser.add_argument('--concepts', action='store_true',
-                    help='Enable evaluation of concepts, must provide the right input data.')                                     
+                    help='Enable evaluation of concepts, must provide the right input data.')     
+parser.add_argument('--merge-rankings', action='store_true',
+                    help='Enable the merging of the top k1-k2 ranked moments (standard ranking and reranking)')  
+parser.add_argument('--k1', type = int,
+                    help='Number of elements to take from original ranking list.')        
+parser.add_argument('--k2', type = int,
+                    help='Number of elements to take from re-ranking list.')          
+parser.add_argument('--reordering', action='store_true',
+                    help='Reorder merge')                      
 # Extra
 parser.add_argument('--greedy', type=int, default=0,
                     help='Top-k seed clips for greedy search over clips')
@@ -116,6 +124,8 @@ def main(args):
         ValueError('Unknown/unsupported architecture')
     if args.greedy > 0 and args.arch != 'SMCN':
         logging.warning('Ignore greedy search. Unsupported model')
+
+    
 
     logging.info('Loading dataset')
     dataset_novisual = True
@@ -192,12 +202,13 @@ def main(args):
             description = query_metadata['annotation_id'],
             return_indices=args.dump_per_instance_results)
         if args.dump_per_instance_results:
-            vid_indices, segments, proposals_ind = result_per_query
+            vid_indices, segments, proposals_ind, scores = result_per_query
         else:
-            vid_indices, segments = result_per_query
+            vid_indices, segments, scores = result_per_query
+        rerank_vid_indices, rerank_segments, rerank_scores = None,None,None
         if type(args.concepts_oracle) == int and not args.obj_detection_path:
-            vid_indices, segments = judge.oracle_concept_reranking(query_metadata, 
-                        vid_indices, segments, dataset.metadata, dataset.reverse_map)
+            rerank_vid_indices, rerank_segments = judge.oracle_concept_reranking(query_metadata, 
+                            vid_indices, segments, dataset.metadata_per_video, dataset.reverse_map)
         elif type(args.concepts_oracle) == int and args.obj_detection_path:
             clip_length = dataset.clip_length
             if clip_length == 2.5:
@@ -206,10 +217,18 @@ def main(args):
                 clip_length = 3
             clip_length = int(clip_length)
             
-            vid_indices, segments = judge.oracle_object_reranking(query_metadata, 
-                                    vid_indices, segments, dataset.metadata_per_video, 
-                                    dataset.map_concepts_to_obj_class, clip_length,
-                                    args.use_concepts_and_obj_predictions)
+            rerank_vid_indices, rerank_segments, rerank_scores = judge.oracle_object_reranking(
+                            query_metadata, vid_indices, segments, scores, 
+                            dataset.metadata_per_video, 
+                            dataset.map_concepts_to_obj_class, clip_length,
+                            args.use_concepts_and_obj_predictions)
+        
+        if args.merge_rankings:
+            vid_indices, segments = judge.merge_rankings(vid_indices, segments,scores,
+                                    rerank_vid_indices, rerank_segments, rerank_scores, 
+                                    args.k1, args.k2, args.reordering)
+        elif type(args.concepts_oracle) == int:
+            vid_indices, segments = rerank_vid_indices, rerank_segments
         
         judge.add_single_predicted_moment_info(
             query_metadata, vid_indices, segments, max_rank=engine.num_moments)
@@ -253,6 +272,9 @@ def main(args):
         fid.close()
 
     logging.info('Summarizing results')
+    if len(judge.number_of_reranked_clips_per_query) > 0:
+        avg = np.mean(np.asarray(judge.number_of_reranked_clips_per_query))
+        logging.info(f'Average number of reranked moments per query: {avg}')
     num_instances_retrieved = np.array(num_instances_retrieved)
     logging.info(f'Number of queries: {len(judge.map_query)}')
     logging.info(f'Number of proposals: {engine.num_moments}')

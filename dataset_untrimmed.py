@@ -227,9 +227,17 @@ class UntrimmedBase(Dataset):
         "Read JSON file with the detections of objects per clip"
         with open(filename, 'r') as fid:
             self.objects_detection = json.load(fid)
-        filename = './data/raw/concepts_map_to_coco_classes.json'
-        with open(filename, 'r') as fid:  
-            self.map_concepts_to_obj_class = json.load(fid)
+        if 'visual_genome' in str(filename):
+            filename = './data/raw/language/visual_genome/concepts_map_to_visual_genome_classes.json'
+            # filename = './data/raw/language/visual_genome/charades_sta_concepts_map_to_visual_genome_classes_no_people.json'
+            with open(filename, 'r') as fid:  
+                self.map_concepts_to_obj_class = json.load(fid)
+        elif 'coco' in str(filename):
+            filename = './data/raw/language/coco/concepts_map_to_coco_classes.json'
+            with open(filename, 'r') as fid:  
+                self.map_concepts_to_obj_class = json.load(fid)
+        else:
+            raise("Dude you are missing the concepts mapping file to the obj dataset you're trying to use!")
     
     def _create_reverse_map(self):
         concepts = list(self.oracle_map.keys())
@@ -275,6 +283,7 @@ class UntrimmedBase(Dataset):
 
     def _update_oracle_map(self, metadata):
         concepts = metadata['concepts']
+        times = metadata['times']
         video_index = metadata['video_index']
         list_of_available_concepts = list(self.oracle_map.keys())
         for c in concepts:
@@ -862,7 +871,7 @@ class UntrimmedSMCN(UntrimmedBasedMCNStyle):
             feature_video = feat_db[video_id]
             moment_feat_k, mask = self.visual_interface(
                 feature_video, moment_loc, clip_length=clip_length,
-                num_clips=num_clips)
+                num_clips=num_clips, video_id=video_id)
             if self.tef_interface:
                 T, N = mask.sum().astype(np.int), len(moment_feat_k)
                 tef_feature = np.zeros((N, 2), dtype=self.tef_interface.dtype)
@@ -1382,7 +1391,7 @@ class VisualRepresentationSMCN():
             self._w_half = w_size // 2
             self._box = np.ones((w_size, 1), dtype=dtype) / w_size
 
-    def __call__(self, features, moment_loc, clip_length, num_clips=None):
+    def __call__(self, features, moment_loc, clip_length, num_clips=None, video_id=None):
         n_feat, f_dim = features.shape
         if self.max_clips is not None:
             n_feat = self.max_clips
@@ -1402,7 +1411,7 @@ class VisualRepresentationSMCN():
         mask = np.zeros(n_feat, dtype=self.dtype)
 
         padded_data[:T, 0:f_dim] = self._local_feature(
-            im_start, im_end, features)
+                im_start, im_end, features)
         mask[:T] = 1
         if self.context:
             if self._w_half is None:

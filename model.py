@@ -4,7 +4,7 @@ import torch.nn.functional as F
 from torch.nn.utils.rnn import pack_padded_sequence, pad_packed_sequence
 from torch.nn.utils.rnn import pad_sequence
 from chamfer import DoubleMaskedChamferDistance
-
+import copy
 MOMENT_RETRIEVAL_MODELS = ['MCN', 'SMCN', 'SMCNTalcv1', 'CALChamfer',
                            'LateFusion']
 
@@ -19,7 +19,7 @@ class MCN(nn.Module):
     def __init__(self, visual_size={'rgb':4096}, lang_size=300, embedding_size=100,
                  dropout=0.3, max_length=None, visual_hidden=500,
                  lang_hidden=1000, visual_layers=1, unit_vector=False,
-                 bi_lstm=False, lang_dropout=0.0):
+                 bi_lstm=False, lang_dropout=0.0, alpha=0.0):
         super(MCN, self).__init__()
         self.embedding_size = embedding_size
         self.max_length = max_length
@@ -121,6 +121,8 @@ class MCN(nn.Module):
 
     def compare_emdeddings(self, anchor, x, dim=-1):
         # TODO: generalize to other similarities
+        # cos_sim = F.cosine_similarity(anchor,x,dim=dim)
+        # return 1 - cos_sim
         return (anchor - x).pow(2).sum(dim=dim)
 
     def init_parameters(self):
@@ -144,10 +146,9 @@ class MCN(nn.Module):
         prm_policy = [
             {'params': self.sentence_encoder.parameters(),
              'lr': initial_lr * 10},
+            {'params': self.visual_encoder.parameters()},
             {'params': self.lang_encoder.parameters()},
         ]
-        prm_policy.extend([{'params': self.visual_encoder[k].parameters()} 
-                                        for k in self.visual_encoder.keys()])
         return prm_policy
 
     def optimization_parameters_original(
@@ -585,38 +586,159 @@ class CALChamfer(SMCN):
         return argout
 
 
-class LateFusion():
-    "Commbine CALChamfer and TEF-only model"
+class old_SMCN(MCN):
+    "SMCN model"
 
+    def __init__(self, *args, **kwargs):
+        super(old_SMCN, self).__init__(*args, **kwargs)
+        visual_size = kwargs['visual_size']['rgb']
+        visual_hidden = kwargs['visual_hidden']
+        visual_layers = kwargs['visual_layers']
+        embedding_size = kwargs['embedding_size']
+        dropout = kwargs['dropout']
+        visual_encoder = [nn.Linear(visual_size, visual_hidden),
+                          nn.ReLU(inplace=True)]
+        # (optional) add depth to visual encoder (capacity)
+        for i in  range(visual_layers - 1):
+            visual_encoder += [nn.Linear(visual_hidden, visual_hidden),
+                               nn.ReLU(inplace=True)]
+        self.visual_encoder = nn.Sequential(
+            *visual_encoder,
+            nn.Linear(visual_hidden, embedding_size),
+            nn.Dropout(dropout)
+        )
+
+    def forward(self, padded_query, query_length, visual_pos,
+                visual_neg_intra=None, visual_neg_inter=None):
+        # v_v_embedded_* are tensors of shape [B, N, D]
+        (v_embedded_pos, v_embedded_neg_intra,
+         v_embedded_neg_inter) = self.encode_visual(
+             visual_pos, visual_neg_intra, visual_neg_inter)
+
+        l_embedded = self.encode_query(padded_query, query_length)
+        # transform l_emdedded into a tensor of shape [B, 1, D]
+        l_embedded = l_embedded.unsqueeze(1)
+
+        # meta-comparison
+        c_pos, c_neg_intra, c_neg_inter = self.compare_emdedded_snippets(
+            v_embedded_pos, v_embedded_neg_intra, v_embedded_neg_inter,
+            l_embedded, visual_pos, visual_neg_intra, visual_neg_inter)
+        return c_pos, c_neg_intra, c_neg_inter
+
+    def encode_visual(self, pos, neg_intra, neg_inter):
+        pos, neg_intra, neg_inter = self._unpack_visual(pos, neg_intra, neg_inter)
+        embedded_neg_intra, embedded_neg_inter = None, None
+
+        embedded_pos = {k:self.fwd_visual_snippets(k,v) 
+                                for k,v in pos.items() if k != 'mask'}
+        if neg_intra['mask'] is not None:
+            embedded_neg_intra = {k:self.fwd_visual_snippets(k,v) 
+                                    for k,v in neg_intra.items() if k != 'mask'}   
+        if neg_inter['mask'] is not None:
+            embedded_neg_inter = {k:self.fwd_visual_snippets(k,v) 
+                                    for k,v in neg_inter.items() if k != 'mask'}
+        return embedded_pos, embedded_neg_intra, embedded_neg_inter
+
+    def fwd_visual_snippets(self, key, x):
+        B, N, D = x.shape
+        x_ = x.view(-1, D)
+        x_ = self.visual_encoder[key](x_)
+        if self.unit_vector:
+            x_ = F.normalize(x_)
+        return x_.view((B, N, -1))
+
+    def pool_compared_snippets(self, x, mask):
+        masked_x = x * mask
+        K = mask.detach().sum(dim=-1)
+        return masked_x.sum(dim=-1) / K
+
+    def compare_emdedded_snippets(self, embedded_p, embedded_n_intra,
+                                  embedded_n_inter, embedded_a,
+                                  pos, neg_intra, neg_inter):
+        pos, neg_intra, neg_inter = self._unpack_visual(pos, neg_intra, neg_inter)
+
+        mask_p, mask_n_intra, mask_n_inter = pos['mask'], neg_intra['mask'], neg_inter['mask']
+        c_neg_intra, c_neg_inter = None, None
+
+        c_pos = {k:self.pool_compared_snippets(
+                self.compare_emdeddings(embedded_a, v), mask_p) for k,v in embedded_p.items()}
+        if mask_n_intra is not None:
+            c_neg_intra = {k:self.pool_compared_snippets(
+                self.compare_emdeddings(embedded_a, v),mask_n_intra) for k,v in embedded_n_intra.items()}
+        if mask_n_inter is not None:
+            c_neg_inter = {k:self.pool_compared_snippets(
+                self.compare_emdeddings(embedded_a, v),mask_n_inter) for k,v in embedded_n_inter.items()}
+        return c_pos, c_neg_intra, c_neg_inter
+
+    def search(self, query, table, clips_per_segment, clips_per_segment_list):
+        """Exhaustive search of query in table
+        TODO: batch to avoid out of memory?
+        """
+        clip_distance = self.compare_emdeddings(
+            query, table).split(clips_per_segment_list)
+        sorted_clips_per_segment, ind = clips_per_segment.sort(
+            descending=True)
+        # distance >= 0 thus we pad with zeros
+        clip_distance_padded = pad_sequence(
+            [clip_distance[i] for i in ind], batch_first=True)
+        sorted_segment_distance = (clip_distance_padded.sum(dim=1) /
+                                   sorted_clips_per_segment)
+        _, original_ind = ind.sort(descending=False)
+        segment_distance = sorted_segment_distance[original_ind]
+        return segment_distance, False
+
+    def _unpack_visual(self, *args):
+        "Get visual feature inside a dict"
+        argout = []
+        keys = args[0].keys()
+        for i in args:
+            if isinstance(i, dict):
+                # assert len(i) == 2 or len(i)==3
+                # only works in cpython >= 3.6
+                argout.append(i)
+            elif i is None:
+                argout.append({k:None for k in keys})
+            else:
+                argout.append(i)
+        return argout
+
+
+class LateFusion(SMCN):
+    "Commbine SMCN with resnet features and  SMCN with obj features"
     def __init__(self, **arch_setup):
+        super(LateFusion, self).__init__()
         # Instantiate models
-        self.chamfer_net = CALChamfer(**arch_setup)
-        # Change size of input for only TEF
-        arch_setup['visual_size'] = 2
-        # TODO: refactor this as editing arguments in-place cause headache
-        # And delete variables to let use the default
-        del arch_setup['bi_lstm']
-        del arch_setup['lang_dropout']
-        self.tef_only = MCN(**arch_setup)
+        arch_resnet = {k:v for k,v in arch_setup.items() if k != 'visual_size' or k!='alpha'}
+        arch_resnet['visual_size'] = {'rgb': arch_setup['visual_size']['rgb']}
+        self.resnet = SMCN(**arch_resnet)
 
-    def predict(self, lang_feature, len_query, candidates_i_feat):
+        arch_obj_feat = {k:v for k,v in arch_setup.items() if k != 'visual_size' or k!='alpha'}
+        arch_obj_feat['visual_size'] = {'obj': arch_setup['visual_size']['obj']}
+        self.obj_feat = SMCN(**arch_obj_feat)
+        self.alpha = arch_setup['alpha']
+
+    def predict(self, *args):
         "Compute scores for both models"
         # pass data as it is to CALChamfer
-        d1, *_ = self.chamfer_net.forward(
-            lang_feature, len_query, candidates_i_feat)
-        # Extract only TEF for tef_only model
-        candidates_i_feat = {"rgb":candidates_i_feat["rgb"][:,0,-2:]}
-        d2, *_ = self.tef_only.forward(
-            lang_feature, len_query, candidates_i_feat)
-        return d1+d2, False
+        input_resnet = copy.copy(list(args))
+        input_resnet[2] = {k:v for k,v in input_resnet[2].items() if k != 'obj'}
+        d1, *_ = self.resnet.forward(*tuple(input_resnet))
+        input_obj = copy.copy(list(args))
+        input_obj[2] = {k:v for k,v in input_obj[2].items() if k != 'rgb'}
+        d2, *_ = self.obj_feat.forward(*tuple(input_obj))
+        # combine the scores
+        d_pos =  self.alpha * d1['rgb'] + (1-self.alpha) * d2['obj']
+        return d_pos, False
 
     def load_state_dict(self,snapshots):
-        self.chamfer_net.load_state_dict(snapshots[0]['state_dict'])
-        self.tef_only.load_state_dict(snapshots[1]['state_dict'])
+        self.resnet.load_state_dict(snapshots)
+        snap = './data/interim/didemo/best_models/smcn_tef_weighted_avg_glove_42.pth.tar'
+        snapshots = torch.load(snap).get('state_dict')
+        self.obj_feat.load_state_dict(snapshots)
 
     def eval(self):
-        self.chamfer_net.eval()
-        self.tef_only.eval()
+        self.resnet.eval()
+        self.obj_feat.eval()
 
 
 if __name__ == '__main__':

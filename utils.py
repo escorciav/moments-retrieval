@@ -85,7 +85,7 @@ def dumping_arguments(args, val_performance=None, test_performance=None,
     if hasattr(args, 'topk_'): delattr(args, 'topk_')
     if hasattr(args, 'writer'): delattr(args, 'writer')
     args.logfile = str(args.logfile)
-    args.h5_path = str(args.h5_path) if args.h5_path.exists() else None
+    args.h5_path = ';'.join([str(elem) for elem in args.h5_path if elem.exists()])
     args.train_list = str(args.train_list) if args.train_list.exists() else None
     args.val_list = str(args.val_list) if args.val_list.exists() else None
     args.test_list = str(args.test_list) if args.test_list.exists() else None

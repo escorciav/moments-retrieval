@@ -135,6 +135,7 @@ parser.add_argument('--bert-feat-comb',type=int, default = 0,choices=[0,1,2,3],
                     help='Select how to combine bert layer features. 0-Last layer 1-Sum last 4 layers 2-Concat last 4 layers' )                
 parser.add_argument('--bert-load-precomputed-features', action='store_true',
                     help='Enable loading precomputed text features otherwise they will be computed previous to training. Avoid using if interested in a deploiment for the website.')
+parser.add_argument('--alpha', type=float, default=0.5)
 # Hyper-parameters concerning proposals (candidates) to score
 parser.add_argument('--proposal-interface', default='SlidingWindowMSRSS',
                     choices=proposals.PROPOSAL_SCHEMES,
@@ -480,6 +481,8 @@ def setup_dataset(args):
         dataset_name = 'UntrimmedMCN'
     elif args.arch == 'SMCN':
         dataset_name = 'UntrimmedSMCN'
+    elif args.arch == 'LateFusion':
+        dataset_name = 'UntrimmedSMCN'
     else:
         raise ValueError(f'Unsuported arch: {args.arch}, call 911!')
 
@@ -610,7 +613,8 @@ def setup_model(args, train_loader=None, test_loader=None):
         visual_hidden=args.visual_hidden,
         lang_hidden=args.lang_hidden,
         visual_layers=args.visual_layers,
-        unit_vector=args.unit_vector
+        unit_vector=args.unit_vector,
+        alpha = args.alpha
     )
     if args.clip_loss:
         args.arch = 'SMCNCL'

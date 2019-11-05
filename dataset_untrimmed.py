@@ -771,7 +771,7 @@ class UntrimmedMCN(UntrimmedBasedMCNStyle):
             feature_video = feat_db[video_id]
             moment_feat_k = self.visual_interface(
                 feature_video, moment_loc, clip_length=self.clip_length,
-                num_clips=num_clips)
+                num_clips=num_clips, key=key)
             if self.tef_interface:
                 moment_feat_k = np.concatenate(
                     [moment_feat_k,
@@ -846,7 +846,7 @@ class UntrimmedSMCN(UntrimmedBasedMCNStyle):
             feature_video = feat_db[video_id]
             moment_feat_k, _ = self.visual_interface(
                 feature_video, [0, video_duration], self.clip_length,
-                num_clips)
+                num_clips, key=key)
             feature_collection[key] = moment_feat_k.astype(
                 np.float32, copy=False)
         return feature_collection
@@ -871,7 +871,7 @@ class UntrimmedSMCN(UntrimmedBasedMCNStyle):
             feature_video = feat_db[video_id]
             moment_feat_k, mask = self.visual_interface(
                 feature_video, moment_loc, clip_length=clip_length,
-                num_clips=num_clips, video_id=video_id)
+                num_clips=num_clips, video_id=video_id, key=key)
             if self.tef_interface:
                 T, N = mask.sum().astype(np.int), len(moment_feat_k)
                 tef_feature = np.zeros((N, 2), dtype=self.tef_interface.dtype)
@@ -1192,7 +1192,7 @@ class UntrimmedCALChamfer(UntrimmedBasedMCNStyle):
             feature_video = feat_db[video_id]
             moment_feat_k, mask, im_start = self.visual_interface(
                 feature_video, moment_loc, clip_length=clip_length,
-                num_clips=num_clips)
+                num_clips=num_clips, key=key)
             if self.tef_interface:
                 T, N = mask.sum().astype(np.int), len(moment_feat_k)
                 # tef_feature = np.zeros((N, 2), dtype=self.tef_interface.dtype)
@@ -1342,9 +1342,11 @@ class VisualRepresentationMCN():
         self.dtype = dtype
         self.eps = eps
 
-    def __call__(self, features, moment_loc, clip_length, num_clips=None):
+    def __call__(self, features, moment_loc, clip_length, key, num_clips=None):
         f_dim = features.shape[1]
         data = np.empty(f_dim * self.size_factor, dtype=self.dtype)
+        if key != 'rgb':
+            data = np.empty(f_dim, dtype=self.dtype)
         # From time to units of time
         # we substract a small amount of t_end to ensure that it's close to
         # the unit of time in case t_end == clip_length
@@ -1352,7 +1354,7 @@ class VisualRepresentationMCN():
         im_start = int(moment_loc[0] // clip_length)
         im_end = int((moment_loc[1] - self.eps) // clip_length)
         data[0:f_dim] = normalization1d(im_start, im_end, features)
-        if self.context:
+        if self.context and key=='rgb':
             ic_start, ic_end = 0, len(features) - 1
             if num_clips is not None:
                 ic_end = num_clips - 1
@@ -1391,7 +1393,7 @@ class VisualRepresentationSMCN():
             self._w_half = w_size // 2
             self._box = np.ones((w_size, 1), dtype=dtype) / w_size
 
-    def __call__(self, features, moment_loc, clip_length, num_clips=None, video_id=None):
+    def __call__(self, features, moment_loc, clip_length, key, num_clips=None, video_id=None):
         n_feat, f_dim = features.shape
         if self.max_clips is not None:
             n_feat = self.max_clips
@@ -1407,13 +1409,16 @@ class VisualRepresentationSMCN():
             n_feat = T
         padded_data = np.zeros((n_feat, f_dim * self.size_factor),
                                dtype=self.dtype)
+        if key != 'rgb':
+            padded_data = np.zeros((n_feat, f_dim),
+                               dtype=self.dtype)
         # mask is numpy array of type self.dtype to avoid upstream casting
         mask = np.zeros(n_feat, dtype=self.dtype)
 
         padded_data[:T, 0:f_dim] = self._local_feature(
                 im_start, im_end, features)
         mask[:T] = 1
-        if self.context:
+        if self.context and key=='rgb':
             if self._w_half is None:
                 context_info = self.context_fn(features, num_clips)
             else:
@@ -1478,7 +1483,7 @@ class VisualRepresentationCALChamfer():
             self._w_half = w_size // 2
             self._box = np.ones((w_size, 1), dtype=dtype) / w_size
 
-    def __call__(self, features, moment_loc, clip_length, num_clips=None):
+    def __call__(self, features, moment_loc, clip_length, key, num_clips=None):
         n_feat, f_dim = features.shape
         if self.max_clips is not None:
             n_feat = self.max_clips
@@ -1500,7 +1505,7 @@ class VisualRepresentationCALChamfer():
         padded_data[:T, 0:f_dim] = self._local_feature(
             im_start, im_end, features)
         mask[:T] = 1
-        if self.context:
+        if self.context and key=='rgb':
             if self._w_half is None:
                 context_info = self.context_fn(features, num_clips)
             else:

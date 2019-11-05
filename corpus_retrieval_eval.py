@@ -61,6 +61,7 @@ parser.add_argument('--obj-detection-path', type=Path,
                     help='JSON with information of detected objects in clips, output of Detectron 2.')   
 parser.add_argument('--use-concepts-and-obj-predictions', action='store_true',
                     help='Enable usage of both obj info and concept info for reranking.')
+parser.add_argument('--alpha', type=float, default=0.5)
 # Dump results and logs
 parser.add_argument('--dump', action='store_true',
                     help='Save log in text file and json')
@@ -120,12 +121,22 @@ def main(args):
         if args.greedy > 0:
             args.engine = 'GreedyMomentRetrievalFromClipBasedProposalsTable'
             engine_prm['topk'] = args.greedy
+    elif args.arch == 'LateFusion':
+        if args.concepts: 
+            args.dataset = 'UntrimmedCoceptsSMCN'
+        else:
+            args.dataset = 'UntrimmedSMCN'
+        args.engine = 'MomentRetrievalFromClipBasedProposalsTable'
+        if args.greedy > 0:
+            args.engine = 'GreedyMomentRetrievalFromClipBasedProposalsTable'
+            engine_prm['topk'] = args.greedy
     else:
         ValueError('Unknown/unsupported architecture')
     if args.greedy > 0 and args.arch != 'SMCN':
         logging.warning('Ignore greedy search. Unsupported model')
 
     
+
 
     logging.info('Loading dataset')
     dataset_novisual = True
@@ -150,7 +161,7 @@ def main(args):
         obj_detection_path=args.obj_detection_path
     )
     dataset = dataset_untrimmed.__dict__[args.dataset](**dataset_setup)
-    if args.arch == 'SMCN':
+    if args.arch == 'SMCN' or args.arch == 'LateFusion':
         logging.info('Set padding on UntrimmedSMCN dataset')
         dataset.set_padding(False)
 
@@ -165,6 +176,7 @@ def main(args):
             visual_hidden=args.visual_hidden,
             lang_hidden=args.lang_hidden,
             visual_layers=args.visual_layers,
+            alpha=args.alpha
         )
         models_dict[key] = model.__dict__[args.arch](**arch_setup)
         filename = args.snapshot[i].with_suffix('.pth.tar')

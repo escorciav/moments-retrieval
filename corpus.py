@@ -35,6 +35,12 @@ class CorpusVideoMomentRetrievalBase():
         if alpha is None:
             self.alpha = {key: 1 /len(dict_of_models)
                           for key in dict_of_models}
+        else:
+            if alpha <0 or alpha > 1:
+                raise('Alpha must be a value between 0 and 1')
+            else:
+                self.alpha = {key: round(1*i + (-1)**i*alpha,2)  
+                          for i,key in enumerate(dict_of_models)}
         assert dataset.cues.keys() == dict_of_models.keys()
         assert dict_of_models.keys() == self.alpha.keys()
         self.num_videos = None
@@ -547,6 +553,103 @@ class MomentRetrievalFromClipBasedProposalsTable(
                 # proposals in the i-th video
                 codes[key].append(
                     self.models[key].visual_encoder(segment_rep_k))
+        # Form the C x D matrix
+        # M := number of videos, C = \sum_{i=1}^M C_i
+        # We have as many tables as visual cues
+        self.moments_tables = {key: torch.cat(value)
+                               for key, value in codes.items()}
+        # TODO (tier-2; design): organize this better
+        self.num_videos = len(num_entries_per_video)
+        self.entries_per_video = torch.tensor(num_entries_per_video)
+        self.proposals = torch.cat(all_proposals)
+        self.num_moments = int(self.proposals.shape[0])
+        video_indices = np.repeat(
+            np.arange(0, len(self.dataset.videos)),
+            num_entries_per_video)
+        self.video_indices = torch.from_numpy(video_indices)
+        self.clips_per_moment = torch.cat(clips_per_moment)
+        self.clips_per_moment_list = self.clips_per_moment.tolist()
+        self.clips_per_moment = self.clips_per_moment.float()
+
+    def query(self, description, return_indices=False):
+        "Search moments based on a text description given as list of words"
+        torch.set_grad_enabled(False)
+        lang_feature, len_query = self.preprocess_description(description)
+        score_list, descending_list = [], []
+        for key, model_k in self.models.items():
+            lang_code = model_k.encode_query(lang_feature, len_query)
+            scores_k, descending_k = model_k.search(
+                lang_code, self.moments_tables[key], self.clips_per_moment,
+                self.clips_per_moment_list)
+            score_list.append(scores_k * self.alpha[key])
+            descending_list.append(descending_k)
+        scores = sum(score_list)
+        # assert np.unique(descending_list).shape[0] == 1
+        scores, ind = scores.sort(descending=descending_k)
+        # TODO (tier-1): enable bell and whistles
+        if return_indices:
+            return self.video_indices[ind], self.proposals[ind, :], ind, scores
+        return self.video_indices[ind], self.proposals[ind, :], scores
+
+
+class MomentRetrievalFromClipBasedProposalsTableNew(
+        CorpusVideoMomentRetrievalBase):
+    """Retrieve Moments using a clip based model
+
+    This abstraction suits SMCN kind of models that the representation of the
+    video clips into a common visual-text embedding space.
+
+    Note:
+        - Make sure to setup the dataset in a way that retrieves a 2D
+          `numpy:ndarray` with the representation of all the proposals and a
+          1D `numpy:ndarray` with the number of clips per segment as `mask`.
+        - currently this implementation deals with the more general case of
+          non-decomposable models. Note that decomposable models would admit
+          smaller tables.
+    """
+
+    def __init__(self, *args, **kwargs):
+        super(MomentRetrievalFromClipBasedProposalsTableNew, self).__init__(
+            *args, **kwargs)
+        self.clips_per_moment = None
+        self.clips_per_moment_list = None
+
+    def indexing(self):
+        "Create database of moments in videos"
+        torch.set_grad_enabled(False)
+        num_entries_per_video = []
+        clips_per_moment = []
+        codes = {key: [] for key in self.models}
+        all_proposals = []
+        # TODO (tier-2;design): define method in dataset to do this?
+        # batchify the fwd-pass
+        for video_id in self.dataset.videos:
+            representation_dict, proposals_ = (
+                self.dataset._compute_visual_feature_eval(video_id))
+            num_entries_per_video.append(len(proposals_))
+            num_clips_i = representation_dict['mask']
+            if num_clips_i.ndim != 1:
+                raise ValueError('Dataset setup incorrectly. Disable padding')
+
+            # torchify
+            for key, value in representation_dict.items():
+                if key == 'mask': continue
+                # get representation of all proposals
+                representation_dict[key] = torch.from_numpy(value)
+            proposals = torch.from_numpy(proposals_)
+            clips_per_moment.append(torch.from_numpy(num_clips_i))
+
+            # Append items to database
+            all_proposals.append(proposals)
+            for key in self.dataset.cues:
+                segment_rep_k = representation_dict[key]
+                # get codes of the proposals -> C_i x D matrix
+                # Given a video i with S_i number of prooposals
+                # Each proposal S_i spans c_ij clips of the i-th video.
+                # C_i = \sum_{j=1}^{S_i} c_ij := num clips over all S_i
+                # proposals in the i-th video
+                codes[key].append(
+                    self.models[key].visual_encoder[key](segment_rep_k))
         # Form the C x D matrix
         # M := number of videos, C = \sum_{i=1}^M C_i
         # We have as many tables as visual cues

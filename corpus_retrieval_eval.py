@@ -62,6 +62,8 @@ parser.add_argument('--obj-detection-path', type=Path,
 parser.add_argument('--use-concepts-and-obj-predictions', action='store_true',
                     help='Enable usage of both obj info and concept info for reranking.')
 parser.add_argument('--alpha', type=float, default=0.5)
+parser.add_argument('--new', action='store_true',
+                    help='Enables working with multistream models.')
 # Dump results and logs
 parser.add_argument('--dump', action='store_true',
                     help='Save log in text file and json')
@@ -118,15 +120,8 @@ def main(args):
         else:
             args.dataset = 'UntrimmedSMCN'
         args.engine = 'MomentRetrievalFromClipBasedProposalsTable'
-        if args.greedy > 0:
-            args.engine = 'GreedyMomentRetrievalFromClipBasedProposalsTable'
-            engine_prm['topk'] = args.greedy
-    elif args.arch == 'LateFusion':
-        if args.concepts: 
-            args.dataset = 'UntrimmedCoceptsSMCN'
-        else:
-            args.dataset = 'UntrimmedSMCN'
-        args.engine = 'MomentRetrievalFromClipBasedProposalsTable'
+        if args.new:
+             args.engine = 'MomentRetrievalFromClipBasedProposalsTableNew'
         if args.greedy > 0:
             args.engine = 'GreedyMomentRetrievalFromClipBasedProposalsTable'
             engine_prm['topk'] = args.greedy
@@ -161,7 +156,7 @@ def main(args):
         obj_detection_path=args.obj_detection_path
     )
     dataset = dataset_untrimmed.__dict__[args.dataset](**dataset_setup)
-    if args.arch == 'SMCN' or args.arch == 'LateFusion':
+    if args.arch == 'SMCN':
         logging.info('Set padding on UntrimmedSMCN dataset')
         dataset.set_padding(False)
 
@@ -169,7 +164,7 @@ def main(args):
     models_dict = {}
     for i, key in enumerate(args.snapshot_tags):
         arch_setup = dict(
-            visual_size=dataset.visual_size[key],
+            visual_size={key:dataset.visual_size[key]},
             lang_size=dataset.language_size,
             max_length=dataset.max_words,
             embedding_size=args.embedding_size,
@@ -186,6 +181,7 @@ def main(args):
         models_dict[key].eval()
 
     logging.info('Creating database alas indexing corpus')
+    engine_prm['alpha'] = args.alpha
     engine = corpus.__dict__[args.engine](dataset, models_dict, **engine_prm)
     engine.indexing()
 

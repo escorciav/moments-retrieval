@@ -33,8 +33,10 @@ class MCN(nn.Module):
         if self.bi_lstm:
             bi_norm = 2
 
+        self.keys = list(visual_size.keys())
+
         self.visual_encoder = nn.ModuleDict({})
-        for key in visual_size.keys():
+        for key in self.keys:
             
             visual_encoder = [nn.Linear(visual_size[key], visual_hidden),
                           nn.ReLU(inplace=True)]
@@ -66,17 +68,19 @@ class MCN(nn.Module):
              visual_pos, visual_neg_intra, visual_neg_inter)
 
         l_embedded = self.encode_query(padded_query, query_length)
-        c_pos = {k:self.compare_emdeddings(l_embedded, v) 
-                                for k,v in v_embedded_pos.items()}
+        c_pos = {k:self.compare_emdeddings(l_embedded, 
+                                v_embedded_pos[k]) for k in self.keys}
         c_neg_intra, c_neg_inter = None, None
-        condition_neg_intra = v_embedded_neg_intra[list(v_embedded_neg_intra.keys())[0]]
+        
+        condition_neg_intra = v_embedded_neg_intra[self.keys[0]]
         if condition_neg_intra is not None:
-            c_neg_intra = {k:self.compare_emdeddings(l_embedded, v) 
-                            for k,v in v_embedded_neg_intra.items()}
-        condition_neg_inter = v_embedded_neg_inter[list(v_embedded_neg_inter.keys())[0]]
+            c_neg_intra = {k:self.compare_emdeddings(l_embedded, 
+                            v_embedded_neg_intra[k]) for k in self.keys}
+        
+        condition_neg_inter = v_embedded_neg_inter[self.keys[0]]
         if condition_neg_inter is not None:
-            c_neg_inter = {k:self.compare_emdeddings(l_embedded, v) 
-                            for k,v in v_embedded_neg_inter.items()}
+            c_neg_inter = {k:self.compare_emdeddings(l_embedded, 
+                            v_embedded_neg_inter[k]) for k in self.keys}
         return c_pos, c_neg_intra, c_neg_inter
 
     def encode_visual(self, pos, neg_intra, neg_inter):
@@ -86,23 +90,19 @@ class MCN(nn.Module):
 
         embedded_pos = {k:self.visual_encoder[k](v) for k,v in pos.items()}
         if self.unit_vector:
-            embedded_pos = {k:F.normalize(v, dim=-1) 
-                                        for k,v in embedded_pos.items()}
-        condition_neg_intra = neg_intra[list(neg_intra.keys())[0]]
+            embedded_pos = {k:F.normalize(embedded_pos[k], dim=-1) for k in self.keys}
+        condition_neg_intra = neg_intra[self.keys[0]]
         if condition_neg_intra is not None:
-            embedded_neg_intra = {k:self.visual_encoder[k](v) 
-                                            for k,v in neg_intra.items()}
+            embedded_neg_intra = {k:self.visual_encoder[k](neg_intra[k]) for k in self.keys}
             if self.unit_vector:
-                embedded_neg_intra = {k:F.normalize(v, dim=-1) 
-                                    for k,v in embedded_neg_intra.items()}
-        condition_neg_inter = neg_inter[list(neg_inter.keys())[0]]
+                embedded_neg_intra = {k:F.normalize(embedded_neg_intra[k], dim=-1) for k in self.keys}
+                                    
+        condition_neg_inter = neg_inter[self.keys[0]]
         if condition_neg_inter is not None:
-            embedded_neg_inter = {k:self.visual_encoder[k](v) 
-                                            for k,v in neg_inter.items()}
+            embedded_neg_inter = {k:self.visual_encoder[k](neg_inter[k]) for k in self.keys}                     
             if self.unit_vector:
-                embedded_neg_inter = {k:F.normalize(v, dim=-1) 
-                                    for k,v in embedded_neg_inter.items()}
-
+                embedded_neg_inter = {k:F.normalize(embedded_neg_inter[k], dim=-1) for k in self.keys}  
+                                    
         return embedded_pos, embedded_neg_intra, embedded_neg_inter
 
     def encode_query(self, padded_query, query_length):
@@ -193,9 +193,6 @@ class MCN(nn.Module):
         argout = []
         for i in args:
             if isinstance(i, dict):
-                # assert len(i) == 1 or len(i)==2
-                # j = next(iter(i))
-                # argout += (i[j],)
                 argout.append(i)
             else:
                 argout.append(i)
@@ -229,14 +226,14 @@ class SMCN(MCN):
         pos, neg_intra, neg_inter = self._unpack_visual(pos, neg_intra, neg_inter)
         embedded_neg_intra, embedded_neg_inter = None, None
 
-        embedded_pos = {k:self.fwd_visual_snippets(k,v) 
-                                for k,v in pos.items() if k != 'mask'}
+        embedded_pos = {k:self.fwd_visual_snippets(k,pos[k]) for k in self.keys}
+                                
         if neg_intra['mask'] is not None:
-            embedded_neg_intra = {k:self.fwd_visual_snippets(k,v) 
-                                    for k,v in neg_intra.items() if k != 'mask'}   
+            embedded_neg_intra = {k:self.fwd_visual_snippets(k,neg_intra[k]) for k in self.keys}
+                                    
         if neg_inter['mask'] is not None:
-            embedded_neg_inter = {k:self.fwd_visual_snippets(k,v) 
-                                    for k,v in neg_inter.items() if k != 'mask'}
+            embedded_neg_inter = {k:self.fwd_visual_snippets(k,neg_inter[k]) for k in self.keys}
+                                    
         return embedded_pos, embedded_neg_intra, embedded_neg_inter
 
     def fwd_visual_snippets(self, key, x):
@@ -261,13 +258,15 @@ class SMCN(MCN):
         c_neg_intra, c_neg_inter = None, None
 
         c_pos = {k:self.pool_compared_snippets(
-                self.compare_emdeddings(embedded_a, v), mask_p) for k,v in embedded_p.items()}
+                self.compare_emdeddings(embedded_a, embedded_p[k]), mask_p) for k in self.keys}
+                
         if mask_n_intra is not None:
             c_neg_intra = {k:self.pool_compared_snippets(
-                self.compare_emdeddings(embedded_a, v),mask_n_intra) for k,v in embedded_n_intra.items()}
+                self.compare_emdeddings(embedded_a, embedded_n_intra[k]),mask_n_intra) for k in self.keys}
+            
         if mask_n_inter is not None:
             c_neg_inter = {k:self.pool_compared_snippets(
-                self.compare_emdeddings(embedded_a, v),mask_n_inter) for k,v in embedded_n_inter.items()}
+                self.compare_emdeddings(embedded_a, embedded_n_inter[k]),mask_n_inter) for k in self.keys}
         return c_pos, c_neg_intra, c_neg_inter
 
     def search(self, query, table, clips_per_segment, clips_per_segment_list):
@@ -719,13 +718,9 @@ class LateFusion(SMCN):
 
     def predict(self, *args):
         "Compute scores for both models"
-        # pass data as it is to CALChamfer
-        input_resnet = copy.copy(list(args))
-        input_resnet[2] = {k:v for k,v in input_resnet[2].items() if k != 'obj'}
-        d1, *_ = self.resnet.forward(*tuple(input_resnet))
-        input_obj = copy.copy(list(args))
-        input_obj[2] = {k:v for k,v in input_obj[2].items() if k != 'rgb'}
-        d2, *_ = self.obj_feat.forward(*tuple(input_obj))
+        # pass data as it is to the models
+        d1, *_ = self.resnet.forward(*args)
+        d2, *_ = self.obj_feat.forward(*args)
         # combine the scores
         d_pos =  self.alpha * d1['rgb'] + (1-self.alpha) * d2['obj']
         return d_pos, False

@@ -125,6 +125,9 @@ def main(args):
         if args.greedy > 0:
             args.engine = 'GreedyMomentRetrievalFromClipBasedProposalsTable'
             engine_prm['topk'] = args.greedy
+    elif args.arch == 'CALChamfer':
+        args.dataset = 'UntrimmedCALChamfer'
+        args.engine = 'MomentRetrievalFromClipBasedProposalsTableNew'
     else:
         ValueError('Unknown/unsupported architecture')
     if args.greedy > 0 and args.arch != 'SMCN':
@@ -156,7 +159,7 @@ def main(args):
         obj_detection_path=args.obj_detection_path
     )
     dataset = dataset_untrimmed.__dict__[args.dataset](**dataset_setup)
-    if args.arch == 'SMCN':
+    if args.arch == 'SMCN' or args.arch == 'CALChamfer':
         logging.info('Set padding on UntrimmedSMCN dataset')
         dataset.set_padding(False)
 

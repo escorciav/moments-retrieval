@@ -162,9 +162,10 @@ def main(args):
 
     logging.info('Setting up models')
     models_dict = {}
-    for i, key in enumerate(args.snapshot_tags):
+    if len(args.snapshot)== 1 and len(args.snapshot_tags) > 1:
+        #multistream network - early fusiong
         arch_setup = dict(
-            visual_size={key:dataset.visual_size[key]},
+            visual_size={feat:dataset.visual_size[feat] for feat in args.snapshot_tags},
             lang_size=dataset.language_size,
             max_length=dataset.max_words,
             embedding_size=args.embedding_size,
@@ -173,12 +174,32 @@ def main(args):
             visual_layers=args.visual_layers,
             alpha=args.alpha
         )
+        key = '-'.join(args.tags)
         models_dict[key] = model.__dict__[args.arch](**arch_setup)
-        filename = args.snapshot[i].with_suffix('.pth.tar')
+        filename = args.snapshot[0].with_suffix('.pth.tar')
         snapshot_ = torch.load(
             filename, map_location=lambda storage, loc: storage)
         models_dict[key].load_state_dict(snapshot_['state_dict'])
         models_dict[key].eval()
+    else:
+        #single streams networks - late fusion
+        for i, key in enumerate(args.snapshot_tags):
+            arch_setup = dict(
+                visual_size={key:dataset.visual_size[key]},
+                lang_size=dataset.language_size,
+                max_length=dataset.max_words,
+                embedding_size=args.embedding_size,
+                visual_hidden=args.visual_hidden,
+                lang_hidden=args.lang_hidden,
+                visual_layers=args.visual_layers,
+                alpha=args.alpha
+            )
+            models_dict[key] = model.__dict__[args.arch](**arch_setup)
+            filename = args.snapshot[i].with_suffix('.pth.tar')
+            snapshot_ = torch.load(
+                filename, map_location=lambda storage, loc: storage)
+            models_dict[key].load_state_dict(snapshot_['state_dict'])
+            models_dict[key].eval()
 
     logging.info('Creating database alas indexing corpus')
     engine_prm['alpha'] = args.alpha

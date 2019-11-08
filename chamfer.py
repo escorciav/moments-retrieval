@@ -31,7 +31,8 @@ class ChamferDistance(nn.Module):
 
         return language_to_clip_dist + clip_to_language_dist
 
-    def batch_pairwise_dist(self, x, y):
+    @staticmethod
+    def batch_pairwise_dist(x, y):
         # implement the formula
         # Dij = ||x-y||**2
         # Expanding it as: Dij = ||x||**2 + ||y||**2 - 2<x,y>
@@ -105,46 +106,29 @@ class DoubleMaskedChamferDistance(MaskedChamferDistance):
         super(DoubleMaskedChamferDistance, self).__init__()
 
     def forward(self, video_feat, lang_feat, mask_v, mask_l):
-
-        mask_v=mask_v.detach()          #control gradient flow
-        mask_l=mask_l.detach()
-
         #pairwise distances matrix, shape = [B,Nv,Nl]
         pairwise_dist = self.batch_pairwise_dist(video_feat, lang_feat)
-        masked_pairwise_dist = self.masking(
-            pairwise_dist.clone(), mask_v, mask_l)
+        masked_minv, masked_minl = self.masked_minimum(pairwise_dist, mask_v, mask_l)
 
         # Normalization values
-        Nv = torch.sum(mask_v, dim=1)
-        Nl = torch.sum(mask_l, dim=1)
+        Nv = mask_v.sum(dim=1).clamp(min=1)
+        Nl = mask_l.sum(dim=1).clamp(min=1)
 
         # clip_to_language
-        minsv, _ = masked_pairwise_dist.min(dim=2)
-        masked_minv = minsv * mask_v
         clip_to_language_dist = masked_minv.sum(dim=1)/Nv
 
         # language_to_clip
-        minsl, _ = masked_pairwise_dist.min(dim=1)
-        masked_minl = minsl * mask_l
         language_to_clip_dist = masked_minl.sum(dim=1)/Nl
 
-        return (language_to_clip_dist + clip_to_language_dist).cpu()
+        return language_to_clip_dist + clip_to_language_dist
 
-    def masking(self,p,mv,ml):
-        #make negative mask of the same shape of pairwise matrix
-        import time
-        t = time.time()
-        neg_mv = (mv.clone().unsqueeze(-1).expand_as(p)).cpu().numpy()
-        neg_ml = (ml.clone().unsqueeze(1).expand_as(p)).cpu().numpy()
-        # sum and negate masks
-        neg = np.logical_not(np.logical_and(neg_ml, neg_mv)).astype(int)
-
-        #Add maximum value of pairwise matrix to all
-        # elements in position given by negate mask
-        max_ = p.max().detach()
-        p = p + (neg * max_).type_as(p)
-
-        return p
+    @staticmethod
+    def masked_minimum(p, mv, ml):
+        neg = 1 - mv.unsqueeze(-1) * ml.unsqueeze(-2)
+        masked = p + neg.type_as(p) * p.max()
+        minsv, _ = masked.min(dim=2)
+        minsl, _ = masked.min(dim=1)
+        return minsv * mv, minsl * ml
 
 # Deprecated since merge with corpus, I needed to remove the delta variable
 class MaskedChamferDistanceVisual(MaskedChamferDistance):

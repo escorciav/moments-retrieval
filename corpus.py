@@ -41,8 +41,12 @@ class CorpusVideoMomentRetrievalBase():
             else:
                 self.alpha = {key: round(1*i + (-1)**i*alpha,2)  
                           for i,key in enumerate(dict_of_models)}
-        assert dataset.cues.keys() == dict_of_models.keys()
+        condition = (dataset.cues.keys() == dict_of_models.keys() or 
+                    {'-'.join(dataset.cues.keys()):None}.keys() == dict_of_models.keys())
+        assert condition == True
         assert dict_of_models.keys() == self.alpha.keys()
+        self.dataset_cues = dataset.cues.keys()
+        self.keys = dict_of_models.keys()
         self.num_videos = None
         self.num_moments = None
         self.video_indices = None
@@ -619,7 +623,10 @@ class MomentRetrievalFromClipBasedProposalsTableNew(
         torch.set_grad_enabled(False)
         num_entries_per_video = []
         clips_per_moment = []
-        codes = {key: [] for key in self.models}
+        if 'rgb-obj' in self.keys:
+            codes = {key: [] for key in ['rgb','obj']}
+        else:
+            codes = {key: [] for key in self.models}
         all_proposals = []
         # TODO (tier-2;design): define method in dataset to do this?
         # batchify the fwd-pass
@@ -641,15 +648,22 @@ class MomentRetrievalFromClipBasedProposalsTableNew(
 
             # Append items to database
             all_proposals.append(proposals)
-            for key in self.dataset.cues:
-                segment_rep_k = representation_dict[key]
-                # get codes of the proposals -> C_i x D matrix
-                # Given a video i with S_i number of prooposals
-                # Each proposal S_i spans c_ij clips of the i-th video.
-                # C_i = \sum_{j=1}^{S_i} c_ij := num clips over all S_i
-                # proposals in the i-th video
-                codes[key].append(
-                    self.models[key].visual_encoder[key](segment_rep_k))
+            if 'rgb-obj' in self.keys:
+                segment_rep_k = representation_dict
+                for k in representation_dict.keys():
+                    if k != 'mask':
+                        codes[k].append(
+                            self.models['rgb-obj'].visual_encoder[k](segment_rep_k[k]))
+            else:
+                for key in self.dataset.cues:
+                    segment_rep_k = representation_dict[key]
+                    # get codes of the proposals -> C_i x D matrix
+                    # Given a video i with S_i number of prooposals
+                    # Each proposal S_i spans c_ij clips of the i-th video.
+                    # C_i = \sum_{j=1}^{S_i} c_ij := num clips over all S_i
+                    # proposals in the i-th video
+                    codes[key].append(
+                        self.models[key].visual_encoder[key](segment_rep_k))
         # Form the C x D matrix
         # M := number of videos, C = \sum_{i=1}^M C_i
         # We have as many tables as visual cues
@@ -673,13 +687,24 @@ class MomentRetrievalFromClipBasedProposalsTableNew(
         torch.set_grad_enabled(False)
         lang_feature, len_query = self.preprocess_description(description)
         score_list, descending_list = [], []
-        for key, model_k in self.models.items():
-            lang_code = model_k.encode_query(lang_feature, len_query)
-            scores_k, descending_k = model_k.search(
-                lang_code, self.moments_tables[key], self.clips_per_moment,
-                self.clips_per_moment_list)
-            score_list.append(scores_k * self.alpha[key])
-            descending_list.append(descending_k)
+        if 'rgb-obj' in self.keys:
+            for k, model_k in self.models.items():
+                lang_code = model_k.encode_query(lang_feature, len_query)
+                for key in self.moments_tables.keys():
+                    scores_k, descending_k = model_k.search(
+                        lang_code, self.moments_tables[key], self.clips_per_moment,
+                        self.clips_per_moment_list)
+                    score_list.append(scores_k)
+                    # score_list.append(scores_k * self.alpha[key])
+                    descending_list.append(descending_k)
+        else:
+            for key, model_k in self.models.items():
+                lang_code = model_k.encode_query(lang_feature, len_query)
+                scores_k, descending_k = model_k.search(
+                    lang_code, self.moments_tables[key], self.clips_per_moment,
+                    self.clips_per_moment_list)
+                score_list.append(scores_k * self.alpha[key])
+                descending_list.append(descending_k)
         scores = sum(score_list)
         # assert np.unique(descending_list).shape[0] == 1
         scores, ind = scores.sort(descending=descending_k)

@@ -483,6 +483,8 @@ def setup_dataset(args):
         dataset_name = 'UntrimmedSMCN'
     elif args.arch == 'LateFusion':
         dataset_name = 'UntrimmedSMCN'
+    elif args.arch == 'CALChamfer':
+        dataset_name = 'UntrimmedCALChamfer'
     else:
         raise ValueError(f'Unsuported arch: {args.arch}, call 911!')
 

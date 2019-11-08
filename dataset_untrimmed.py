@@ -124,6 +124,7 @@ class UntrimmedBase(Dataset):
         self.cues = None
         self.features = None
         self.max_clips = None
+        self.max_objects = None
         self.metadata = None
         self.metadata_per_video = None
         self._video_list = None
@@ -145,6 +146,11 @@ class UntrimmedBase(Dataset):
                 max_clips = max(max_clips, vid_metadata.get('num_clips', 0))
             self.max_clips = max_clips
         return self.max_clips
+
+    def max_number_of_objects(self):
+        "Return maximum number of objects over all moments in dataset"
+        self.max_objects = self.max_clips * 10      # 10 because we extract a maximum number of unique objects per clip
+        return self.max_objects
 
     @property
     def num_videos(self):
@@ -1139,7 +1145,7 @@ class UntrimmedCoceptsSMCN(UntrimmedSMCN):
             )
 
 
-class UntrimmedCALChamfer(UntrimmedBasedMCNStyle):
+class UntrimmedCALChamfer_old(UntrimmedBasedMCNStyle):
     """Data feeder for ModelB, ModelD, ModelE, ModelF
 
     Attributes
@@ -1158,7 +1164,7 @@ class UntrimmedCALChamfer(UntrimmedBasedMCNStyle):
         self.padding = padding
         if not self.eval:
             max_clips = self.max_number_of_clips()
-        self.visual_interface = VisualRepresentationCALChamfer(
+        self.visual_interface = VisualRepresentationCALChamfer_old(
             context=self.context, max_clips=max_clips, w_size=w_size)
         self._set_feat_dim()
 
@@ -1263,6 +1269,159 @@ class UntrimmedCALChamfer(UntrimmedBasedMCNStyle):
         feature_collection['mask'] = mask
         feature_collection['im_start'] = im_start
         return feature_collection
+
+
+class UntrimmedCALChamfer(UntrimmedBasedMCNStyle):
+    """Data feeder for SMCN
+
+    Attributes
+        padding (bool): if True the representation is padded with zeros.
+    """
+
+    def __init__(self, *args, max_clips=None, max_objects=None, padding=True, w_size=None,
+                 clip_mask=False, **kwargs):
+        super(UntrimmedCALChamfer, self).__init__(*args, **kwargs)
+        self.padding = padding
+        self.clip_mask = clip_mask
+        if not self.eval:
+            max_clips = self.max_number_of_clips()
+            max_objects = self.max_number_of_objects()
+        self.visual_interface = VisualRepresentationCALChamfer(
+                                context=self.context, max_clips=max_clips, 
+                                max_objects=max_objects, w_size=w_size)
+        self._set_feat_dim()
+
+    @property
+    def decomposable(self):
+        decomposable_time_features = (
+            self.loc == TemporalFeatures.NONE or
+            self.loc == TemporalFeatures.TEMPORALLY_AWARE
+        )
+        if decomposable_time_features:
+            return True
+        return False
+
+    def video_clip_representation(self, idx):
+        "Return clip-based features of a given video as dict of numpy array"
+        video_id = self.videos[idx]
+        video_duration = self._video_duration(video_id)
+        num_clips = self._video_num_clips(video_id)
+        feature_collection = {}
+        for key, feat_db in self.features.items():
+            feature_video = feat_db[video_id]
+            moment_feat_k, _ = self.visual_interface(
+                feature_video, [0, video_duration], self.clip_length,
+                num_clips, key=key)
+            feature_collection[key] = moment_feat_k.astype(
+                np.float32, copy=False)
+        return feature_collection
+
+    def _compute_visual_feature(self, video_id, moment_loc):
+        """Return visual features plus TEF for a given segment in the video
+
+        Note:
+            This implementation deals with non-decomposable features such
+            as TEF. In practice, if you can decompose your model/features
+            it's more efficient to re-write the final pooling.
+        """
+        if self.no_visual:
+            # return self._only_tef(video_id, moment_loc)
+            raise NotImplementedError('only-TEF is temporally disabled')
+
+        feature_collection = {}
+        video_duration = self._video_duration(video_id)
+        num_clips = self._video_num_clips(video_id)
+        clip_length = self.clip_length
+        for key, feat_db in self.features.items():
+            feature_video = feat_db[video_id]
+            moment_feat_k, mask = self.visual_interface(
+                feature_video, moment_loc, clip_length=clip_length,
+                num_clips=num_clips, video_id=video_id, key=key)
+            if self.tef_interface:
+                T, N = mask.sum().astype(np.int), len(moment_feat_k)
+                tef_feature = np.zeros((N, 2), dtype=self.tef_interface.dtype)
+                tef_feature[:T, :] = self.tef_interface(
+                    moment_loc, video_duration, clip_length=clip_length)
+                moment_feat_k = np.concatenate(
+                    [moment_feat_k, tef_feature], axis=1)
+
+            feature_collection[key] = moment_feat_k.astype(
+                np.float32, copy=False)
+            # whatever masks is fine given that we don't consider time responsive
+            # features yet?
+            dtype = np.float32 if self.padding else np.int64
+            moment_mask = mask.astype(dtype, copy=False)
+            mask_key = '-'.join(['mask',key])
+            feature_collection[mask_key] = moment_mask
+        if self.clip_mask:
+            clip_mask = np.zeros_like(moment_mask)
+            T = int(moment_mask.sum())
+            clip_mask[random.randint(0, T - 1)] = 1
+            feature_collection['mask_c'] = clip_mask
+        return feature_collection
+
+    def _compute_visual_feature_eval(self, video_id):
+        "Return visual features plus TEF for all candidate segments in video"
+        # We care about corpus video moment retrieval thus our
+        # `proposals_interface` does not receive language queries.
+        metadata = self.metadata_per_video[video_id]
+        candidates = self.proposals_interface(
+            video_id, metadata=metadata, feature_collection=self.features)
+        candidates_rep = dict_of_lists(
+            [self._compute_visual_feature(video_id, t) for t in candidates]
+        )
+        for k, v in candidates_rep.items():
+            if self.padding:
+                candidates_rep[k] = np.stack(v)
+            else:
+                candidates_rep[k] = np.concatenate(v, axis=0)
+        return candidates_rep, candidates
+
+    def set_padding(self, padding):
+        "Change padding mode"
+        self.padding = padding
+        self.visual_interface.padding = padding
+
+    def _only_tef(self, video_id, moment_loc):
+        "Return the feature collection with only any of the temporal features"
+        video_duration = self._video_duration(video_id)
+        clip_length = self.clip_length
+        num_clips = self._video_num_clips(video_id)
+        if not self.eval:
+            num_clips = self.max_number_of_clips()
+
+        # Padding and info about extend of the moment on it
+        padded_data = np.zeros((num_clips, 2), dtype=np.float32)
+        mask = np.zeros(num_clips, dtype=np.float32)
+        im_start = int(moment_loc[0] // clip_length)
+        im_end = int((moment_loc[1] - 1e-6) // clip_length)
+        T = im_end - im_start + 1
+
+        # Actual features and mask
+        padded_data[:T, :] = self.tef_interface(
+            moment_loc, video_duration, clip_length=clip_length)
+        mask[:T] = 1
+
+        # Packing
+        feature_collection = {}
+        for i, key in enumerate(self.features):
+            feature_collection[key] = padded_data
+        feature_collection['mask'] = mask
+        return feature_collection
+
+    def _set_feat_dim(self):
+        "Set visual and language size"
+        ind = 2 if self.debug else 0
+        instance = self[0]
+        if self.eval:
+            instance = ((instance[0 + ind][0, ...],) +
+                        instance[1 + ind:3 + ind])
+            ind = 0
+        self.feat_dim = {'language_size': instance[0 + ind].shape[1]}
+        for key in self.features:
+            self.feat_dim.update(
+                {f'visual_size_{key}': instance[2 + ind][key].shape[-1]}
+            )
 
 
 class TemporalEndpointFeature():
@@ -1428,6 +1587,7 @@ class VisualRepresentationSMCN():
         if self.padding:
             return padded_data, mask
         return padded_data, np.array([T])
+            
 
     def _local_context(self, start, end, x_t, num_clips=None):
         "Context around clips"
@@ -1454,6 +1614,124 @@ class VisualRepresentationSMCN():
 
 
 class VisualRepresentationCALChamfer():
+    """Compute visual features for CALChamfer model
+
+    The SMCN model does not pool the feature vector inside a moment, instead
+    it returns a numpy array of shape [N, D] and a numpy array of shape [N]
+    denoting a masked visual representation and the binary mask associated
+    with a given moment, respectively. N corresponds to the legnth of the
+    video or the max_clips when it's not `None`. For more details e.g.
+    what's D?, take a look at the details in`class:VisualRepresentationMCN`.
+
+    TODO:
+        - create base class to remove duplicated code
+    """
+
+    def __init__(self, context=True, dtype=np.float32, eps=1e-6,
+                 max_clips=None, max_objects=None, padding=True, w_size=None):
+        self.context = context
+        self.size_factor = context + 1
+        self.dtype = dtype
+        self.eps = eps
+        self.max_clips = max_clips
+        self.max_objects = max_objects
+        self.padding = padding
+        self.context_fn = global_context
+        self._w_half = None
+        self._box = None
+        if w_size is not None:
+            self.context_fn = self._local_context
+            self._w_half = w_size // 2
+            self._box = np.ones((w_size, 1), dtype=dtype) / w_size
+
+    def __call__(self, features, moment_loc, clip_length, key, num_clips=None, video_id=None):
+        if key == 'rgb':
+            n_feat, f_dim = features.shape
+            if self.max_clips is not None:
+                n_feat = self.max_clips
+            # From time to units of time
+            # we substract a small amount of t_end to ensure that it's close to
+            # the unit of time in case t_end == clip_length
+            # The end index is inclusive, check `function:normalization1d`.
+            im_start = int(moment_loc[0] // clip_length)
+            im_end = int((moment_loc[1] - self.eps) // clip_length)
+            # T := \mathcal{T} but in this case is the cardinality of the set
+            T = im_end - im_start + 1
+            if not self.padding:
+                n_feat = T
+            padded_data = np.zeros((n_feat, f_dim * self.size_factor),
+                                dtype=self.dtype)
+            # mask is numpy array of type self.dtype to avoid upstream casting
+            mask = np.zeros(n_feat, dtype=self.dtype)
+
+            padded_data[:T, 0:f_dim] = self._local_feature(
+                    im_start, im_end, features)
+            mask[:T] = 1
+            if self.context and key=='rgb':
+                if self._w_half is None:
+                    context_info = self.context_fn(features, num_clips)
+                else:
+                    context_info = self.context_fn(
+                        im_start, im_end, features, num_clips)
+                padded_data[:T, f_dim:2 * f_dim] = context_info
+            if self.padding:
+                return padded_data, mask
+            return padded_data, np.array([T])
+        else:
+            f_dim = features.shape[-1]
+            n_feat = np.prod(features.shape[:2])
+            if self.max_objects is not None:
+                n_feat = self.max_objects
+            # Get moment indices
+            im_start = int(moment_loc[0] // clip_length)
+            im_end = int((moment_loc[1] - self.eps) // clip_length)
+            # Create placeholders
+            padded_data = np.zeros((n_feat, f_dim),dtype=self.dtype)
+            mask = np.zeros(n_feat, dtype=self.dtype)
+            # Compute number of features in moment
+            T, feat = self._local_feature_objects(im_start, im_end, features)
+            if not self.padding:
+                n_feat = T
+            if T != 0:
+                padded_data[:T] = feat
+                # mask is numpy array of type self.dtype to avoid upstream casting
+                mask[:T] = 1
+            if self.padding:
+                return padded_data, mask
+            return padded_data, np.array([T])
+        
+    def _local_context(self, start, end, x_t, num_clips=None):
+        "Context around clips"
+        if num_clips is None:
+            num_clips = x_t.shape[0]
+        ind_start = start - self._w_half
+        pad_left = -1 * min(ind_start, 0)
+        ind_start = max(ind_start, 0)
+        ind_end = end + self._w_half + 1
+        pad_right = max(ind_end - num_clips, 0)
+
+        x_t = x_t[ind_start:ind_end, :]
+        if pad_right > 0 or pad_left > 0:
+            x_t = np.pad(x_t, ((pad_left, pad_right), (0, 0)), 'edge')
+        y_t = convolve(x_t, self._box, 'valid')
+        scaling_factor = np.linalg.norm(y_t, axis=1, keepdims=True) + self.eps
+        return y_t / scaling_factor
+
+    def _local_feature(self, start, end, x):
+        "Return normalized representation of each clip/chunk"
+        y = x[start:end + 1, :]
+        scaling_factor = np.linalg.norm(y, axis=1, keepdims=True) + self.eps
+        return y / scaling_factor
+    
+    def _local_feature_objects(self, start, end, x):
+        "Return normalized representation of each clip/chunk"
+        moment_feat = x[start:end + 1, :, :].reshape(-1, x.shape[-1])
+        y = moment_feat[moment_feat[:, -4:].sum(axis=1) != 0]
+        scaling_factor = np.linalg.norm(y, axis=1, keepdims=True) + self.eps
+        return y.shape[0], y / scaling_factor
+
+
+class VisualRepresentationCALChamfer_old():
     """Compute visual features for ModelB model
 
     The SMCN model does not pool the feature vector inside a moment, instead

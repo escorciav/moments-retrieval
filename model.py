@@ -5,8 +5,7 @@ from torch.nn.utils.rnn import pack_padded_sequence, pad_packed_sequence
 from torch.nn.utils.rnn import pad_sequence
 from chamfer import DoubleMaskedChamferDistance
 import copy
-MOMENT_RETRIEVAL_MODELS = ['MCN', 'SMCN', 'SMCNTalcv1', 'CALChamfer',
-                           'LateFusion']
+MOMENT_RETRIEVAL_MODELS = ['MCN', 'SMCN', 'SMCNTalcv1', 'CALChamfer','LateFusion']
 
 
 class MCN(nn.Module):
@@ -49,10 +48,6 @@ class MCN(nn.Module):
                 nn.Linear(visual_hidden, embedding_size),
                 nn.Dropout(dropout)
             )
-        # self.visual_embedding = nn.Sequential(
-        #     nn.Linear(visual_hidden, embedding_size),
-        #     nn.Dropout(dropout)
-        # )
 
         self.sentence_encoder = nn.LSTM(self.lang_size, self.lang_hidden,
                                 batch_first=True, bidirectional=self.bi_lstm)
@@ -123,7 +118,8 @@ class MCN(nn.Module):
         # TODO: generalize to other similarities
         # cos_sim = F.cosine_similarity(anchor,x,dim=dim)
         # return 1 - cos_sim
-        return (anchor - x).pow(2).sum(dim=dim)
+        y = anchor - x
+        return (y * y).sum(dim=dim)
 
     def init_parameters(self):
         "Initialize network parameters"
@@ -450,6 +446,8 @@ class CALChamfer(SMCN):
     distance between two sets of embeddings. The description is encoded
     through an LSTM layer of which every hidden state is mapped to the
     embedding state and constitute the set of language embeddings.
+
+    Chamfer distance is applied to all brances Lang-rgb / Lang-obj (if presents)
     '''
 
     def __init__(self, *args, **kwargs):
@@ -457,15 +455,28 @@ class CALChamfer(SMCN):
         bi_norm = 1
         if self.bi_lstm:
             bi_norm = 2
-        self.iter = 0
+
+        lang_layers = 2
 
         # Language branch
-        del self.lang_encoder
-        self.sentence_encoder = nn.LSTM(
-            self.lang_size, self.lang_hidden, batch_first=True,
-            bidirectional=self.bi_lstm, num_layers=1)
-        self.state_encoder = nn.Linear(
-            bi_norm * self.lang_hidden, self.embedding_size)
+        self.sentence_encoder = nn.ModuleDict({})
+        for key in self.keys:
+            self.sentence_encoder[key] = nn.LSTM(
+                            self.lang_size, self.lang_hidden, 
+                            batch_first=True, bidirectional=self.bi_lstm, 
+                            num_layers=1)
+
+        self.state_encoder = nn.ModuleDict({})
+        for key in self.keys:
+            
+            state_encoder = [nn.Linear(bi_norm * self.lang_hidden, int(self.lang_hidden/2)),
+                            nn.ReLU(inplace=True)]
+            self.state_encoder[key] = nn.Sequential(
+                *state_encoder,
+                nn.Linear(int(self.lang_hidden/2), self.embedding_size),
+                nn.Dropout(self.lang_dropout)
+            )
+
         self.chamfer_distance = DoubleMaskedChamferDistance()
         self.init_parameters()
 
@@ -477,7 +488,7 @@ class CALChamfer(SMCN):
              visual_pos, visual_neg_intra, visual_neg_inter)
 
         l_embedded = self.encode_query(padded_query, query_length)
-        l_mask = self._gen_lan_mask(self.max_length,query_length)
+        l_mask = self._gen_lan_mask(self.max_length,query_length).to(l_embedded[self.keys[0]].device)
 
         #embedding normalization
         if self.unit_vector:
@@ -487,9 +498,6 @@ class CALChamfer(SMCN):
                 v_embedded_neg_intra = F.normalize(v_embedded_neg_intra, dim=-1)
             if v_embedded_neg_inter is not None:
                 v_embedded_neg_inter = F.normalize(v_embedded_neg_inter, dim=-1)
-        else:
-            if self.lang_dropout > 0:
-                l_embedded = l_embedded*(1-self.lang_dropout)
 
         # meta-comparison
         c_pos, c_neg_intra, c_neg_inter = self.compare_emdedded_snippets(
@@ -499,50 +507,55 @@ class CALChamfer(SMCN):
 
     def encode_query(self, padded_query, query_length):
         B = len(padded_query)
-        packed_query = pack_padded_sequence(padded_query, query_length,
+        packed_query = pack_padded_sequence(padded_query, 
+                                            query_length,
                                             batch_first=True)
-        packed_output, _ = self.sentence_encoder(packed_query)
-        output, _ = pad_packed_sequence(packed_output, batch_first=True,
-                                        total_length=self.max_length)
+        packed_output = {k:self.sentence_encoder[k](packed_query) for k in self.keys}
+        output = {k:pad_packed_sequence(packed_output[k][0], batch_first=True,
+                                        total_length=self.max_length) for k in self.keys}
 
         # Pass hidden states though a shared linear layer.
-        embedded_lang = self.state_encoder(output)
-
-        #Apply dropout if set.
-        if self.lang_dropout > 0:
-            embedded_lang = self._apply_dopout_language(embedded_lang)
+        embedded_lang = {k:self.state_encoder[k](output[k][0]) for k in self.keys}
 
         return embedded_lang
 
     def encode_visual(self, pos, neg_intra, neg_inter):
-        pos, _, neg_intra, _, neg_inter, _ = \
-                self._unpack_visual(pos, neg_intra, neg_inter)
+        pos, neg_intra, neg_inter = self._unpack_visual(pos, neg_intra, neg_inter)
         embedded_neg_intra, embedded_neg_inter = None, None
 
-        embedded_pos = self.fwd_visual_snippets(pos)
-        if neg_intra is not None:
-            embedded_neg_intra = self.fwd_visual_snippets(neg_intra)
+        embedded_pos = {k:self.fwd_visual_snippets(k,pos[k]) for k in self.keys}
 
-        if neg_inter is not None:
-            embedded_neg_inter = self.fwd_visual_snippets(neg_inter)
-
+        mask_key = '-'.join(['mask',self.keys[0]])          
+        if neg_intra[mask_key] is not None:
+            embedded_neg_intra = {k:self.fwd_visual_snippets(k,neg_intra[k]) for k in self.keys}
+                                    
+        if neg_inter[mask_key] is not None:
+            embedded_neg_inter = {k:self.fwd_visual_snippets(k,neg_inter[k]) for k in self.keys}
+                                    
         return embedded_pos, embedded_neg_intra, embedded_neg_inter
 
     def compare_emdedded_snippets(self, embedded_p, embedded_n_intra,
                                   embedded_n_inter, embedded_a, l_mask,
                                   pos, neg_intra, neg_inter):
-        _, mask_p,_, mask_n_intra, _, mask_n_inter = \
-            self._unpack_visual(pos, neg_intra, neg_inter)
-
+        pos, neg_intra, neg_inter = self._unpack_visual(pos, neg_intra, neg_inter)
         c_neg_intra, c_neg_inter = None, None
+        mask_p, mask_n_intra, mask_n_inter = {}, {}, {}
+        
+        for k in self.keys:
+            mask_key = '-'.join(['mask',k])
+            mask_p[k] = pos[mask_key]
+            mask_n_intra[k] = neg_intra[mask_key]
+            mask_n_inter[k] = neg_inter[mask_key]
+        
+        c_pos = {k:self.compare_emdeddings(embedded_p[k], embedded_a[k], 
+                                mask_p[k], l_mask) for k in self.keys}
 
-        c_pos = self.compare_emdeddings(embedded_p, embedded_a, mask_p, l_mask)
-        if embedded_n_intra is not None:
-            c_neg_intra = self.compare_emdeddings(embedded_n_intra, embedded_a,
-                                                    mask_n_intra, l_mask)
-        if embedded_n_inter is not None:
-            c_neg_inter = self.compare_emdeddings(embedded_n_inter, embedded_a,
-                                                    mask_n_inter, l_mask)
+        if mask_n_inter[self.keys[0]] is not None:
+            c_neg_intra = {k:self.compare_emdeddings(embedded_n_intra[k], embedded_a[k],
+                                            mask_n_intra[k], l_mask) for k in self.keys}
+        if mask_n_inter[self.keys[0]] is not None:
+            c_neg_inter = {k:self.compare_emdeddings(embedded_n_inter[k], embedded_a[k],
+                                            mask_n_inter[k], l_mask) for k in self.keys}
         return c_pos, c_neg_intra, c_neg_inter
 
     def compare_emdeddings(self, v, l, mv, ml):
@@ -551,15 +564,8 @@ class CALChamfer(SMCN):
     def predict(self, *args):
         "Compute distance between visual and sentence"
         d_pos, *_ = self.forward(*args)
+        d_pos = torch.stack([v for _,v in d_pos.items()]).sum(dim=0)
         return d_pos, False
-
-    def _apply_dopout_language(self, emb_l):
-        B = emb_l.size()[0]
-        emb_l = emb_l.unsqueeze(1).view(B, -1, self.embedding_size)
-        emb_l = emb_l.unsqueeze(dim=2)
-        emb_l = F.dropout2d(emb_l,p=self.lang_dropout, training=self.training)
-        emb_l = emb_l.squeeze(dim=2)
-        return emb_l
 
     def _gen_lan_mask(self,num_words,query_length):
         #TO DO: move this task to dataset_untrimmed
@@ -572,16 +578,17 @@ class CALChamfer(SMCN):
 
     def _unpack_visual(self, *args):
         "Get visual feature inside a dict"
-        argout = ()
+        argout = []
+        keys = args[0].keys()
         for i in args:
             if isinstance(i, dict):
-                assert len(i) == 2
+                # assert len(i) == 2 or len(i)==3
                 # only works in cpython >= 3.6
-                argout += tuple(i.values())
+                argout.append(i)
             elif i is None:
-                argout += (None, None)
+                argout.append({k:None for k in keys})
             else:
-                argout += (i,)
+                argout.append(i)
         return argout
 
 

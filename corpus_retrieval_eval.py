@@ -108,6 +108,7 @@ def main(args):
     logging.info(args)
 
     engine_prm = {}
+    eval_flag = True
     if args.arch == 'MCN':
         if args.concepts: 
             args.dataset = 'UntrimmedCoceptsMCN'
@@ -126,6 +127,7 @@ def main(args):
             args.engine = 'GreedyMomentRetrievalFromClipBasedProposalsTable'
             engine_prm['topk'] = args.greedy
     elif args.arch == 'CALChamfer':
+        eval_flag = False   # needed to get right data in indexing. We want the padded data
         args.dataset = 'UntrimmedCALChamfer'
         args.engine = 'MomentRetrievalFromClipBasedProposalsTableNew'
     else:
@@ -150,7 +152,7 @@ def main(args):
         args.min_length, args.scales, args.stride)
     dataset_setup = dict(
         json_file=args.test_list, cues=dataset_cues, loc=args.loc,
-        context=args.context, debug=args.debug, eval=True,
+        context=args.context, debug=args.debug, eval=eval_flag,
         no_visual=dataset_novisual,
         proposals_interface=proposals_interface,
         clip_length=clip_length,
@@ -159,7 +161,7 @@ def main(args):
         obj_detection_path=args.obj_detection_path
     )
     dataset = dataset_untrimmed.__dict__[args.dataset](**dataset_setup)
-    if args.arch == 'SMCN' or args.arch == 'CALChamfer':
+    if args.arch == 'SMCN':
         logging.info('Set padding on UntrimmedSMCN dataset')
         dataset.set_padding(False)
 
@@ -358,7 +360,8 @@ def load_hyperparameters(args):
 
     logging.info('Parsing multiple JSON files with hyper-parameters')
     args.tags = dict.fromkeys(args.tags)
-    assert len(args.h5_path) == len(args.tags)
+    if not args.new:
+        assert len(args.h5_path) == len(args.tags)
     for i, filename in enumerate(args.snapshot):
         with open(filename, 'r') as fid:
             hyper_prm = json.load(fid)

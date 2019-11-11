@@ -576,27 +576,17 @@ class CALChamfer(SMCN):
             mask[i,0:query_length[i]] = 1
         return mask
 
-    def search(self, query, table, clips_per_segment, clips_per_segment_list, query_length):
+    def search(self, query, query_length, moments, v_mask):
         """Exhaustive search of query in table
 
         TODO: batch to avoid out of memory?
         """
-
-        l_mask = self._gen_lan_mask(self.max_length,query_length).to(query.device)
-        raise NotImplementedError
-        # v_mask = 
-        clip_distance = self.compare_emdeddings(
-            table, query, v_mask, l_mask).split(clips_per_segment_list)
-        sorted_clips_per_segment, ind = clips_per_segment.sort(
-            descending=True)
-        # distance >= 0 thus we pad with zeros
-        clip_distance_padded = pad_sequence(
-            [clip_distance[i] for i in ind], batch_first=True)
-        sorted_segment_distance = (clip_distance_padded.sum(dim=1) /
-                                   sorted_clips_per_segment)
-        _, original_ind = ind.sort(descending=False)
-        segment_distance = sorted_segment_distance[original_ind]
-        return segment_distance, False
+        B = moments.shape[0]
+        query  = query.repeat(B,1,1)
+        l_mask = self._gen_lan_mask(self.max_length,query_length).repeat(B,1)
+        chamfer_distance = self.compare_emdeddings(moments, query, v_mask, l_mask)
+     
+        return chamfer_distance, False
 
     def _unpack_visual(self, *args):
         "Get visual feature inside a dict"

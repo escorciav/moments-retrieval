@@ -61,6 +61,8 @@ parser.add_argument('--visual-hidden', type=int, default=500,
                     help='Hidden unit in MLP visual stream')
 parser.add_argument('--dropout', type=float, default=0.3,
                     help='Dropout rate in visual stream')
+parser.add_argument('--lang-dropout', type=float, default=0.0,
+                    help='Dropout rate in language stream')
 parser.add_argument('--embedding-size', type=int, default=100,
                     help='Dimensionaity of cross-modal embedding')
 parser.add_argument('--lang-hidden', type=int, default=1000,
@@ -152,6 +154,8 @@ parser.add_argument('--nms-threshold', type=float, default=0.5)
 # Device specific
 parser.add_argument('--batch-size', type=int, default=128, help='batch size')
 parser.add_argument('--gpu-id', type=int, default=-1, help='GPU device')
+parser.add_argument('--multi-gpu', action='store_true',
+                    help='Enable multiGPU training.')
 parser.add_argument('--num-workers', type=int, default=6,
                     help='Num workers during training')
 parser.add_argument('--num-workers-eval', type=int, default=6,
@@ -616,7 +620,8 @@ def setup_model(args, train_loader=None, test_loader=None):
         lang_hidden=args.lang_hidden,
         visual_layers=args.visual_layers,
         unit_vector=args.unit_vector,
-        alpha = args.alpha
+        alpha = args.alpha,
+        lang_dropout=args.lang_dropout
     )
     if args.clip_loss:
         args.arch = 'SMCNCL'

@@ -623,12 +623,28 @@ class MomentRetrievalFromClipBasedProposalsTableNew(
         "Create database of moments in videos"
         torch.set_grad_enabled(False)
         num_entries_per_video = []
-        clips_per_moment = []
-        obj_per_moment = []
-        if 'rgb-obj' in self.keys:
-            codes = {key: [] for key in ['rgb','obj']}
+        # clips_per_moment = []
+        # obj_per_moment = []
+        list_of_keys = []
+        stream_keys = [k for k in self.models] 
+        if len(stream_keys) == 1:
+            for k in stream_keys[0].split('-'):
+                mask_key = '-'.join(['mask',k])
+                list_of_keys.append(k)
+                list_of_keys.append(mask_key)
+
         else:
-            codes = {key: [] for key in self.models}
+            for k in stream_keys:
+                mask_key = '-'.join(['mask',k])
+                list_of_keys.append(k)
+                list_of_keys.append(mask_key)
+
+        codes = {key: [] for key in list_of_keys}
+
+        self.model_key = stream_keys[0]
+        if len(stream_keys) > 1:
+            self.model_key = '-'.join(stream_keys)
+
         all_proposals = []
         # TODO (tier-2;design): define method in dataset to do this?
         # batchify the fwd-pass
@@ -636,43 +652,23 @@ class MomentRetrievalFromClipBasedProposalsTableNew(
             representation_dict, proposals_ = (
                 self.dataset._compute_visual_feature_eval(video_id))
             num_entries_per_video.append(len(proposals_))
-            num_clips_i = representation_dict['mask-rgb']
-            num_objects_i = representation_dict['mask-obj']
-            if num_clips_i.ndim != 1:
-                raise ValueError('Dataset setup incorrectly. Disable padding')
-
             # torchify
             for key, value in representation_dict.items():
-                if 'mask' in key: continue
-                # get representation of all proposals
                 representation_dict[key] = torch.from_numpy(value)
             proposals = torch.from_numpy(proposals_)
-            clips_per_moment.append(torch.from_numpy(num_clips_i))
-            obj_per_moment.append(torch.from_numpy(num_clips_i))
-
             # Append items to database
             all_proposals.append(proposals)
-            if 'rgb-obj' in self.keys:
-                segment_rep_k = representation_dict
-                for k in representation_dict.keys():
-                    if 'mask' not in k:
-                        codes[k].append(self.models['rgb-obj'].visual_encoder[k](segment_rep_k[k]))        
-            else:
-                for key in self.dataset.cues:
-                    segment_rep_k = representation_dict[key]
-                    # get codes of the proposals -> C_i x D matrix
-                    # Given a video i with S_i number of prooposals
-                    # Each proposal S_i spans c_ij clips of the i-th video.
-                    # C_i = \sum_{j=1}^{S_i} c_ij := num clips over all S_i
-                    # proposals in the i-th video
-                    codes[key].append(
-                        self.models[key].visual_encoder[key](segment_rep_k))
+            for k in representation_dict.keys():
+                if 'mask' not in k:
+                    codes[k].append(self.models[self.model_key].visual_encoder[k](
+                                                        representation_dict[k]))        
+                else:
+                    codes[k].append(representation_dict[k])
         # Form the C x D matrix
         # M := number of videos, C = \sum_{i=1}^M C_i
         # We have as many tables as visual cues
         self.moments_tables = {key: torch.cat(value)
                                for key, value in codes.items()}
-
         # TODO (tier-2; design): organize this better
         self.num_videos = len(num_entries_per_video)
         self.entries_per_video = torch.tensor(num_entries_per_video)
@@ -682,43 +678,25 @@ class MomentRetrievalFromClipBasedProposalsTableNew(
             np.arange(0, len(self.dataset.videos)),
             num_entries_per_video)
         self.video_indices = torch.from_numpy(video_indices)
-        self.clips_per_moment = torch.cat(clips_per_moment)
-        self.clips_per_moment_list = self.clips_per_moment.tolist()
-        self.clips_per_moment = self.clips_per_moment.float()
-        self.obj_per_moment = torch.cat(obj_per_moment)
-        self.obj_per_moment_list = self.obj_per_moment.tolist()
-        self.obj_per_moment = self.obj_per_moment.float()
 
     def query(self, description, return_indices=False):
         "Search moments based on a text description given as list of words"
         torch.set_grad_enabled(False)
         lang_feature, len_query = self.preprocess_description(description)
         score_list, descending_list = [], []
-        if 'rgb-obj' in self.keys:
-            for k, model_k in self.models.items():
-                lang_code = model_k.encode_query(lang_feature, len_query)
-                for key in self.moments_tables.keys():
-                    data_per_moment      = self.clips_per_moment
-                    data_per_moment_list = self.clips_per_moment_list
-                    if key =='obj':
-                        data_per_moment      = self.obj_per_moment
-                        data_per_moment_list = self.obj_per_moment_list
-
+        for k, model_k in self.models.items():
+            lang_code = model_k.encode_query(lang_feature, len_query)
+            for key in self.moments_tables.keys():
+                if 'mask' not in key:
+                    mask_key = '-'.join(['mask',key])
                     scores_k, descending_k = model_k.search(
-                        lang_code[key], self.moments_tables[key], data_per_moment,
-                        data_per_moment_list, len_query)
+                                    lang_code[key], len_query, 
+                                    self.moments_tables[key], 
+                                    self.moments_tables[mask_key])
 
                     score_list.append(scores_k)
                     # score_list.append(scores_k * self.alpha[key])
                     descending_list.append(descending_k)
-        else:
-            for key, model_k in self.models.items():
-                lang_code = model_k.encode_query(lang_feature, len_query)
-                scores_k, descending_k = model_k.search(
-                    lang_code[key], self.moments_tables[key], self.clips_per_moment,
-                    self.clips_per_moment_list)
-                score_list.append(scores_k * self.alpha[key])
-                descending_list.append(descending_k)
         scores = sum(score_list)
         # assert np.unique(descending_list).shape[0] == 1
         scores, ind = scores.sort(descending=descending_k)

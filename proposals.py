@@ -4,6 +4,7 @@ import itertools
 import numpy as np
 import json
 import random
+import warnings
 
 PROPOSAL_SCHEMES = ['DidemoICCV17SS', 'SlidingWindowMSRSS','RC3D']
 
@@ -37,6 +38,8 @@ class DidemoICCV17SS(TemporalProposalsBase):
         self.proposals = np.array(clips_indices, dtype=dtype)
         self.proposals *= self.clip_length_min
         self.proposals[:, 1] += self.clip_length_min
+        warnings.warn("Hardcoded value in DidemoICCV17SS proposals module, sorry I was in a hurry.")
+        # self.max_proposal_duration = 30.0     # this is a hack and must be fixed
 
     def __call__(self, *args, **kwargs):
         return self.proposals
@@ -100,6 +103,7 @@ class SlidingWindowMSRSS(TemporalProposalsBase):
     def __init__(self, length, scales, stride=0.5, dtype=np.float32):
         self.length = length
         self.scales = scales
+        # self.max_proposal_duration = 0.0
         self.relative_stride = stride
         # pick strides per scale that are multiples of length
         self.strides = [max(round(i * stride), 1) * length for i in scales]
@@ -120,7 +124,11 @@ class SlidingWindowMSRSS(TemporalProposalsBase):
         # Hacky way to make windows fit inside video
         # It implies windows at the end may not belong to the set spanned by
         # length and scales.
-        return np.unique(windows, axis=0)
+        unique_windows = np.unique(windows, axis=0)
+        # max_length = max(unique_windows[:,1] - unique_windows[:,0])
+        # if max_length > self.max_proposal_duration:
+        #     self.max_proposal_duration = max_length
+        return unique_windows
 
     def __call__(self, video_id, metadata=None, feature_collection=None):
         duration = metadata.get('duration')

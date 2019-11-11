@@ -38,7 +38,7 @@ class DidemoICCV17SS(TemporalProposalsBase):
         self.proposals = np.array(clips_indices, dtype=dtype)
         self.proposals *= self.clip_length_min
         self.proposals[:, 1] += self.clip_length_min
-        warnings.warn("Hardcoded value in DidemoICCV17SS proposals module, sorry I was in a hurry.")
+        # warnings.warn("Hardcoded value in DidemoICCV17SS proposals module, sorry I was in a hurry.")
         # self.max_proposal_duration = 30.0     # this is a hack and must be fixed
 
     def __call__(self, *args, **kwargs):

@@ -22,7 +22,7 @@ parser = argparse.ArgumentParser(
 # Data
 parser.add_argument('--test-list', type=Path, required=True,
                     help='JSON-file with corpus instances')
-parser.add_argument('--h5-path', type=Path, default='non-existent',
+parser.add_argument('--h5-path', type=Path, default='non-existent', nargs='+',
                     help='HDF5-file with features')
 # Architecture
 parser.add_argument('--corpus-setup',
@@ -96,11 +96,17 @@ def main(args):
         ValueError('Unknown/unsupported architecture')
 
     logging.info('Loading dataset')
-    if args.h5_path.exists():
-        dataset_novisual = False
-        dataset_cues = {args.feat: {'file': args.h5_path}}
-    else:
-        raise NotImplementedError('WIP')
+    
+    dataset_novisual = False
+    dataset_cues = {k: None for k in args.feat}
+    for feat_name,feat_file in zip(args.feat,args.h5_path):
+        if feat_file.exists():
+            dataset_cues[feat_name] = {'file':feat_file}
+        else:
+            logging.info(f'{feat_file} not found, proceeding without it. Check the file path!!')
+    # dataset_cues = {args.feat: {'file': args.h5_path}}
+    # else:
+    #     raise NotImplementedError('WIP')
     proposals_interface = proposals.__dict__[args.proposal_interface](
         args.min_length, args.scales, args.stride)
     dataset_setup = dict(
@@ -112,7 +118,7 @@ def main(args):
     dataset = dataset_untrimmed.__dict__[args.dataset](**dataset_setup)
     logging.info('Setting up models')
     arch_setup = dict(
-        visual_size=dataset.visual_size[args.feat],
+        visual_size={feat:dataset.visual_size[feat] for feat in args.feat},
         lang_size=dataset.language_size,
         max_length=dataset.max_words,
         embedding_size=args.embedding_size,
@@ -143,7 +149,8 @@ def main(args):
     for it, query_metadata in tqdm(enumerate(dataset.metadata),
                                 disable=args.disable_tqdm):
         vid_indices, segments = engine.query(
-            query_metadata['language_input'], description_ind=it)
+            query_metadata['annotation_id'], description_ind=it)
+        
         judge.add_single_predicted_moment_info(
             query_metadata, vid_indices, segments, max_rank=engine.num_moments)
         num_instances_retrieved.append(len(vid_indices))

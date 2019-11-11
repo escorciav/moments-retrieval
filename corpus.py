@@ -236,9 +236,8 @@ class LoopOverKBase():
         # inheritance.
 
         # TODO (release): allow to tokenize description
-        assert isinstance(description, list)
-        lang_feature_, len_query_ = self.dataset._compute_language_feature(
-            description)
+        # assert isinstance(description, list)
+        lang_feature_, len_query_ = self.dataset._compute_language_feature(description)
         # torchify
         lang_feature = torch.from_numpy(lang_feature_)
         lang_feature.unsqueeze_(0)
@@ -641,9 +640,10 @@ class MomentRetrievalFromClipBasedProposalsTableNew(
 
         codes = {key: [] for key in list_of_keys}
 
-        self.model_key = stream_keys[0]
-        if len(stream_keys) > 1:
-            self.model_key = '-'.join(stream_keys)
+        if len(self.models) == 1:
+            self.model_key = stream_keys[0]
+            if len(stream_keys) > 1 :
+                self.model_key = '-'.join(stream_keys)
 
         all_proposals = []
         # TODO (tier-2;design): define method in dataset to do this?
@@ -658,12 +658,21 @@ class MomentRetrievalFromClipBasedProposalsTableNew(
             proposals = torch.from_numpy(proposals_)
             # Append items to database
             all_proposals.append(proposals)
-            for k in representation_dict.keys():
-                if 'mask' not in k:
-                    codes[k].append(self.models[self.model_key].visual_encoder[k](
-                                                        representation_dict[k]))        
-                else:
-                    codes[k].append(representation_dict[k])
+            if len(self.models) == 1:
+                for k in representation_dict.keys():
+                    if 'mask' not in k:
+                        codes[k].append(self.models[self.model_key].visual_encoder[k](
+                                                            representation_dict[k]))        
+                    else:
+                        codes[k].append(representation_dict[k])
+            else:
+                for k in representation_dict.keys():
+                    if 'mask' not in k:
+                        codes[k].append(self.models[k].visual_encoder[k](
+                                                            representation_dict[k]))        
+                    else:
+                        codes[k].append(representation_dict[k])
+
         # Form the C x D matrix
         # M := number of videos, C = \sum_{i=1}^M C_i
         # We have as many tables as visual cues
@@ -684,19 +693,30 @@ class MomentRetrievalFromClipBasedProposalsTableNew(
         torch.set_grad_enabled(False)
         lang_feature, len_query = self.preprocess_description(description)
         score_list, descending_list = [], []
-        for k, model_k in self.models.items():
-            lang_code = model_k.encode_query(lang_feature, len_query)
-            for key in self.moments_tables.keys():
-                if 'mask' not in key:
-                    mask_key = '-'.join(['mask',key])
-                    scores_k, descending_k = model_k.search(
-                                    lang_code[key], len_query, 
-                                    self.moments_tables[key], 
-                                    self.moments_tables[mask_key])
+        if  len(self.models) == 1:
+            for k, model_k in self.models.items():
+                lang_code = model_k.encode_query(lang_feature, len_query)
+                for key in self.moments_tables.keys():
+                    if 'mask' not in key:
+                        mask_key = '-'.join(['mask',key])
+                        scores_k, descending_k = model_k.search(
+                                        lang_code[key], len_query, 
+                                        self.moments_tables[key], 
+                                        self.moments_tables[mask_key])
 
-                    score_list.append(scores_k)
-                    # score_list.append(scores_k * self.alpha[key])
-                    descending_list.append(descending_k)
+                        score_list.append(scores_k)
+                        descending_list.append(descending_k)
+        else:
+            for k, model_k in self.models.items():
+                lang_code = model_k.encode_query(lang_feature, len_query)
+                mask_key = '-'.join(['mask',k])
+                scores_k, descending_k = model_k.search(
+                                lang_code[k], len_query, 
+                                self.moments_tables[k], 
+                                self.moments_tables[mask_key])
+                score_list.append(scores_k * self.alpha[k])
+                descending_list.append(descending_k)
+        
         scores = sum(score_list)
         # assert np.unique(descending_list).shape[0] == 1
         scores, ind = scores.sort(descending=descending_k)

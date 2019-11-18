@@ -11,12 +11,11 @@ from torch.utils.data import Dataset
 
 from glove import RecurrentEmbedding
 from bert import BERTEmbedding
-from grovle import GrOVLEEmbedding
 from np_segments_ops import iou as segment_iou
 from utils import dict_of_lists, unique2d_perserve_order
 
 WORD_TYPE = [['NOUN', 'VERB'], ['NOUN'],['VERB']]
-LANGUAGE = ['glove', 'bert', 'grovle']
+LANGUAGE = ['glove', 'bert']
 
 import json
 import time as time
@@ -62,23 +61,6 @@ class LanguageRepresentationMCN_glove(LanguageRepresentation):
                 feature[i, :] = self.embedding.vocab_dict[word]
         return feature, len_query
 
-
-class LanguageRepresentationMCN_grovle(LanguageRepresentation):
-    '''
-    DEPRECATED
-    '''
-
-    def __init__(self, max_words):
-        super(LanguageRepresentationMCN_grovle, self).__init__(max_words)
-        raise('GROVLE IS DEPRECATED')
-        self.embedding = GrOVLEEmbedding()
-        self.dim = self.embedding.grovle_dim
-
-    def __call__(self, query):
-        "Return padded sentence feature"
-        len_query = min(len(query), self.max_words)
-        feature = self.embedding(query, self.max_words)
-        return feature, len_query
 
 
 class LanguageRepresentationMCN_bert(LanguageRepresentation):

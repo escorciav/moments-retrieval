@@ -259,7 +259,6 @@ class CorpusVideoMomentRetrievalEval():
             new_segments    = torch.tensor([new_segments[i] for i in ind],dtype=segments.dtype)
         return new_vid_indices, new_segments
 
-
     def evaluate(self):
         "Compute MedRank@IOU and R@IOU,k accross the dataset"
         if self.performance is not None:

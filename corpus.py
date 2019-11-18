@@ -62,8 +62,7 @@ class CorpusVideoMomentRetrievalBase():
         "Return tensors representing description as 1) vectors and 2) length"
         # TODO (release): allow to tokenize description
         # assert isinstance(description, list)
-        lang_feature_, len_query_ = self.dataset._compute_language_feature(
-            description)
+        lang_feature_, len_query_ = self.dataset._compute_language_feature(description)
         # torchify
         lang_feature = torch.from_numpy(lang_feature_)
         lang_feature.unsqueeze_(0)
@@ -726,6 +725,119 @@ class MomentRetrievalFromClipBasedProposalsTableNew(
         return self.video_indices[ind], self.proposals[ind, :], scores
 
 
+class MomentRetrievalFromClipBasedProposalsTableEarlyFusion(
+        CorpusVideoMomentRetrievalBase):
+    """Retrieve Moments using a clip based model
+
+    This abstraction suits SMCN kind of models that the representation of the
+    video clips into a common visual-text embedding space.
+
+    Note:
+        - Make sure to setup the dataset in a way that retrieves a 2D
+          `numpy:ndarray` with the representation of all the proposals and a
+          1D `numpy:ndarray` with the number of clips per segment as `mask`.
+        - currently this implementation deals with the more general case of
+          non-decomposable models. Note that decomposable models would admit
+          smaller tables.
+    """
+
+    def __init__(self, *args, **kwargs):
+        super(MomentRetrievalFromClipBasedProposalsTableEarlyFusion, self).__init__(
+            *args, **kwargs)
+        self.clips_per_moment = None
+        self.clips_per_moment_list = None
+        self.masks = {}
+
+    def indexing(self):
+        "Create database of moments in videos"
+        torch.set_grad_enabled(False)
+        num_entries_per_video = []
+        # clips_per_moment = []
+        # obj_per_moment = []
+        list_of_keys = []
+        stream_keys = [k for k in self.models] 
+        if len(stream_keys) == 1:
+            for k in stream_keys[0].split('-'):
+                mask_key = '-'.join(['mask',k])
+                list_of_keys.append(k)
+                list_of_keys.append(mask_key)
+
+        else:
+            for k in stream_keys:
+                mask_key = '-'.join(['mask',k])
+                list_of_keys.append(k)
+                list_of_keys.append(mask_key)
+
+        codes = {key: [] for key in list_of_keys}
+
+        if len(self.models) == 1:
+            self.model_key = stream_keys[0]
+            if len(stream_keys) > 1 :
+                self.model_key = '-'.join(stream_keys)
+
+        all_proposals = []
+        # TODO (tier-2;design): define method in dataset to do this?
+        # batchify the fwd-pass
+        for video_id in self.dataset.videos:
+            representation_dict, proposals_ = (
+                self.dataset._compute_visual_feature_eval(video_id))
+            num_entries_per_video.append(len(proposals_))
+            # torchify
+            for key, value in representation_dict.items():
+                representation_dict[key] = torch.from_numpy(value)
+            proposals = torch.from_numpy(proposals_)
+            # Append items to database
+            all_proposals.append(proposals)
+            if len(self.models) == 1:
+                for k in representation_dict.keys():
+                    if 'mask' not in k:
+                        codes[k].append(self.models[self.model_key].visual_encoder[k](
+                                                            representation_dict[k]))        
+                    else:
+                        codes[k].append(representation_dict[k])
+            else:
+                for k in representation_dict.keys():
+                    if 'mask' not in k:
+                        codes[k].append(self.models[k].visual_encoder[k](
+                                                            representation_dict[k]))        
+                    else:
+                        codes[k].append(representation_dict[k])
+
+        # Form the C x D matrix
+        # M := number of videos, C = \sum_{i=1}^M C_i
+        # We have as many tables as visual cues
+        self.moments_tables = {key: torch.cat(value)
+                               for key, value in codes.items()}
+        # TODO (tier-2; design): organize this better
+        self.num_videos = len(num_entries_per_video)
+        self.entries_per_video = torch.tensor(num_entries_per_video)
+        self.proposals = torch.cat(all_proposals)
+        self.num_moments = int(self.proposals.shape[0])
+        video_indices = np.repeat(
+            np.arange(0, len(self.dataset.videos)),
+            num_entries_per_video)
+        self.video_indices = torch.from_numpy(video_indices)
+
+    def query(self, description, return_indices=False):
+        "Search moments based on a text description given as list of words"
+        torch.set_grad_enabled(False)
+        lang_feature, len_query = self.preprocess_description(description)
+        score_list, descending_list = [], []
+        for k, model_k in self.models.items():
+            lang_code = model_k.encode_query(lang_feature, len_query)
+            scores_k, descending_k = model_k.search(lang_code, len_query, self.moments_tables)
+            score_list.append(scores_k)
+            descending_list.append(descending_k)
+            
+        scores = sum(score_list)
+        # assert np.unique(descending_list).shape[0] == 1
+        scores, ind = scores.sort(descending=descending_k)
+        # TODO (tier-1): enable bell and whistles
+        if return_indices:
+            return self.video_indices[ind], self.proposals[ind, :], ind, scores
+        return self.video_indices[ind], self.proposals[ind, :], scores
+
+
 class GreedyMomentRetrievalFromClipBasedProposalsTable(
         CorpusVideoMomentRetrievalBase):
     "TODO: Retrieve Moments using a clip based model"
@@ -935,8 +1047,7 @@ class TwoStageClipPlusGeneric():
         # TODO (tier-2): remove 2nd-stage results from 1st-stage to make them
         # exhaustive
         torch.set_grad_enabled(False)
-        lang_feature, len_query = preprocess_description(
-            self.dataset, description)
+        lang_feature, len_query = preprocess_description(self.dataset, description)
         visited_proposals = set()
 
         # 1st-stage
@@ -957,7 +1068,7 @@ class TwoStageClipPlusGeneric():
                 # Grab features for 2nd-stage.
                 # Make articifical batch and torchify.
                 candidates_ij_feat = self.dataset._compute_visual_feature(
-                    video_id, self.stage1.proposals[j, :].numpy())
+                            video_id, self.stage1.proposals[j, :].numpy())
                 for k, v in candidates_ij_feat.items():
                     candidates_ij_feat[k] = torch.from_numpy(v[None, :])
 
@@ -987,9 +1098,8 @@ class TwoStageClipPlusGeneric():
 def preprocess_description(dataset, description):
     "Return tensor representing description as 1) vectors and 2) length"
     # TODO (release): allow to tokenize description
-    assert isinstance(description, list)
-    lang_feature_, len_query_ = dataset._compute_language_feature(
-        description)
+    # assert isinstance(description, list)
+    lang_feature_, len_query_ = dataset._compute_language_feature(description)
 
     # torchify
     lang_feature = torch.from_numpy(lang_feature_)

@@ -428,6 +428,7 @@ def validation(args, net, loader):
                 tracker.append(it, hit_k_iou, scores[:MAX_TOPK],
                                sorted_segments[:MAX_TOPK, :])
             end = time.time()
+    
     logging.info(f'{time_meters.report()}\t{meters_1.report()}')
     if meters_2:
         logging.info(f'DiDeMo metrics: {meters_2.report()}')
@@ -488,6 +489,8 @@ def setup_dataset(args):
     elif args.arch == 'LateFusion':
         dataset_name = 'UntrimmedSMCN'
     elif args.arch == 'CALChamfer':
+        dataset_name = 'UntrimmedCALChamfer'
+    elif args.arch == 'EarlyFusion':
         dataset_name = 'UntrimmedCALChamfer'
     else:
         raise ValueError(f'Unsuported arch: {args.arch}, call 911!')

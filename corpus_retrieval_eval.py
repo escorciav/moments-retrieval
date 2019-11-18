@@ -130,6 +130,10 @@ def main(args):
         eval_flag = False   # needed to get right data in indexing. We want the padded data
         args.dataset = 'UntrimmedCALChamfer'
         args.engine = 'MomentRetrievalFromClipBasedProposalsTableNew'
+    elif args.arch == 'EarlyFusion':
+        eval_flag = False   # needed to get right data in indexing. We want the padded data
+        args.dataset = 'UntrimmedCALChamfer'
+        args.engine = 'MomentRetrievalFromClipBasedProposalsTableEarlyFusion'
     else:
         ValueError('Unknown/unsupported architecture')
     if args.greedy > 0 and args.arch != 'SMCN':

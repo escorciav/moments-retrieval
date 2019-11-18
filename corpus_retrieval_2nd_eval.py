@@ -11,7 +11,9 @@ from tqdm import tqdm
 
 import corpus
 import dataset_untrimmed
+import dataset_untrimmed_old
 import model
+import model_old
 import proposals
 from evaluation import CorpusVideoMomentRetrievalEval
 from utils import setup_logging, get_git_revision_hash
@@ -45,7 +47,7 @@ parser.add_argument('--all', action='store_true',
 parser.add_argument('--topk', nargs='+', type=int,
                     default=[1, 10, 100],
                     help='top-k values to compute in ascending order.')
-parser.add_argument('--nms-threshold', type=float, default=0.5)
+parser.add_argument('--nms-threshold', type=float, default=1.0)
 # Dump results and logs
 parser.add_argument('--dump', action='store_true',
                     help='Save log in text file and json')
@@ -232,6 +234,7 @@ def setup_engine(args, dataset, net):
         dataset_cues = {
             hyper_prm_1ststage['feat']: {'file': args.h5_1ststage}
         }
+
         dataset_setup = dict(
             loc=hyper_prm_1ststage['loc'],
             context=hyper_prm_1ststage['context'],
@@ -242,17 +245,19 @@ def setup_engine(args, dataset, net):
         )
         # Hard-code UntrimmedSMCN and SMCN as they are the only clip-based
         # representation so far :)
-        dataset_1ststage = dataset_untrimmed.UntrimmedSMCN(**dataset_setup)
+        dataset_1ststage = dataset_untrimmed_old.UntrimmedSMCN(**dataset_setup)
+        args.feat_1ststage = hyper_prm_1ststage['feat']
         model_setup = dict(
-            visual_size=dataset_1ststage.visual_size[args.feat],
+            visual_size=dataset_1ststage.visual_size[args.feat_1ststage],
             lang_size=dataset_1ststage.language_size,
             max_length=dataset_1ststage.max_words,
             embedding_size=hyper_prm_1ststage['embedding_size'],
             visual_hidden=hyper_prm_1ststage['visual_hidden'],
             lang_hidden=hyper_prm_1ststage['lang_hidden'],
             visual_layers=hyper_prm_1ststage['visual_layers'],
+            dropout=hyper_prm_1ststage['dropout']
         )
-        model_1ststage = model.SMCN(**model_setup)
+        model_1ststage = model_old.SMCN(**model_setup)
         snapshot = torch.load(args.snapshot_1ststage.with_suffix('.pth.tar'),
                               map_location=lambda storage, loc: storage)
         model_1ststage.load_state_dict(snapshot['state_dict'])

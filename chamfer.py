@@ -104,11 +104,16 @@ class DoubleMaskedChamferDistance(MaskedChamferDistance):
 
     def __init__(self):
         super(DoubleMaskedChamferDistance, self).__init__()
+        self.idx = 0
 
     def forward(self, video_feat, lang_feat, mask_v, mask_l):
         #pairwise distances matrix, shape = [B,Nv,Nl]
         pairwise_dist = self.batch_pairwise_dist(video_feat, lang_feat)
         masked_minv, masked_minl = self.masked_minimum(pairwise_dist, mask_v, mask_l)
+
+        ########
+        # self._dump( pairwise_dist)
+        ########
 
         # Normalization values
         Nv = mask_v.sum(dim=1).clamp(min=1)
@@ -121,6 +126,12 @@ class DoubleMaskedChamferDistance(MaskedChamferDistance):
         language_to_clip_dist = masked_minl.sum(dim=1)/Nl
 
         return language_to_clip_dist + clip_to_language_dist
+
+    def _dump(self, pairwise_dist):
+        filename = './data/interim/matching_evaluation/dump/chamfer_distance/'
+        np.savez(f'{filename}{self.idx}.npz',pairwise_dist.cpu().numpy())
+        self.idx += 1
+
 
     @staticmethod
     def masked_minimum(p, mv, ml):

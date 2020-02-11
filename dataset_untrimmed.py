@@ -62,7 +62,6 @@ class LanguageRepresentationMCN_glove(LanguageRepresentation):
         return feature, len_query
 
 
-
 class LanguageRepresentationMCN_bert(LanguageRepresentation):
     "Get representation of sentence for BERT"
 
@@ -1417,8 +1416,9 @@ class UntrimmedCALChamfer(UntrimmedBasedMCNStyle):
         self.padding = padding
         self.clip_mask = clip_mask
         if not self.eval:
-            max_clips = self.max_number_of_clips()
-            max_objects = self.max_number_of_objects()
+            max_scales  = max(self.proposals_interface.scales)
+            max_clips   = 2 * max_scales #self.max_number_of_clips()
+            max_objects = 2 * 10 * max_scales #self.max_number_of_objects()
         self.visual_interface = VisualRepresentationCALChamfer(
                                 context=self.context, max_clips=max_clips, 
                                 max_objects=max_objects, w_size=w_size)

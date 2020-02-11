@@ -37,6 +37,9 @@ parser.add_argument('--snapshot', type=Path, required=True, nargs='+',
                     help='JSON files of model')
 parser.add_argument('--snapshot-tags', nargs='+',
                     help='Pair model to a given h5-path')
+parser.add_argument('--batch-size-chamfer',  type=int, default=10000,
+                    help='Batch size to compute chamfer distance')
+parser.add_argument('--gpu-id', type=int, default=-1, help='GPU device')
 # Evaluation parameters
 parser.add_argument('--topk', nargs='+', type=int,
                     default=[1, 10, 100, 1000, 10000],
@@ -84,7 +87,6 @@ parser.add_argument('--debug', action='store_true',
                     help=('yield incorrect results! to verify things are'
                           'glued correctly (dataset, model, eval)'))
 args = parser.parse_args()
-
 
 def main(args):
     "Put all the pieces together"
@@ -139,9 +141,6 @@ def main(args):
     if args.greedy > 0 and args.arch != 'SMCN':
         logging.warning('Ignore greedy search. Unsupported model')
 
-    
-
-
     logging.info('Loading dataset')
     dataset_novisual = True
     dataset_cues = {feat: None for feat in args.tags}
@@ -170,6 +169,14 @@ def main(args):
         dataset.set_padding(False)
 
     logging.info('Setting up models')
+    
+    args.device = device_name = 'cpu'
+    if args.gpu_id >= 0 and torch.cuda.is_available() and args.batch_size_chamfer > 0:
+        args.device = torch.device(f'cuda:{args.gpu_id}')
+        device_name = torch.cuda.get_device_name(args.gpu_id)
+    else:
+        args.batch_size_chamfer = 0
+
     models_dict = {}
     if len(args.snapshot)== 1 and len(args.snapshot_tags) > 1:
         #multistream network - early fusiong
@@ -189,6 +196,7 @@ def main(args):
         snapshot_ = torch.load(
             filename, map_location=lambda storage, loc: storage)
         models_dict[key].load_state_dict(snapshot_['state_dict'])
+        models_dict[key].to(args.device)
         models_dict[key].eval()
     else:
         #single streams networks - late fusion
@@ -211,9 +219,13 @@ def main(args):
             models_dict[key].eval()
 
     logging.info('Creating database alas indexing corpus')
-    engine_prm['alpha'] = args.alpha
+    engine_prm['alpha']  = args.alpha
+    engine_prm['device'] = args.device
     engine = corpus.__dict__[args.engine](dataset, models_dict, **engine_prm)
+    import time
+    t = time.time()
     engine.indexing()
+    print(time.time()-t)
 
     # with open('./data/didemo_train_corpus_information.json','w') as f:
     #     json.dump({'proposals':engine.proposals.tolist(), 
@@ -238,7 +250,8 @@ def main(args):
                                    disable=args.disable_tqdm):
         result_per_query = engine.query(
             description = query_metadata['annotation_id'],
-            return_indices=args.dump_per_instance_results)
+            return_indices=args.dump_per_instance_results,
+            batch_size=args.batch_size_chamfer)
         if args.dump_per_instance_results:
             vid_indices, segments, proposals_ind, scores = result_per_query
         else:

@@ -29,9 +29,10 @@ class CorpusVideoMomentRetrievalBase():
           Extending to similarities should be trivial (I guess).
     """
 
-    def __init__(self, dataset, dict_of_models, alpha=None):
+    def __init__(self, dataset, dict_of_models, alpha=None, device='cpu'):
         self.dataset = dataset
         self.models = dict_of_models
+        self.device = device
         if alpha is None:
             self.alpha = {key: 1 /len(dict_of_models)
                           for key in dict_of_models}
@@ -89,7 +90,6 @@ class ClipRetrieval(CorpusVideoMomentRetrievalBase):
         if not self.dataset.decomposable:
             raise ValueError('Dataset represenation does not admit '
                              'clip-based retrieval')
-
     def indexing(self):
         "Create database of moments in videos"
         torch.set_grad_enabled(False)
@@ -162,8 +162,7 @@ class ClipRetrieval(CorpusVideoMomentRetrievalBase):
         score_list, descending_list = [], []
         for key, model_k in self.models.items():
             lang_code = model_k.encode_query(lang_feature, len_query)
-            scores_k = (lang_code - self.moments_tables[key]).pow(2).sum(
-                dim=-1)
+            scores_k = ((lang_code - self.moments_tables[key])**2).sum(dim=-1)
             score_list.append(scores_k * self.alpha[key])
             descending_list.append(descending_k)
         scores = sum(score_list)
@@ -457,11 +456,15 @@ class MomentRetrievalFromProposalsTable(CorpusVideoMomentRetrievalBase):
             # Append items to database
             all_proposals.append(proposals)
             for key in self.dataset.cues:
-                segment_rep_k = representation_dict[key]
+                # segment_rep_k = representation_dict[key]
                 # get codes of the proposals -> S_i x D matrix
                 # S_i := num proposals in ith-video
+
                 codes[key].append(
-                    self.models[key].visual_encoder(segment_rep_k))
+                    self.models[key].visual_encoder[key](
+                                representation_dict[key]))
+                # codes[key].append(
+                #     self.models[key].visual_encoder(segment_rep_k))
         # Form the S x D matrix.
         # M := number of videos, S = \sum_{i=1}^M S_i
         # We have as many tables as visual cues
@@ -630,7 +633,6 @@ class MomentRetrievalFromClipBasedProposalsTableNew(
                 mask_key = '-'.join(['mask',k])
                 list_of_keys.append(k)
                 list_of_keys.append(mask_key)
-
         else:
             for k in stream_keys:
                 mask_key = '-'.join(['mask',k])
@@ -661,14 +663,14 @@ class MomentRetrievalFromClipBasedProposalsTableNew(
                 for k in representation_dict.keys():
                     if 'mask' not in k:
                         codes[k].append(self.models[self.model_key].visual_encoder[k](
-                                                            representation_dict[k]))        
+                                        representation_dict[k].to(self.device)).cpu())        
                     else:
                         codes[k].append(representation_dict[k])
             else:
                 for k in representation_dict.keys():
                     if 'mask' not in k:
                         codes[k].append(self.models[k].visual_encoder[k](
-                                                            representation_dict[k]))        
+                                        representation_dict[k].to(self.device)).cpu())        
                     else:
                         codes[k].append(representation_dict[k])
 
@@ -687,21 +689,22 @@ class MomentRetrievalFromClipBasedProposalsTableNew(
             num_entries_per_video)
         self.video_indices = torch.from_numpy(video_indices)
 
-    def query(self, description, return_indices=False):
+    def query(self, description, return_indices=False, batch_size=10000):
         "Search moments based on a text description given as list of words"
         torch.set_grad_enabled(False)
         lang_feature, len_query = self.preprocess_description(description)
         score_list, descending_list = [], []
         if  len(self.models) == 1:
             for k, model_k in self.models.items():
-                lang_code = model_k.encode_query(lang_feature, len_query)
+                lang_code = model_k.encode_query(lang_feature.to(self.device), len_query)
                 for key in self.moments_tables.keys():
                     if 'mask' not in key:
                         mask_key = '-'.join(['mask',key])
                         scores_k, descending_k = model_k.search(
                                         lang_code[key], len_query, 
                                         self.moments_tables[key], 
-                                        self.moments_tables[mask_key])
+                                        self.moments_tables[mask_key],
+                                        batch_size)
 
                         score_list.append(scores_k)
                         descending_list.append(descending_k)

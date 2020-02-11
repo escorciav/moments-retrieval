@@ -64,6 +64,10 @@ class SlidingWindowMSFS(TemporalProposalsBase):
         self.canonical_windows = np.zeros((num_scales, 2), dtype=self.dtype)
         self.canonical_windows[:, 1] += (
             length * np.arange(1, num_scales + 1))
+        
+    @property
+    def scales(self):
+        return self.num_scales
 
     def sliding_windows(self, t_end, t_start=0):
         "sliding canonical windows over a given time interval"
@@ -82,6 +86,7 @@ class SlidingWindowMSFS(TemporalProposalsBase):
         duration = metadata.get('duration')
         assert duration is not None
         return self.sliding_windows(duration)
+    
 
 
 class SlidingWindowMSRSS(TemporalProposalsBase):
@@ -143,6 +148,7 @@ class RC3D(TemporalProposalsBase):
         #Load R-C3D proposals
         self.RC3D_proposals = {}
         filename = './data/raw/RC3D_ranked_proposals_charades.json'
+        # filename = '/home/soldanm/Documents/projects/CVPR2020/moments-retrieval/data/raw/RC3D_ranked_proposals_charades.json'
         with open(filename, 'r') as f:
             self.RC3D_proposals = json.load(f)
         self.complete_proposals = True #Enable or disable the generation of random proposals 

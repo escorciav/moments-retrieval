@@ -5,7 +5,8 @@ from torch.nn.utils.rnn import pack_padded_sequence, pad_packed_sequence
 from torch.nn.utils.rnn import pad_sequence
 from chamfer import DoubleMaskedChamferDistance
 import copy
-MOMENT_RETRIEVAL_MODELS = ['MCN', 'SMCN', 'SMCNTalcv1', 'CALChamfer','LateFusion','EarlyFusion', 'old_SMCN']
+import numpy as np
+MOMENT_RETRIEVAL_MODELS = ['MCN', 'SMCN', 'SMCNTalcv1', 'CALChamfer','LateFusion','EarlyFusion', 'old_MCN','old_SMCN']
 
 
 class MCN(nn.Module):
@@ -67,13 +68,13 @@ class MCN(nn.Module):
                                 v_embedded_pos[k]) for k in self.keys}
         c_neg_intra, c_neg_inter = None, None
         
-        condition_neg_intra = v_embedded_neg_intra[self.keys[0]]
-        if condition_neg_intra is not None:
+        # condition_neg_intra = v_embedded_neg_intra[self.keys[0]]
+        if v_embedded_neg_intra is not None:
             c_neg_intra = {k:self.compare_emdeddings(l_embedded, 
                             v_embedded_neg_intra[k]) for k in self.keys}
         
-        condition_neg_inter = v_embedded_neg_inter[self.keys[0]]
-        if condition_neg_inter is not None:
+        # condition_neg_inter = v_embedded_neg_inter[self.keys[0]]
+        if v_embedded_neg_inter is not None:
             c_neg_inter = {k:self.compare_emdeddings(l_embedded, 
                             v_embedded_neg_inter[k]) for k in self.keys}
         return c_pos, c_neg_intra, c_neg_inter
@@ -86,14 +87,13 @@ class MCN(nn.Module):
         embedded_pos = {k:self.visual_encoder[k](v) for k,v in pos.items()}
         if self.unit_vector:
             embedded_pos = {k:F.normalize(embedded_pos[k], dim=-1) for k in self.keys}
-        condition_neg_intra = neg_intra[self.keys[0]]
-        if condition_neg_intra is not None:
+
+        if neg_intra is not None:
             embedded_neg_intra = {k:self.visual_encoder[k](neg_intra[k]) for k in self.keys}
             if self.unit_vector:
                 embedded_neg_intra = {k:F.normalize(embedded_neg_intra[k], dim=-1) for k in self.keys}
                                     
-        condition_neg_inter = neg_inter[self.keys[0]]
-        if condition_neg_inter is not None:
+        if neg_inter is not None:
             embedded_neg_inter = {k:self.visual_encoder[k](neg_inter[k]) for k in self.keys}                     
             if self.unit_vector:
                 embedded_neg_inter = {k:F.normalize(embedded_neg_inter[k], dim=-1) for k in self.keys}  
@@ -300,7 +300,7 @@ class old_MCN(nn.Module):
 
     def compare_emdeddings(self, anchor, x, dim=-1):
         # TODO: generalize to other similarities
-        return (anchor - x).pow(2).sum(dim=dim)
+        return ((anchor - x)**2).sum(dim=dim)
 
     def init_parameters(self):
         "Initialize network parameters"
@@ -876,17 +876,55 @@ class CALChamfer(SMCN):
             mask[i,0:query_length[i]] = 1
         return mask
 
-    def search(self, query, query_length, moments, v_mask):
+    def search(self, query, query_length, moments, v_mask, batch_size):
         """Exhaustive search of query in table
 
         TODO: batch to avoid out of memory?
         """
-        B = moments.shape[0]
-        query  = query.repeat(B,1,1)
-        l_mask = self._gen_lan_mask(self.max_length,query_length).repeat(B,1)
-        chamfer_distance = self.compare_emdeddings(moments, query, v_mask, l_mask)
-     
-        return chamfer_distance, False
+
+        if batch_size == 0:
+            B = moments.shape[0]
+            _, d1, d2 = query.size()
+            query  = query.expand(B, d1, d2)
+            l_mask = self._gen_lan_mask(self.max_length,query_length)
+            l_mask = l_mask.expand(B, l_mask.size()[1])
+            chamfer_distance = self.compare_emdeddings(moments, query, v_mask, l_mask)
+
+            return chamfer_distance, False
+
+        elif batch_size > 0:
+            # Sizes
+            B = moments.shape[0]
+            batch_size = min(batch_size, B)
+            _, d1_q, d2_q = query.size()
+            
+            # Reshape query and creation query mask
+            query_ = query.expand(batch_size, d1_q, d2_q)
+            l_mask = self._gen_lan_mask(self.max_length,query_length).to('cuda')
+            l_mask_= l_mask.expand(batch_size, l_mask.size()[1])
+        
+            #Batchify chamfer distance calculation
+            chamfer_distance = []
+            for i in range(B//batch_size):
+                chamfer_distance.extend(
+                    self.compare_emdeddings(
+                        moments[i*batch_size: (i+1)*batch_size].to('cuda'), query_, 
+                        v_mask[i*batch_size:  (i+1)*batch_size].to('cuda'), l_mask_).cpu()
+                    )
+            # Process reminder of batch
+            if batch_size < B:
+                reminder = B % batch_size
+                query_   = query.to('cuda').expand(reminder, d1_q, d2_q)
+                l_mask_  = l_mask.to('cuda').expand(reminder, l_mask.size()[1])
+                chamfer_distance.extend(
+                    self.compare_emdeddings(
+                        moments[-reminder:].to('cuda'), query_, 
+                        v_mask[-reminder:].to('cuda') , l_mask_).cpu()
+                    )
+
+            return torch.FloatTensor(chamfer_distance), False
+        else:
+            raise('Batch size chamfer incorrect. Use 0 or a positive value.')
 
     def _unpack_visual(self, *args):
         "Get visual feature inside a dict"

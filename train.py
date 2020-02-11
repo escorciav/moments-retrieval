@@ -253,7 +253,7 @@ def main(args):
     if len(args.snapshot.name) > 0 and args.snapshot.exists():
         logging.info(f'Load model-parameters from {args.snapshot}')
         filename = args.snapshot.with_suffix('.pth.tar')
-        snapshot = torch.load(filename).get('state_dict')
+        snapshot = torch.load(filename, map_location=args.device).get('state_dict')
         if snapshot is not None:
             net.load_state_dict(snapshot)
         else:
@@ -293,9 +293,10 @@ def main(args):
         # on epoch begin
         args.epochs += 1
         args.n_display = max(int(n_display_float * len(train_loader)), 1)
-        lr_schedule.step()
-
+    
         train_epoch(args, net, ranking_loss, train_loader, optimizer)
+    
+        lr_schedule.step()
 
         # on epoch ends
         # eval on val/test-lists
@@ -323,10 +324,10 @@ def main(args):
     # on train ends
     if args.eval_on_epoch < 0 or args.force_eval_end:
         logging.info('Evaluation after training finished')
+        save_checkpoint(args, {'state_dict': net.state_dict()})
         perf_val, perf_per_sample_val = evaluate(args, net, val_loader)
         perf_test, perf_per_sample_test = evaluate(
             args, net, test_loader, subset='test')
-        save_checkpoint(args, {'state_dict': net.state_dict()})
 
     logging.info(f'Best val {TRACK}: {best_result:.4f}')
     dumping_arguments(args, perf_val, perf_test,

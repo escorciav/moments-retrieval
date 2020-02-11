@@ -37,9 +37,9 @@ class ChamferDistance(nn.Module):
         # Dij = ||x-y||**2
         # Expanding it as: Dij = ||x||**2 + ||y||**2 - 2<x,y>
 
-        a = x.pow(2).sum(dim=2,keepdim=True)
-        b = y.pow(2).sum(dim=2,keepdim=True)
-        ab = torch.bmm(x,y.transpose(2,1))
+        a = (x*x).sum(dim=2,keepdim=True)
+        b = (y*y).sum(dim=2,keepdim=True)
+        ab = x @ y.transpose(2,1)  #torch.bmm(x,y.transpose(2,1))
         pairwise_dist = a - 2*ab + b.transpose(2,1)
         return pairwise_dist
 
@@ -77,9 +77,9 @@ class MaskedChamferDistance(nn.Module):
         # implement the formula
         # Dij = ||x-y||**2
         # Expanding it as: Dij = ||x||**2 + ||y||**2 - 2<x,y>
-        a = x.pow(2).sum(dim=2,keepdim=True)
-        b = y.pow(2).sum(dim=2,keepdim=True)
-        ab = torch.bmm(x,y.transpose(2,1))
+        a = (x*x).sum(dim=2,keepdim=True)
+        b = (y*y).sum(dim=2,keepdim=True)
+        ab = x @ y.transpose(2,1)  #torch.bmm(x,y.transpose(2,1))
         pairwise_dist = a - 2*ab + b.transpose(2,1)
         return pairwise_dist
 
@@ -135,8 +135,8 @@ class DoubleMaskedChamferDistance(MaskedChamferDistance):
 
     @staticmethod
     def masked_minimum(p, mv, ml):
-        neg = 1 - mv.unsqueeze(-1) * ml.unsqueeze(-2)
-        masked = p + neg.type_as(p) * p.max()
+        neg      = 1 - mv.unsqueeze(-1) * ml.unsqueeze(-2)
+        masked   = p + neg.type_as(p) * p.max()
         minsv, _ = masked.min(dim=2)
         minsl, _ = masked.min(dim=1)
         return minsv * mv, minsl * ml

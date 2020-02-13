@@ -3,6 +3,7 @@ import glob
 
 def read_data(dir):
     files = sorted(glob.glob(dir+"/*.log"))
+    files = [f for f in files if "corpus" not in f]
     for f in files:
         lines = list(open(f, 'r'))
         output = [print_results(l.strip(),f) for l in lines if "INFO:Batch" in l]

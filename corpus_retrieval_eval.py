@@ -128,6 +128,10 @@ def main(args):
         if args.greedy > 0:
             args.engine = 'GreedyMomentRetrievalFromClipBasedProposalsTable'
             engine_prm['topk'] = args.greedy
+    elif args.arch == 'old_SMCN':
+        args.dataset = 'UntrimmedSMCN_OLD'
+        args.engine = 'MomentRetrievalFromClipBasedProposalsTable'
+
     elif args.arch == 'CALChamfer':
         eval_flag = False   # needed to get right data in indexing. We want the padded data
         args.dataset = 'UntrimmedCALChamfer'

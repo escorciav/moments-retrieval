@@ -575,6 +575,7 @@ def setup_dataset(args):
     logging.info('Pre-loading features... '
                  'It may take a couple of minutes (Language features!)')
     loaders = []
+    datasets = []
     for i, (subset, filename) in enumerate(subset_files):
         index_config = 0 if i == 0 else -1
         extras_dataset = extras_dataset_configs[index_config]
@@ -597,10 +598,14 @@ def setup_dataset(args):
             extras_loader['shuffle'] = False
             extras_loader['sampler'] = sampler_biased_single_clip_moment(
                 dataset, args.bias_to_single_clips)
-        loaders.append(
-            DataLoader(dataset, **extras_loader)
-        )
 
+        datasets.append((dataset, extras_loader))
+    
+    max_clips = max([d[0].get_max_clips() for d in datasets])
+    for i in range(len(datasets)):
+        datasets[i][0].set_padding_size(max_clips)
+
+    loaders = [DataLoader(d[0], **d[1]) for d in datasets]
     train_loader, val_loader, test_loader = loaders
     return train_loader, val_loader, test_loader
 

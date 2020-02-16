@@ -1151,7 +1151,7 @@ class UntrimmedSMCN_OLD(UntrimmedBasedMCNStyle):
 
     def __init__(self, *args, max_clips=None, padding=True, w_size=None,
                  clip_mask=False, **kwargs):
-        super(UntrimmedSMCN, self).__init__(*args, **kwargs)
+        super(UntrimmedSMCN_OLD, self).__init__(*args, **kwargs)
         self.padding = padding
         self.clip_mask = clip_mask
         if not self.eval:
@@ -1541,6 +1541,34 @@ class UntrimmedCALChamfer(UntrimmedBasedMCNStyle):
             feature_collection[key] = padded_data
         feature_collection['mask'] = mask
         return feature_collection
+
+    def get_max_clips(self):
+        '''
+        Get maximum duration of moments for specific data split
+        '''
+        times = []
+        for m in self.metadata:
+            times.extend([t for t in m['times']])
+        moments_lenghts = []
+        for t in times:
+            start = int(t[0] // self.clip_length) 
+            end   = int((t[1]-1e-6) // self.clip_length)
+            moments_lenghts.append(end-start +1)
+        return max(moments_lenghts)
+
+    def max_obj_per_clip(self):
+        max_obj_per_clip = []
+        for _,f in self.features['obj'].items():
+            max_obj_per_clip.append(f.shape[1])
+        return max(max_obj_per_clip)
+
+    def set_padding_size(self,max_clips):
+        '''
+        Set the new padding for rgb and obj stream
+        '''
+        self.visual_interface.max_clips   = max_clips
+        max_obj_per_clip = self.max_obj_per_clip()
+        self.visual_interface.max_objects = max_clips * max_obj_per_clip
 
     def _set_feat_dim(self):
         "Set visual and language size"

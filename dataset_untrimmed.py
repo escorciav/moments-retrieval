@@ -597,7 +597,7 @@ class UntrimmedBasedMCNStyle(UntrimmedBase):
             # sample segment
             sampled_start = random.random() * video_duration
             range_        = min(video_duration - sampled_start, 
-                                self.max_clips * self.clip_length)
+                                (self.max_clips-1) * self.clip_length)
             sampled_end   = random.random() * range_ + sampled_start
             sampled_loc   = [sampled_start, sampled_end]
 

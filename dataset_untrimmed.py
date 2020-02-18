@@ -595,17 +595,19 @@ class UntrimmedBasedMCNStyle(UntrimmedBase):
         tiou = 1
         while tiou >= self.sampling_iou:
             # sample segment
-            sampled_loc = [random.random() * video_duration,
-                           random.random() * video_duration]
-            sampled_loc = [min(sampled_loc), max(sampled_loc)]
+            sampled_start = random.random() * video_duration
+            range_        = min(video_duration - sampled_start, 
+                                self.max_clips * self.clip_length)
+            sampled_end   = random.random() * range_ + sampled_start
+            sampled_loc   = [sampled_start, sampled_end]
 
             if moment_loc is None:
                 break
-            i_end = min(sampled_loc[1], moment_loc[1])
+            i_end   = min(sampled_loc[1], moment_loc[1])
             i_start = max(sampled_loc[0], moment_loc[0])
             intersection = max(0, i_end - i_start)
 
-            u_end = max(sampled_loc[1], moment_loc[1])
+            u_end   = max(sampled_loc[1], moment_loc[1])
             u_start = min(sampled_loc[0], moment_loc[0])
             union = u_end - u_start
 
@@ -1417,8 +1419,8 @@ class UntrimmedCALChamfer(UntrimmedBasedMCNStyle):
         self.clip_mask = clip_mask
         if not self.eval:
             max_scales  = max(self.proposals_interface.scales)
-            max_clips   = 2 * max_scales #self.max_number_of_clips()
-            max_objects = 2 * 10 * max_scales #self.max_number_of_objects()
+            self.max_clips   = 2 * max_scales #self.max_number_of_clips()
+            self.max_objects = 2 * 10 * max_scales #self.max_number_of_objects()
         self.visual_interface = VisualRepresentationCALChamfer(
                                 context=self.context, max_clips=max_clips, 
                                 max_objects=max_objects, w_size=w_size)
@@ -1554,13 +1556,16 @@ class UntrimmedCALChamfer(UntrimmedBasedMCNStyle):
             start = int(t[0] // self.clip_length) 
             end   = int((t[1]-1e-6) // self.clip_length)
             moments_lenghts.append(end-start +1)
-        return max(moments_lenghts)
+        
+        self.max_clips = max(moments_lenghts)
+        return self.max_clips 
 
     def max_obj_per_clip(self):
         max_obj_per_clip = []
         for _,f in self.features['obj'].items():
             max_obj_per_clip.append(f.shape[1])
-        return max(max_obj_per_clip)
+        self.max_objects = max(max_obj_per_clip)
+        return self.max_objects
 
     def set_padding_size(self,max_clips):
         '''

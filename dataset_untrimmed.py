@@ -1418,9 +1418,8 @@ class UntrimmedCALChamfer(UntrimmedBasedMCNStyle):
         self.padding = padding
         self.clip_mask = clip_mask
         if not self.eval:
-            max_scales  = max(self.proposals_interface.scales)
-            self.max_clips   = 2 * max_scales #self.max_number_of_clips()
-            self.max_objects = 2 * 10 * max_scales #self.max_number_of_objects()
+            self.max_clips   = self.get_max_clips()
+            self.max_objects = self.max_obj_per_clip()
         self.visual_interface = VisualRepresentationCALChamfer(
                                 context=self.context, max_clips=max_clips, 
                                 max_objects=max_objects, w_size=w_size)
@@ -1554,10 +1553,11 @@ class UntrimmedCALChamfer(UntrimmedBasedMCNStyle):
         moments_lenghts = []
         for t in times:
             start = int(t[0] // self.clip_length) 
-            end   = int((t[1]-1e-6) // self.clip_length)
+            end   = int((t[1]) // self.clip_length)
             moments_lenghts.append(end-start +1)
         
-        self.max_clips = max(moments_lenghts)
+        clips_max_scale =  max(self.proposals_interface.scales) * 2 
+        self.max_clips = max(max(moments_lenghts),clips_max_scale)
         return self.max_clips 
 
     def max_obj_per_clip(self):

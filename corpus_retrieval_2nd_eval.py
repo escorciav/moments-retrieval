@@ -118,6 +118,10 @@ def main(args):
         proposals_interface=proposals_interface
     )
     dataset = dataset_untrimmed.__dict__[args.dataset](**dataset_setup)
+    if args.arch == 'CALChamfer':
+        max_clips = dataset.get_max_clips() 
+        dataset.set_padding_size(max_clips)
+        
     logging.info('Setting up models')
     arch_setup = dict(
         visual_size={feat:dataset.visual_size[feat] for feat in args.feat},

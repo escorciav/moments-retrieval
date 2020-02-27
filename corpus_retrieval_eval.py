@@ -171,6 +171,9 @@ def main(args):
     if args.arch == 'SMCN':
         logging.info('Set padding on UntrimmedSMCN dataset')
         dataset.set_padding(False)
+    elif args.arch == 'CALChamfer':
+        max_clips = dataset.get_max_clips() 
+        dataset.set_padding_size(max_clips)
 
     logging.info('Setting up models')
     
@@ -226,10 +229,7 @@ def main(args):
     engine_prm['alpha']  = args.alpha
     engine_prm['device'] = args.device
     engine = corpus.__dict__[args.engine](dataset, models_dict, **engine_prm)
-    import time
-    t = time.time()
     engine.indexing()
-    print(time.time()-t)
 
     # with open('./data/didemo_train_corpus_information.json','w') as f:
     #     json.dump({'proposals':engine.proposals.tolist(), 

@@ -4,7 +4,7 @@ from datetime import datetime
 
 def read_data(dir):
     files = sorted(glob.glob(dir+"/*.log"))
-    files = sorted([f for f in files if 'corpus' in f])
+    files = sorted([f for f in files if ('corpus' in f or '2nd' in f)])
     val = []
     test = []
     empty_val, empty_test = [], []

@@ -18,13 +18,14 @@ class MCN(nn.Module):
 
     def __init__(self, visual_size={'rgb':4096}, lang_size=300, embedding_size=100,
                  dropout=0.3, max_length=None, visual_hidden=500,
-                 lang_hidden=1000, visual_layers=1, unit_vector=False,
+                 lang_hidden=1000, visual_layers=1, lang_layers=2, unit_vector=False,
                  bi_lstm=False, lang_dropout=0.0, alpha=0.0):
         super(MCN, self).__init__()
         self.embedding_size = embedding_size
         self.max_length = max_length
         self.unit_vector = unit_vector
-
+        self.visual_layers = visual_layers
+        self.lang_layers = lang_layers
         self.lang_hidden = lang_hidden
         self.lang_size = lang_size
         self.bi_lstm = bi_lstm
@@ -41,7 +42,7 @@ class MCN(nn.Module):
             visual_encoder = [nn.Linear(visual_size[key], visual_hidden),
                           nn.ReLU(inplace=True)]
             # (optional) add depth to visual encoder (capacity)
-            for i in  range(visual_layers - 1):
+            for _ in  range(self.visual_layers - 1):
                 visual_encoder += [nn.Linear(visual_hidden, visual_hidden),
                                 nn.ReLU(inplace=True)]
             self.visual_encoder[key] = nn.Sequential(
@@ -755,8 +756,6 @@ class CALChamfer(SMCN):
         if self.bi_lstm:
             bi_norm = 2
 
-        lang_layers = 2
-
         # Language branch
         self.sentence_encoder = nn.ModuleDict({})
         for key in self.keys:
@@ -767,9 +766,12 @@ class CALChamfer(SMCN):
 
         self.state_encoder = nn.ModuleDict({})
         for key in self.keys:
-            
-            state_encoder = [nn.Linear(bi_norm * self.lang_hidden, int(self.lang_hidden/2)),
-                            nn.ReLU(inplace=True)]
+            state_encoder = []
+            for _ in range(self.lang_layers - 2):
+                state_encoder += [nn.Linear(bi_norm * self.lang_hidden, self.lang_hidden),
+                                nn.ReLU(inplace=True)]
+            state_encoder += [nn.Linear(bi_norm * self.lang_hidden, int(self.lang_hidden/2)),
+                                nn.ReLU(inplace=True)]
             self.state_encoder[key] = nn.Sequential(
                 *state_encoder,
                 nn.Linear(int(self.lang_hidden/2), self.embedding_size),
@@ -1185,7 +1187,6 @@ class EarlyFusion(SMCN):
             else:
                 argout.append(i)
         return argout
-
 
 
 class LateFusion(SMCN):

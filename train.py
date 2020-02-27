@@ -69,6 +69,8 @@ parser.add_argument('--lang-hidden', type=int, default=1000,
                     help='Dimensionality of sentence representation')
 parser.add_argument('--visual-layers', type=int, default=1,
                     help='Number of layers in visual encoder')
+parser.add_argument('--lang-layers', type=int, default=1,
+                    help='Number of layers in visual encoder')
 parser.add_argument('--unit-vector', action='store_true',
                     help='Enable embedding normalization')
 # Program control
@@ -575,7 +577,7 @@ def setup_dataset(args):
     logging.info('Pre-loading features... '
                  'It may take a couple of minutes (Language features!)')
     loaders = []
-    datasets = []
+    datasets = {}
     for i, (subset, filename) in enumerate(subset_files):
         index_config = 0 if i == 0 else -1
         extras_dataset = extras_dataset_configs[index_config]
@@ -586,6 +588,7 @@ def setup_dataset(args):
         if not filename.exists():
             logging.info(f'Not found {subset}-list: {filename}')
             loaders.append(None)
+            datasets[subset] = None
             continue
         logging.info(f'Found {subset}-list: {filename}')
         dataset = dataset_untrimmed.__dict__[dataset_name](
@@ -599,14 +602,22 @@ def setup_dataset(args):
             extras_loader['sampler'] = sampler_biased_single_clip_moment(
                 dataset, args.bias_to_single_clips)
 
-        datasets.append((dataset, extras_loader))
+        datasets[subset] = {'dataset': dataset, 
+                            'params' : extras_loader}
     
-    max_clips = max([d[0].get_max_clips() for d in datasets])
-    for i in range(len(datasets)):
-        datasets[i][0].set_padding_size(max_clips)
+    max_clips = max([v['dataset'].get_max_clips() 
+                    for k,v in datasets.items() if v is not None])
+    for _,v in datasets.items():
+        if v is not None:
+            v['dataset'].set_padding_size(max_clips)
 
-    loaders = [DataLoader(d[0], **d[1]) for d in datasets]
-    train_loader, val_loader, test_loader = loaders
+    loaders = {k:None for k,_ in datasets.items()}
+    for k,v in datasets.items():
+        if v is not None:
+            loaders[k] = DataLoader(v['dataset'], **v['params'])
+
+    train_loader, val_loader, test_loader = \
+        loaders['train'],loaders['val'],loaders['test']
     return train_loader, val_loader, test_loader
 
 
@@ -628,6 +639,7 @@ def setup_model(args, train_loader=None, test_loader=None):
         visual_hidden=args.visual_hidden,
         lang_hidden=args.lang_hidden,
         visual_layers=args.visual_layers,
+        lang_layers=args.lang_layers,
         unit_vector=args.unit_vector,
         alpha = args.alpha,
         lang_dropout=args.lang_dropout

@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html lang="en" class="gr__getbootstrap_com">
+  <!-- <script type="text/javascript">window["_gaUserPrefs"] = { ioo : function() { return true; } }</script> -->
+  <head>
+    <meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+    <link rel="icon" href="https://getbootstrap.com/favicon.ico">
+
+    <!-- Bootstrap core CSS -->
+    <link href="https://maxcdn.bootstrapcdn.com/bootstrap/4.1.1/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdn.datatables.net/1.10.16/css/jquery.dataTables.css" rel="stylesheet" type="text/css">
+    <link href="https://cdn.datatables.net/select/1.2.5/css/select.jqueryui.min.css" rel="stylesheet" type="text/css">
+    <link href="{{ url_for('static', filename='index_page.css') }}" rel ="stylesheet" type="text/css">
+
+    <!-- Bootstrap core JavaScript -->
+    <script src="https://ajax.googleapis.com/ajax/libs/jquery/3.3.1/jquery.min.js"></script>
+    <script src="https://maxcdn.bootstrapcdn.com/bootstrap/3.3.7/js/bootstrap.min.js"></script>
+    <script type="text/javascript" charset="utf8" src="https://cdn.datatables.net/1.10.16/js/jquery.dataTables.js"></script>
+    <script type="text/javascript" charset="utf8" src="https://cdn.datatables.net/select/1.2.5/js/dataTables.select.min.js"></script>
+    <!-- Custom JS for this template -->
+    <script src="{{ url_for('static', filename='index_page.js') }}"></script>
+
+  <title>{{dataset}}</title>
+  </head>
+<br><br>
+<h1>Index page {{dataset}} - list of descriptions</h1>
+<br>
+Tip for ordering: order by rank_IoU=0.5 by pressing on the culumn name, hold shift and press on rank_IoU=0.7.
+<br><br>
+<center>
+  <body data-gr-c-s-loaded="true">
+    <table id="IndexTable" class="display" style="width: 80%">
+      <thead>
+        <th>Index</th>
+        <th>Video ID</th>
+        <th>Moment description</th>
+        <th>rank_IoU=0.5</th>
+        <th>rank_IoU=0.7</th>
+      </thead>
+        <tbody>
+        {% for row in get_table_by_rows() %}
+      <tr>
+        <td>{{row[0]}}</td>
+        <td>{{row[1]}}</td>
+        <td><a href = {{ url_for('moment_analyst', moment_id=row[0]) }} target = "_blank"> {{row[2]}}</a></td>
+        <td>{{row[3]}}</td>
+        <td>{{row[4]}}</td>
+      </tr>
+        {% endfor %}
+      </tbody>
+        <tfoot>
+          <tr>
+            <th>Index</th>
+            <th>Video ID</th>
+            <th>Moment description</th>
+            <th>rank_IoU=0.5</th>
+            <th>rank_IoU=0.7</th>
+          </tr>
+        </tfoot>
+      </table>
+  </body>
+</center>
+
+</html>

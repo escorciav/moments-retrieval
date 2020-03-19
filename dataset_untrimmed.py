@@ -1893,8 +1893,10 @@ class VisualRepresentationCALChamfer():
         "Return normalized representation of each clip/chunk"
         moment_feat = x[start:end + 1, :, :].reshape(-1, x.shape[-1])
         y = moment_feat[moment_feat[:, -4:].sum(axis=1) != 0]
-        scaling_factor = np.linalg.norm(y, axis=1, keepdims=True) + self.eps
+        # scaling_factor = np.linalg.norm(y, axis=1, keepdims=True) + self.eps
+        scaling_factor = 1
         return y.shape[0], y / scaling_factor
+        
 
 
 class VisualRepresentationCALChamfer_old():

@@ -114,6 +114,7 @@ parser.add_argument('--negative-sampling-iou', type=float, default=0.35,
 parser.add_argument('--freeze-visual', action='store_true')
 # parser.add_argument('--freeze-visual-encoder', action='store_true')
 parser.add_argument('--freeze-lang', action='store_true')
+parser.add_argument('--augment-lang', action='store_true')
 parser.add_argument('--context-window', type=int, default=None,
                     help=('Size of context windows around each clip. '
                           'Valid only for SMCN.'))
@@ -556,7 +557,8 @@ def setup_dataset(args):
          'language_model': args.language_model, 
          'bert_name' : args.bert_name, 
          'bert_feat_comb' : args.bert_feat_comb,
-         'data_directory': data_directory},
+         'data_directory': data_directory,
+         'augment_lang': args.augment_lang},
         # Validation or Testing
         {'eval': True, 'proposals_interface': proposal_generator,
          'language_model': args.language_model, 

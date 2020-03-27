@@ -181,6 +181,9 @@ class UntrimmedBase(Dataset):
             self.clip_length = time_units[0]
 
     def _preprocess_descriptions(self, apply_custom_tokenization, debug):
+        if self.augment_lang:
+            self._check_lang_augmentation_data_availability()
+
         "Tokenize descriptions into words and precompute every language feature"
         if self.data_directory and isinstance(self.lang_interface, LanguageRepresentationMCN_bert):
             for moment_i in self.metadata:
@@ -194,6 +197,16 @@ class UntrimmedBase(Dataset):
                 # TODO: update to use spacy or allennlp
                 tokens = tokenization(moment_i['description'])
                 self.language_features[moment_i['annotation_id']] = self.lang_interface(tokens)
+                if self.augment_lang:
+                    for d in moment_i['nlpaug']:
+                        tokens = tokenization(d)
+                        self.language_features[idx].append(self.lang_interface(tokens))
+
+    def _check_lang_augmentation_data_availability(self):
+        try:
+            augmented_data = self.metadata[0]['nlpaug'] 
+        except:
+            self.augment_lang = False
 
     def _setup_list(self, filename):
         "Read JSON file with all moments i.e. segment and description"
@@ -336,9 +349,10 @@ class UntrimmedBasedMCNStyle(UntrimmedBase):
                  clip_length=None, h5_nis=None, nis_k=None, oracle=None, 
                  debug=False, oracle_map=None, obj_detection_path=None, 
                  language_model='glove', bert_name=None, bert_feat_comb=None, 
-                 data_directory=None):
+                 data_directory=None, augment_lang=False):
         super(UntrimmedBasedMCNStyle, self).__init__()
         self.oracle = oracle
+        self.augment_lang = augment_lang
         self.data_directory = data_directory
         if type(oracle) == int:
             self.nlp = spacy.load('en_core_web_sm')
@@ -435,7 +449,11 @@ class UntrimmedBasedMCNStyle(UntrimmedBase):
         "Get language representation for query with index idx in self.metadata"
         # TODO: pack next two vars into a dict
         # feature, len_query = self.lang_interface(query)
-        feature, len_query = self.language_features[idx]
+        feature, len_query = None,None
+        if self.augment_lang:
+            feature, len_query = random.choice(self.language_features[idx])
+        else:
+            feature, len_query = self.language_features[idx][0]
         return feature, len_query
 
     def _compute_visual_feature(self, video_id, moment_loc):

@@ -165,10 +165,7 @@ def main(args):
         clip_length=clip_length,
         oracle=args.concepts_oracle,
         oracle_map=args.oracle_map,
-        obj_detection_path=args.obj_detection_path,
-        language_model=args.language_model,
-        bert_name=args.bert_name,
-        bert_feat_comb=args.bert_feat_comb
+        obj_detection_path=args.obj_detection_path
     )
     dataset = dataset_untrimmed.__dict__[args.dataset](**dataset_setup)
     if args.arch == 'SMCN':

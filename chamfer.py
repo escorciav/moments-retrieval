@@ -112,7 +112,7 @@ class DoubleMaskedChamferDistance(MaskedChamferDistance):
         masked_minv, masked_minl = self.masked_minimum(pairwise_dist, mask_v, mask_l)
 
         ########
-        # self._dump(pairwise_dist)
+        # self._dump( pairwise_dist)
         ########
 
         # Normalization values

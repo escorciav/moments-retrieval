@@ -1,4 +1,4 @@
-# Temporal Localization of Moments in Video Collections with Natural Language
+# Finding Moments in Video Collections Using Natural Language 
 ![teaser][teaser]
 
 [teaser]: https://github.com/escorciav/moments-retrieval/blob/fix-readme/data/images/readme.png "teaser image"
@@ -53,30 +53,166 @@ TODO
 ## Instructions
 
 ### Training a new model
+In oder to train from scratch a model use the following commands. You are required to specify:
+ - Path to json files contraing the ground throuth annotations (see `Getting started` section)
+ 
+ - Path to hdf5 files containing the precomputed
+  features (see `Getting started` section)
+ - Hyperparameters of the network (we present report the most succesfull) 
+ - Logfile name (if required).
 
-- The following line will launch the training of CAL in Charades-STA dataset.
+#### DiDeMo
+```
+dataset_dir=data/processed/didemo
+interim=data/interim/didemo/
 
-  ```bash
-  dataset_dir=data/processed/charades-sta
-  parameters="--arch SMCN --feat rgb --train-list $dataset_dir/train.json --val-list $dataset_dir/val-01.json --test-list $dataset_dir/test.json --h5-path $dataset_dir/rgb_resnet152_max_cs-3.h5"
-  python train.py --gpu-id 0 $parameters
-  ```
-  
-  In case you want to save the logs into a file, add `--logfile [filename]`. For example:
-  
-  ```bash
-  dataset_dir=data/processed/charades-sta
-  parameters="--logfile 1 --arch SMCN --feat rgb --train-list $dataset_dir/train.json --val-list $dataset_dir/val-01.json --test-list $dataset_dir/test.json --h5-path $dataset_dir/rgb_resnet152_max_cs-3.h5"
-  python train.py --gpu-id 0 $parameters
-  ```
-  
-  This time we write all the verbosity into the file `1.log`. Moreover, a model snapshot and the configuration setup are serialized into `1.pth.tar` and `1.json`, respectively.
+parameters="--arch CALChamfer
+--train-list $dataset_dir/train-01.json
+--val-list   $dataset_dir/val-01.json
+--test-list  $dataset_dir/test-01.json
+--h5-path    $dataset_dir/resnet152_rgb_max_cl-2.5.h5 $dataset_dir/obj_predictions_perc_50_glove_bb_spatial.h5
+--feat rgb obj
+--original-setup
+--proposals-in-train
+--epochs 80
+--lr 0.05
+--lr-step 50
+--lr-decay 0.05
+--margin 0.5
+--momentum 0.9
+--dropout 0.1
+--lang-hidden 1000
+--visual-layers 1
+--lang-dropout 0
+--visual-hidden 500
+--visual-layers 1
+--stride 1
+--min-length 4.5
+--scales 2 3 4 5 6
+--ground-truth-rate 1.0
+--nms-threshold     1.0
+--negative_sampling_iou 0.35
+--proposal-interface DidemoICCV17SS
+--logfile $interim/logfile_name"
 
-  > In case you close the terminal, don't forget to activate the environment (`conda activate moments-retrieval`).
+python train.py --gpu-id 0 $parameters 
+```
 
-### TODO: corpus video retrieval evaluation
+Alternatively the hyperparameters can be stored to a `hps.yml` file in the folder specified in `interim` and the
+ keyword `--hps` can be used. 
+ If the `--logfile` keyword is not specified then the code will not dump the snapshot of the trained model nor the
+  configuration file.
 
-### TODO: single video retrieval evaluation
+#### Charades-STA
+```
+dataset_dir=data/processed/charades-sta
+interim=data/interim/charades-sta/
+
+parameters="--arch CALChamfer
+--train-list $dataset_dir/train-01.json
+--val-list   $dataset_dir/val-02_01.json
+--test-list  $dataset_dir/test-01.json
+--h5-path    $dataset_dir/resnet152_rgb_max_cl-3.h5 $dataset_dir/obj_predictions_perc_50_glove_bb_spatial.h5
+--feat rgb obj
+--original-setup
+--proposals-in-train
+--epochs 120
+--lr 0.05
+--lr-step 50
+--lr-decay 0.1
+--margin 0.1
+--momentum 0.9
+--dropout 0.1
+--lang-hidden 1000
+--visual-layers 1
+--lang-dropout 0
+--visual-hidden 500
+--visual-layers 1
+--stride 0.5
+--min-length 4.5
+--scales 2 4 6 8 10 12
+--ground-truth-rate 1.0
+--nms-threshold     0.6
+--negative_sampling_iou 0.35
+--proposal-interface SlidingWindowMSRSS
+--logfile $interim/logfile_name"
+
+python train.py --gpu-id 0 $parameters 
+```
+
+### Single video retrieval evaluation
+To run the single video retrieval evaluation of a pretrained model. An example if provided below for
+ DiDeMo:
+ ```
+dataset_dir=data/processed/didemo
+interim=data/interim/didemo/
+
+parameters="--arch CALChamfer
+--test-list $dataset_dir/test-01.json
+--h5-path   $dataset_dir/resnet152_rgb_max_cl-2.5.h5 $dataset_dir/obj_predictions_perc_50_glove_bb_spatial.h5
+--snapshot  $interim/model_filename
+--logfile   $interim/logfile_name
+--evaluate "
+
+python train.py --gpu-id 0 $parameters 
+```
+
+### TODO: Corpus video retrieval evaluation (Exhaustive search)
+This evaluation requires a pretrained model its snapshot and configuration file (`.json`)
+
+```
+dataset=/data/processed/didemo
+interim=/data/interim/didemo
+
+parameters="--test-list $dataset/test-01.json
+--h5-path  $dataset/resnet152_rgb_max_cl-2.5.h5 $dataset/obj_predictions_perc_50_glove_bb_spatial.h5
+--tags     rgb obj
+--snapshot $interim/pre-trained_model_name.json
+--snapshot-tags rgb obj
+--logfile  $interim/logfile_name
+--n-display 0.2 --dump  "
+
+python corpus_retrieval_eval.py $parameters
+```
+
+### Second stage corpus video retrieval evaluation
+
+- Using a STAL (clips) model as first stage
+
+TODO: More details
+```
+dataset=/data/processed/didemo
+interim=/data/interim/didemo
+
+parameters="--test-list $dataset_dir/test-01.json 
+--h5-path     $dataset_dir/resnet152_rgb_max_cl-2.5.h5 $dataset_dir/obj_predictions_perc_50_glove_bb_spatial.h5 
+--h5-1ststage $interim/first_stage.h5
+--snapshot    $interim/pre-trained_model_name.json
+--logfile     $interim/logfile_name
+--k-first 200 --nms-threshold 1.0 --n-display 0.2 --dump "
+
+python corpus_retrieval_eval.py $parameters
+```
+
+
+- Using the approximate nearest neighbours search
+
+TODO: More details
+```
+dataset=/data/processed/didemo
+interim=/data/interim/didemo
+
+parameters="--test-list $dataset_dir/test-01.json 
+--h5-path           $dataset_dir/resnet152_rgb_max_cl-2.5.h5 $dataset_dir/obj_predictions_perc_50_glove_bb_spatial.h5 
+--h5-1ststage       $dataset_dir/resnet152_rgb_max_cl-2.5.h5
+--snapshot-1ststage $interim/pre-trained_model_name.json
+--snapshot          $interim/pre-trained_model_name.json
+--logfile           $interim/logfile_name
+--corpus-setup      TwoStageClipPlusGeneric 
+--k-first 200 --nms-threshold 1.0 --n-display 0.2 --dump "
+
+python corpus_retrieval_eval.py $parameters
+```
 
 ### TODO: dashboards
 

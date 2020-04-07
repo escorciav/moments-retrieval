@@ -1,4 +1,3 @@
-README.md
+# Interim forlder
 
-# Experiments
-debug
+TODO: Give more details on what should be saved here

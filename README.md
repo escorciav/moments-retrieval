@@ -1,7 +1,7 @@
 # Finding Moments in Video Collections Using Natural Language 
 ![teaser][teaser]
 
-[teaser]: https://github.com/escorciav/moments-retrieval/blob/fix-readme/data/images/readme.png "teaser image"
+[teaser]: https://github.com/escorciav/moments-retrieval/blob/fix-readme./data/images/readme.png "teaser image"
 
 ## Introduction
 
@@ -37,13 +37,13 @@ TODO
   
     - Download it and unzip it. You should see a single directory called `data`.
   
-      Let's assume that you place this folder in `[path]/data`.
+      Let's assume that you place this folder in `[path]./data`.
   
     - Copy it into the data folder of the repo.
   
       ```bash
       cd moments-retrieval
-      `cp -r [path]/data .`
+      `cp -r [path]./data .`
       ```
     
       > Please remember to replace `[path]` with the actual folder of the downloaded data in your machine.
@@ -63,14 +63,14 @@ In oder to train from scratch a model use the following commands. You are requir
 
 #### DiDeMo
 ```
-dataset_dir=data/processed/didemo
-interim=data/interim/didemo/
+dataset=./data/processed/didemo
+interim=./data/interim/didemo/
 
-parameters="--arch CALChamfer
---train-list $dataset_dir/train-01.json
---val-list   $dataset_dir/val-01.json
---test-list  $dataset_dir/test-01.json
---h5-path    $dataset_dir/resnet152_rgb_max_cl-2.5.h5 $dataset_dir/obj_predictions_perc_50_glove_bb_spatial.h5
+parameters="--arch STAL
+--train-list $dataset/train-01.json
+--val-list   $dataset/val-01.json
+--test-list  $dataset/test-01.json
+--h5-path    $dataset/resnet152_rgb_max_cl-2.5.h5 $dataset/obj_predictions_perc_50_glove_bb_spatial.h5
 --feat rgb obj
 --original-setup
 --proposals-in-train
@@ -105,14 +105,14 @@ Alternatively the hyperparameters can be stored to a `hps.yml` file in the folde
 
 #### Charades-STA
 ```
-dataset_dir=data/processed/charades-sta
-interim=data/interim/charades-sta/
+dataset=./data/processed/charades-sta
+interim=./data/interim/charades-sta/
 
-parameters="--arch CALChamfer
---train-list $dataset_dir/train-01.json
---val-list   $dataset_dir/val-02_01.json
---test-list  $dataset_dir/test-01.json
---h5-path    $dataset_dir/resnet152_rgb_max_cl-3.h5 $dataset_dir/obj_predictions_perc_50_glove_bb_spatial.h5
+parameters="--arch STAL
+--train-list $dataset/train-01.json
+--val-list   $dataset/val-02_01.json
+--test-list  $dataset/test-01.json
+--h5-path    $dataset/resnet152_rgb_max_cl-3.h5 $dataset/obj_predictions_perc_50_glove_bb_spatial.h5
 --feat rgb obj
 --original-setup
 --proposals-in-train
@@ -144,12 +144,12 @@ python train.py --gpu-id 0 $parameters
 To run the single video retrieval evaluation of a pretrained model. An example if provided below for
  DiDeMo:
  ```
-dataset_dir=data/processed/didemo
-interim=data/interim/didemo/
+dataset=./data/processed/didemo
+interim=./data/interim/didemo/
 
-parameters="--arch CALChamfer
---test-list $dataset_dir/test-01.json
---h5-path   $dataset_dir/resnet152_rgb_max_cl-2.5.h5 $dataset_dir/obj_predictions_perc_50_glove_bb_spatial.h5
+parameters="--arch STAL
+--test-list $dataset/test-01.json
+--h5-path   $dataset/resnet152_rgb_max_cl-2.5.h5 $dataset/obj_predictions_perc_50_glove_bb_spatial.h5
 --snapshot  $interim/model_filename
 --logfile   $interim/logfile_name
 --evaluate "
@@ -161,8 +161,8 @@ python train.py --gpu-id 0 $parameters
 This evaluation requires a pretrained model its snapshot and configuration file (`.json`)
 
 ```
-dataset=/data/processed/didemo
-interim=/data/interim/didemo
+dataset=./data/processed/didemo
+interim=./data/interim/didemo
 
 parameters="--test-list $dataset/test-01.json
 --h5-path  $dataset/resnet152_rgb_max_cl-2.5.h5 $dataset/obj_predictions_perc_50_glove_bb_spatial.h5
@@ -181,11 +181,11 @@ python corpus_retrieval_eval.py $parameters
 
 TODO: More details
 ```
-dataset=/data/processed/didemo
-interim=/data/interim/didemo
+dataset=./data/processed/didemo
+interim=./data/interim/didemo
 
-parameters="--test-list $dataset_dir/test-01.json 
---h5-path     $dataset_dir/resnet152_rgb_max_cl-2.5.h5 $dataset_dir/obj_predictions_perc_50_glove_bb_spatial.h5 
+parameters="--test-list $dataset/test-01.json 
+--h5-path     $dataset/resnet152_rgb_max_cl-2.5.h5 $dataset/obj_predictions_perc_50_glove_bb_spatial.h5 
 --h5-1ststage $interim/first_stage.h5
 --snapshot    $interim/pre-trained_model_name.json
 --logfile     $interim/logfile_name
@@ -199,12 +199,12 @@ python corpus_retrieval_eval.py $parameters
 
 TODO: More details
 ```
-dataset=/data/processed/didemo
-interim=/data/interim/didemo
+dataset=./data/processed/didemo
+interim=./data/interim/didemo
 
-parameters="--test-list $dataset_dir/test-01.json 
---h5-path           $dataset_dir/resnet152_rgb_max_cl-2.5.h5 $dataset_dir/obj_predictions_perc_50_glove_bb_spatial.h5 
---h5-1ststage       $dataset_dir/resnet152_rgb_max_cl-2.5.h5
+parameters="--test-list $dataset/test-01.json 
+--h5-path           $dataset/resnet152_rgb_max_cl-2.5.h5 $dataset/obj_predictions_perc_50_glove_bb_spatial.h5 
+--h5-1ststage       $dataset/resnet152_rgb_max_cl-2.5.h5
 --snapshot-1ststage $interim/pre-trained_model_name.json
 --snapshot          $interim/pre-trained_model_name.json
 --logfile           $interim/logfile_name

@@ -14,7 +14,7 @@ import corpus
 import dataset_untrimmed
 import model
 import proposals
-from evaluation import CorpusVideoMomentRetrievalEval, CorpusConceptVideoMomentRetrievalEval
+from evaluation import CorpusVideoMomentRetrievalEval
 from utils import setup_logging, get_git_revision_hash
 
 # TODO(tier-2;clean): remove this hard-coded approach
@@ -44,27 +44,9 @@ parser.add_argument('--gpu-id', type=int, default=-1, help='GPU device')
 parser.add_argument('--topk', nargs='+', type=int,
                     default=[1, 10, 100, 1000, 10000],
                     help='top-k values to compute')
-parser.add_argument('--concepts', action='store_true',
-                    help='Enable evaluation of concepts, must provide the right input data.')     
-parser.add_argument('--merge-rankings', action='store_true',
-                    help='Enable the merging of the top k1-k2 ranked moments (standard ranking and reranking)')  
-parser.add_argument('--k1', type = int,
-                    help='Number of elements to take from original ranking list.')        
-parser.add_argument('--k2', type = int,
-                    help='Number of elements to take from re-ranking list.')          
-parser.add_argument('--reordering', action='store_true',
-                    help='Reorder merge')                      
 # Extra
 parser.add_argument('--greedy', type=int, default=0,
                     help='Top-k seed clips for greedy search over clips')
-parser.add_argument('--concepts-oracle', type=int, choices=[0,1,2],
-                    help='Index to select which concepts to compute:\n0-Nouns and Verbs \n1-Nouns \n2-Verbs')  
-parser.add_argument('--oracle-map', type=Path, help='JSON that map concepts to videos')  
-parser.add_argument('--obj-detection-path', type=Path, 
-                    help='JSON with information of detected objects in clips, output of Detectron 2.')   
-parser.add_argument('--use-concepts-and-obj-predictions', action='store_true',
-                    help='Enable usage of both obj info and concept info for reranking.')
-parser.add_argument('--alpha', type=float, default=0.5)
 parser.add_argument('--new', action='store_true',
                     help='Enables working with multistream models.')
 # Dump results and logs
@@ -112,34 +94,20 @@ def main(args):
     engine_prm = {}
     eval_flag = True
     if args.arch == 'MCN':
-        if args.concepts: 
-            args.dataset = 'UntrimmedCoceptsMCN'
-        else:
-            args.dataset = 'UntrimmedMCN'
+        args.dataset = 'UntrimmedMCN'
         args.engine = 'MomentRetrievalFromProposalsTable'
     elif args.arch == 'SMCN':
-        if args.concepts: 
-            args.dataset = 'UntrimmedCoceptsSMCN'
-        else:
-            args.dataset = 'UntrimmedSMCN'
+        args.dataset = 'UntrimmedSMCN'
         args.engine = 'MomentRetrievalFromClipBasedProposalsTable'
         if args.new:
              args.engine = 'MomentRetrievalFromClipBasedProposalsTableNew'
         if args.greedy > 0:
             args.engine = 'GreedyMomentRetrievalFromClipBasedProposalsTable'
             engine_prm['topk'] = args.greedy
-    elif args.arch == 'old_SMCN':
-        args.dataset = 'UntrimmedSMCN_OLD'
-        args.engine = 'MomentRetrievalFromClipBasedProposalsTable'
-
-    elif args.arch == 'CALChamfer':
+    elif args.arch == 'STAL':
         eval_flag = False   # needed to get right data in indexing. We want the padded data
-        args.dataset = 'UntrimmedCALChamfer'
+        args.dataset = 'UntrimmedSTAL'
         args.engine = 'MomentRetrievalFromClipBasedProposalsTableNew'
-    elif args.arch == 'EarlyFusion':
-        eval_flag = False   # needed to get right data in indexing. We want the padded data
-        args.dataset = 'UntrimmedCALChamfer'
-        args.engine = 'MomentRetrievalFromClipBasedProposalsTableEarlyFusion'
     else:
         ValueError('Unknown/unsupported architecture')
     if args.greedy > 0 and args.arch != 'SMCN':
@@ -162,16 +130,13 @@ def main(args):
         context=args.context, debug=args.debug, eval=eval_flag,
         no_visual=dataset_novisual,
         proposals_interface=proposals_interface,
-        clip_length=clip_length,
-        oracle=args.concepts_oracle,
-        oracle_map=args.oracle_map,
-        obj_detection_path=args.obj_detection_path
+        clip_length=clip_length
     )
     dataset = dataset_untrimmed.__dict__[args.dataset](**dataset_setup)
     if args.arch == 'SMCN':
         logging.info('Set padding on UntrimmedSMCN dataset')
         dataset.set_padding(False)
-    elif args.arch == 'CALChamfer':
+    elif args.arch == 'STAL':
         max_clips = dataset.get_max_clips() 
         dataset.set_padding_size(max_clips)
 
@@ -194,8 +159,7 @@ def main(args):
             embedding_size=args.embedding_size,
             visual_hidden=args.visual_hidden,
             lang_hidden=args.lang_hidden,
-            visual_layers=args.visual_layers,
-            alpha=args.alpha
+            visual_layers=args.visual_layers
         )
         key = '-'.join(args.tags)
         models_dict[key] = model.__dict__[args.arch](**arch_setup)
@@ -216,7 +180,6 @@ def main(args):
                 visual_hidden=args.visual_hidden,
                 lang_hidden=args.lang_hidden,
                 visual_layers=args.visual_layers,
-                alpha=args.alpha
             )
             models_dict[key] = model.__dict__[args.arch](**arch_setup)
             filename = args.snapshot[i].with_suffix('.pth.tar')
@@ -226,7 +189,6 @@ def main(args):
             models_dict[key].eval()
 
     logging.info('Creating database alas indexing corpus')
-    engine_prm['alpha']  = args.alpha
     engine_prm['device'] = args.device
     engine = corpus.__dict__[args.engine](dataset, models_dict, **engine_prm)
     engine.indexing()
@@ -238,10 +200,7 @@ def main(args):
         args.topk = [10**i for i in range(0, exp + 1)]
         args.topk.append(engine.num_moments)
     num_instances_retrieved = []
-    if args.concepts: 
-        judge = CorpusConceptVideoMomentRetrievalEval(topk=args.topk)
-    else:
-        judge = CorpusVideoMomentRetrievalEval(topk=args.topk)
+    judge = CorpusVideoMomentRetrievalEval(topk=args.topk)
     args.n_display = max(int(args.n_display * len(dataset.metadata)), 1)
     for it, query_metadata in tqdm(enumerate(dataset.metadata),
                                    disable=args.disable_tqdm):
@@ -253,31 +212,7 @@ def main(args):
             vid_indices, segments, proposals_ind, scores = result_per_query
         else:
             vid_indices, segments, scores = result_per_query
-        rerank_vid_indices, rerank_segments, rerank_scores = None,None,None
-        if type(args.concepts_oracle) == int and not args.obj_detection_path:
-            rerank_vid_indices, rerank_segments = judge.oracle_concept_reranking(query_metadata, 
-                            vid_indices, segments, dataset.metadata_per_video, dataset.reverse_map)
-        elif type(args.concepts_oracle) == int and args.obj_detection_path:
-            clip_length = dataset.clip_length
-            if clip_length == 2.5:
-                clip_length = 5
-            if clip_length == 1.5:
-                clip_length = 3
-            clip_length = int(clip_length)
-            
-            rerank_vid_indices, rerank_segments, rerank_scores = judge.oracle_object_reranking(
-                            query_metadata, vid_indices, segments, scores, 
-                            dataset.metadata_per_video, 
-                            dataset.map_concepts_to_obj_class, clip_length,
-                            args.use_concepts_and_obj_predictions)
-        
-        if args.merge_rankings:
-            vid_indices, segments = judge.merge_rankings(vid_indices, segments,scores,
-                                    rerank_vid_indices, rerank_segments, rerank_scores, 
-                                    args.k1, args.k2, args.reordering)
-        elif type(args.concepts_oracle) == int:
-            vid_indices, segments = rerank_vid_indices, rerank_segments
-        
+
         judge.add_single_predicted_moment_info(
             query_metadata, vid_indices, segments, max_rank=engine.num_moments)
         num_instances_retrieved.append(len(vid_indices))

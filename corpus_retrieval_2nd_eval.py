@@ -92,8 +92,8 @@ def main(args):
         args.dataset = 'UntrimmedMCN'
     elif args.arch == 'SMCN':
         args.dataset = 'UntrimmedSMCN'
-    elif args.arch == 'CALChamfer' or args.arch == 'LateFusion':
-        args.dataset = 'UntrimmedCALChamfer'
+    elif args.arch == 'STAL':
+        args.dataset = 'UntrimmedSTAL'
     else:
         ValueError('Unknown/unsupported architecture')
 
@@ -106,9 +106,6 @@ def main(args):
             dataset_cues[feat_name] = {'file':feat_file}
         else:
             logging.info(f'{feat_file} not found, proceeding without it. Check the file path!!')
-    # dataset_cues = {args.feat: {'file': args.h5_path}}
-    # else:
-    #     raise NotImplementedError('WIP')
     proposals_interface = proposals.__dict__[args.proposal_interface](
         args.min_length, args.scales, args.stride)
     dataset_setup = dict(
@@ -118,7 +115,7 @@ def main(args):
         proposals_interface=proposals_interface
     )
     dataset = dataset_untrimmed.__dict__[args.dataset](**dataset_setup)
-    if args.arch == 'CALChamfer':
+    if args.arch == 'STAL':
         max_clips = dataset.get_max_clips() 
         dataset.set_padding_size(max_clips)
         
@@ -209,7 +206,7 @@ def load_hyperparameters(args):
         if 'lang_dropout' not in hyper_prm:
             hyper_prm['lang_dropout'] = 0.0
         if hyper_prm['arch'] == 'ModelD':
-            hyper_prm['arch'] = 'CALChamfer'
+            hyper_prm['arch'] = 'STAL'
 
     for key, value in hyper_prm.items():
         if not hasattr(args, key):
@@ -271,7 +268,7 @@ def setup_engine(args, dataset, net):
     else:
         engine_prm['h5_1ststage'] = args.h5_1ststage
 
-    chamfer_active = args.arch == 'CALChamfer' or args.arch == 'LateFusion'
+    chamfer_active = args.arch == 'STAL' or args.arch == 'LateFusion'
     if chamfer_active and args.corpus_setup == 'LoopOverKVideos':
         engine_prm['repeat_lang'] = True
 

@@ -111,7 +111,6 @@ parser.add_argument('--proposals-in-train', action='store_true',
 parser.add_argument('--negative-sampling-iou', type=float, default=0.35,
                     help='Amount of IoU to consider proposals as negatives')
 parser.add_argument('--freeze-visual', action='store_true')
-# parser.add_argument('--freeze-visual-encoder', action='store_true')
 parser.add_argument('--freeze-lang', action='store_true')
 parser.add_argument('--context-window', type=int, default=None,
                     help=('Size of context windows around each clip. '
@@ -131,14 +130,6 @@ parser.add_argument('--nis-k', type=int, default=None,
 parser.add_argument('--language-model', default='glove',
                     choices=dataset_untrimmed.LANGUAGE,
                     help='Language model to be use for embeddings.' )
-parser.add_argument('--bert-name', default='bert-base-uncased',
-                    choices=['bert-base-uncased', 'bert-large-uncased'],
-                    help='Select base or large bert.' )
-parser.add_argument('--bert-feat-comb',type=int, default = 0,choices=[0,1,2,3],
-                    help='Select how to combine bert layer features. 0-Last layer 1-Sum last 4 layers 2-Concat last 4 layers' )                
-parser.add_argument('--bert-load-precomputed-features', action='store_true',
-                    help='Enable loading precomputed text features otherwise they will be computed previous to training. Avoid using if interested in a deploiment for the website.')
-parser.add_argument('--alpha', type=float, default=0.5)
 # Hyper-parameters concerning proposals (candidates) to score
 parser.add_argument('--proposal-interface', default='SlidingWindowMSRSS',
                     choices=proposals.PROPOSAL_SCHEMES,
@@ -490,10 +481,10 @@ def setup_dataset(args):
         dataset_name = 'UntrimmedSMCN'
     elif args.arch == 'LateFusion':
         dataset_name = 'UntrimmedSMCN'
-    elif args.arch == 'CALChamfer':
-        dataset_name = 'UntrimmedCALChamfer'
+    elif args.arch == 'STAL':
+        dataset_name = 'UntrimmedSTAL'
     elif args.arch == 'EarlyFusion':
-        dataset_name = 'UntrimmedCALChamfer'
+        dataset_name = 'UntrimmedSTAL'
     else:
         raise ValueError(f'Unsuported arch: {args.arch}, call 911!')
 
@@ -515,16 +506,6 @@ def setup_dataset(args):
 
     subset_files = [('train', args.train_list), ('val', args.val_list),
                     ('test', args.test_list)]
-    data_directory = None
-    if args.bert_load_precomputed_features:
-        if 'didemo' in str(args.train_list) or 'didemo' in str(args.test_list):
-            data_directory = 'didemo'
-        elif 'charades-sta' in str(args.train_list) or 'charades-sta' in str(args.test_list):
-            data_directory = 'charades-sta'
-        elif 'activitynet-captions' in str(args.train_list) or 'activitynet-captions' in str(args.test_list):
-            data_directory = 'activitynet-captions'
-        else:
-            raise('Cannot load precomputed language features for unknown dataset.')    
 
     if isinstance(args.feat, str):
         args.feat = [args.feat]
@@ -552,16 +533,10 @@ def setup_dataset(args):
          'prob_nproposal_nextto': args.prob_proposal_nextto,
          'sampling_iou': args.negative_sampling_iou,
          'h5_nis': args.h5_path_nis, 'nis_k': args.nis_k,
-         'language_model': args.language_model, 
-         'bert_name' : args.bert_name, 
-         'bert_feat_comb' : args.bert_feat_comb,
-         'data_directory': data_directory},
+         'language_model': args.language_model},
         # Validation or Testing
         {'eval': True, 'proposals_interface': proposal_generator,
-         'language_model': args.language_model, 
-         'bert_name' : args.bert_name, 
-         'bert_feat_comb' : args.bert_feat_comb,
-         'data_directory': data_directory}
+         'language_model': args.language_model}
     ]
     extras_loaders_configs = [
         # Training
@@ -640,7 +615,6 @@ def setup_model(args, train_loader=None, test_loader=None):
         visual_layers=args.visual_layers,
         lang_layers=args.lang_layers,
         unit_vector=args.unit_vector,
-        alpha = args.alpha,
         lang_dropout=args.lang_dropout
     )
     if args.clip_loss:
@@ -651,9 +625,9 @@ def setup_model(args, train_loader=None, test_loader=None):
     if train_loader is not None:
         logging.info('Setting-up criterion')
         opt_parameters = net.optimization_parameters(
-            args.lr, args.original_setup, freeze_visual=args.freeze_visual,
+            args.lr, args.original_setup,
+            freeze_visual=args.freeze_visual,
             freeze_lang=args.freeze_lang,
-            # freeze_visual_encoder=args.freeze_visual_encoder)
         )
 
         criterion_ = 'IntraInterMarginLoss'

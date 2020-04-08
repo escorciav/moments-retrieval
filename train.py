@@ -24,9 +24,8 @@ from utils import dumping_arguments, load_args_from_snapshot, save_checkpoint
 from utils import get_git_revision_hash
 from utils import MutableSampler
 from np_segments_ops import non_maxima_suppresion
-from radam import RAdam
 
-OPTIMIZER = ['sgd', 'sgd_caffe', 'RAdam']
+OPTIMIZER = ['sgd', 'sgd_caffe']
 EVAL_BATCH_SIZE = 1
 TOPK, IOU_THRESHOLDS = (1, 5), (0.5, 0.7)
 MAX_TOPK = max(TOPK)
@@ -687,9 +686,6 @@ def setup_model(args, train_loader=None, test_loader=None):
     elif args.optimizer == 'sgd_caffe':
         optimizer = SGDCaffe(opt_parameters, lr=args.lr,
                              momentum=args.momentum,
-                             weight_decay=args.weight_decay)
-    elif args.optimizer == 'RAdam':
-        optimizer = RAdam(opt_parameters, lr=args.lr,
                              weight_decay=args.weight_decay)
     else:
         raise ValueError(f'Unknow optimizer {args.optimizer}')

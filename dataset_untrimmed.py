@@ -10,7 +10,6 @@ from scipy.signal import convolve
 from torch.utils.data import Dataset
 
 from glove import RecurrentEmbedding
-from bert import BERTEmbedding
 from np_segments_ops import iou as segment_iou
 from utils import dict_of_lists, unique2d_perserve_order
 

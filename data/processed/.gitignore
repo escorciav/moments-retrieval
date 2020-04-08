@@ -1,2 +1,5 @@
 test
 3rdparty/*[.h5,.log,.json]
+activitynet-captions/concepts/*
+charades-sta/concepts/*
+didemo/concepts/*

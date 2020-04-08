@@ -231,13 +231,6 @@ def main(args):
     engine = corpus.__dict__[args.engine](dataset, models_dict, **engine_prm)
     engine.indexing()
 
-    # with open('./data/didemo_train_corpus_information.json','w') as f:
-    #     json.dump({'proposals':engine.proposals.tolist(), 
-    #             'video_indices':engine.video_indices.tolist()}, f)
-
-    # import sys
-    # sys.exit(0)
-
     logging.info('Launch evaluation...')
     # log-scale up to the end of the database
     if len(args.topk) == 1 and args.topk[0] == 0:

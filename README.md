@@ -91,7 +91,7 @@ parameters="--arch CALChamfer
 --scales 2 3 4 5 6
 --ground-truth-rate 1.0
 --nms-threshold     1.0
---negative_sampling_iou 0.35
+--negative-sampling-iou 0.35
 --proposal-interface DidemoICCV17SS
 --logfile $interim/logfile_name"
 
@@ -133,7 +133,7 @@ parameters="--arch CALChamfer
 --scales 2 4 6 8 10 12
 --ground-truth-rate 1.0
 --nms-threshold     0.6
---negative_sampling_iou 0.35
+--negative-sampling-iou 0.35
 --proposal-interface SlidingWindowMSRSS
 --logfile $interim/logfile_name"
 

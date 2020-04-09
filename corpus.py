@@ -6,7 +6,7 @@ import h5py
 import numpy as np
 import torch
 
-from np_segments_ops import non_maxima_suppresion
+from segments import non_maxima_suppresion
 from utils import unique2d_perserve_order
 
 

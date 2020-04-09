@@ -23,7 +23,7 @@ from utils import setup_hyperparameters, setup_logging, setup_rng, setup_metrics
 from utils import dumping_arguments, load_args_from_snapshot, save_checkpoint
 from utils import get_git_revision_hash
 from utils import MutableSampler
-from np_segments_ops import non_maxima_suppresion
+from segments import non_maxima_suppresion
 
 OPTIMIZER = ['sgd', 'sgd_caffe']
 EVAL_BATCH_SIZE = 1

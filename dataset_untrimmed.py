@@ -10,7 +10,7 @@ from scipy.signal import convolve
 from torch.utils.data import Dataset
 
 from glove import RecurrentEmbedding
-from np_segments_ops import iou as segment_iou
+from segments import iou as segment_iou
 from utils import dict_of_lists, unique2d_perserve_order
 
 WORD_TYPE = [['NOUN', 'VERB'], ['NOUN'],['VERB']]
@@ -143,7 +143,7 @@ class UntrimmedBase(Dataset):
                         fid[video_id])
                 time_unit = fid.get('metadata/time_unit')
                 if time_unit is not None:
-                    time_unit = time_unit.value
+                    time_unit = time_unit[()]
                 time_units.append(time_unit)
 
         # Update time_unit of the dataset

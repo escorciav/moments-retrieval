@@ -1,12 +1,8 @@
 "Moment retrieval evaluation in a single & corpus video(s)"
 from itertools import product
-
+from segments import torch_iou
 import numpy as np
 import torch
-
-from np_segments_ops import torch_iou
-import sys
-import math
 
 IOU_THRESHOLDS = (0.5, 0.7)
 TOPK = (1, 5)

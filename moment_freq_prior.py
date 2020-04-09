@@ -21,7 +21,7 @@ from scipy.stats import gaussian_kde
 import dataset_untrimmed
 import proposals
 from evaluation import single_moment_retrieval, didemo_evaluation
-from np_segments_ops import non_maxima_suppresion
+from segments import non_maxima_suppresion
 from utils import setup_logging, setup_metrics
 from utils import Multimeter
 

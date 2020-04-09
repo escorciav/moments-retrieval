@@ -141,7 +141,6 @@ def main(args):
         dataset.set_padding_size(max_clips)
 
     logging.info('Setting up models')
-    
     args.device = device_name = 'cpu'
     if args.gpu_id >= 0 and torch.cuda.is_available() and args.batch_size_chamfer > 0:
         args.device = torch.device(f'cuda:{args.gpu_id}')

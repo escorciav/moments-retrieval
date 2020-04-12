@@ -1,3 +1,4 @@
+import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from torch.nn.modules import TripletMarginLoss
@@ -34,7 +35,8 @@ class IntraInterMarginLoss(nn.Module):
         loss, intra_loss, inter_loss = 0, 0, 0
         for k in stream_keys:
             intra_loss_ = F.relu(self.margin + (p[k] - n_intra[k]))
-            inter_loss_ = F.relu(self.margin + (p[k] - n_inter[k]))
+            # inter_loss_ = F.relu(self.margin + (p[k] - n_inter[k]))
+            inter_loss_ = sum([F.relu(self.margin + (p[k] - n[k])) for n in n_inter])
             if iw_intra is not None:
                 intra_loss_ = intra_loss_ * iw_intra
             if iw_inter is not None:
@@ -94,6 +96,30 @@ class IntraInterMarginLossPlusClip(IntraInterMarginLoss):
         return loss, intra_loss, inter_loss
 
 
+class MILNCELoss(nn.Module):
+    "Multiple Instance Learn- ing (MIL) and Noise Contrastive Estimation (NCE)"
+
+    def __init__(self, B, device='cpu'):
+        super(MILNCELoss, self).__init__()
+        self.loss = nn.CrossEntropyLoss()
+        self.B = B
+        self.device = device
+        self.zeros = torch.zeros(B,dtype=torch.long).to(device)
+
+    def forward(self, p, n_intra, n_inter):
+        keys = list(p.keys())
+        batch_size = p[keys[0]].shape[0]
+        zeros_batch = self.zeros
+        if batch_size != self.B:
+            zeros_batch = torch.zeros(batch_size,dtype=torch.long).to(self.device)
+        loss = 0
+        for k in keys:
+            dist_per_key_tuple = (-1*p[k], -1*n_intra[k]) + tuple([-1*ni[k] for ni in n_inter])
+            # dist_per_key_tuple = (p[k], n_intra[k], n_inter[k])
+            distances = torch.stack(dist_per_key_tuple, dim=1)
+            loss += self.loss(distances, zeros_batch)  # None are for compatibility with previous loss output
+        return loss, None, None
+
 if __name__ == '__main__':
     import torch
 
@@ -109,7 +135,16 @@ if __name__ == '__main__':
     # simple test IntraInterMarginLoss
     B = 3
     criterion = IntraInterMarginLoss()
-    x = torch.rand(B, requires_grad=True)
-    y = torch.rand(B, requires_grad=True)
-    z = torch.rand(B, requires_grad=True)
+    x = {'rgb':torch.rand(B, requires_grad=True)}
+    y = {'rgb':torch.rand(B, requires_grad=True)}
+    z = {'rgb':torch.rand(B, requires_grad=True)}
     a, b, c = criterion(x, y, z)
+
+    # simple test IntraInterMarginLoss
+    B = 3
+    criterion = MILNCELoss()
+    x = {'rgb':torch.rand(B, requires_grad=True),'obj':torch.rand(B, requires_grad=True)}
+    y = {'rgb':torch.rand(B, requires_grad=True),'obj':torch.rand(B, requires_grad=True)}
+    z = {'rgb':torch.rand(B, requires_grad=True),'obj':torch.rand(B, requires_grad=True)}
+    a = criterion(x, y, z)
+    print(a)

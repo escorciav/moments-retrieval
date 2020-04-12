@@ -5,6 +5,8 @@ import time
 from itertools import product
 from pathlib import Path
 import math
+import os
+import sys
 
 import torch
 from torch.utils.data import DataLoader
@@ -48,6 +50,8 @@ parser.add_argument('--val-list', type=Path, default=Path('non-existent'),
                     help='JSON-file with validation instances')
 parser.add_argument('--test-list', type=Path, default=Path('non-existent'),
                     help='JSON-file with testing instances')
+parser.add_argument('--sampling-probs', type=Path, default=Path('non-existent'),
+                    help='JSON-file with sampling probabilities for negative mining.')
 # Architecture
 parser.add_argument('--arch', choices=model.MOMENT_RETRIEVAL_MODELS,
                     default='MCN', help='model architecture')
@@ -100,6 +104,8 @@ parser.add_argument('--w-inter', type=float, default=0.2,
                     help='Inter-loss weight')
 parser.add_argument('--w-intra', type=float, default=0.5,
                     help='Intra-loss weight')
+parser.add_argument('--new-loss', action='store_true',
+                    help='Enable MILNCELoss')                    
 # TODO: add weight for clip loss
 parser.add_argument('--c-inter', type=float, default=0.2,
                     help='Clip-inter-loss weight')
@@ -182,6 +188,8 @@ parser.add_argument('--weight-decay', type=float, default=0.0,
                     help='weight decay')
 parser.add_argument('--no-shuffle', action='store_false', dest='shuffle',
                     help='Disable suffle dataset after each epoch')
+parser.add_argument('--n-negatives', type=int, default=1,
+                    help='Number of inter negatives to consider during training')
 # train/eval callbacks
 parser.add_argument('--patience', type=int, default=-1,
                     help=('stop optimization if there is no improvements '
@@ -199,7 +207,7 @@ parser.add_argument('--dump-results', action='store_true',
                     help='Dump HDF5 with per sample results in val & test')
 parser.add_argument('--save-on-epoch', type=int, default=-1,
                     help='Dump every given number of epochs')
-parser.add_argument('--force-eval-end', action='store_true',
+parser.add_argument('--force-eval-end', action='store_true', default=True,
                     help='Force eval at the end of training')
 # Logging
 parser.add_argument('--logfile', type=Path, default=Path(''),
@@ -296,10 +304,14 @@ def main(args):
         # on epoch begin
         args.epochs += 1
         args.n_display = max(int(n_display_float * len(train_loader)), 1)
-    
+
+        if args.sampling_probs.exists():
+            train_loader.dataset._set_convex_per_epoch(value=(epoch - 1)/total_epochs)
         train_epoch(args, net, ranking_loss, train_loader, optimizer)
     
         lr_schedule.step()
+        if args.enable_tb:
+            args.writer.add_scalar('train/lr_schedule', lr_schedule.get_lr()[0], epoch)
 
         # on epoch ends
         # eval on val/test-lists
@@ -355,6 +367,9 @@ def train_epoch(args, net, criterion, loader, optimizer):
 
         compared_embeddings = net(*minibatch[ind:])
         loss, _, _ = criterion(*compared_embeddings)
+        if math.isnan(loss):
+            logging.info('Evaluation after training finishedFound NaN value, killing the training')
+            sys.eixt(0)
         optimizer.zero_grad()
         loss.backward()
         if args.clip_grad > 0:
@@ -506,8 +521,8 @@ def setup_dataset(args):
                         args.eval_on_epoch > 0)
     if 'activitynet' in args.test_list.name:
         search_for = 'val.json'
-    if risk_of_cheating:
-        raise ValueError('Risk of cheating. Please read prolog.')
+    # if risk_of_cheating:
+    #     raise ValueError('Risk of cheating. Please read prolog.')
 
     # Save loading time in case [train, val]-list exits
     if args.evaluate:
@@ -558,7 +573,9 @@ def setup_dataset(args):
          'bert_name' : args.bert_name, 
          'bert_feat_comb' : args.bert_feat_comb,
          'data_directory': data_directory,
-         'augment_lang': args.augment_lang},
+         'augment_lang': args.augment_lang,
+         'n_negatives':args.n_negatives,
+         'sampling_probs':args.sampling_probs},
         # Validation or Testing
         {'eval': True, 'proposals_interface': proposal_generator,
          'language_model': args.language_model, 
@@ -634,17 +651,19 @@ def setup_model(args, train_loader=None, test_loader=None):
     logging.info('Setting-up model')
     arch_setup = dict(
         visual_size={feat:dataset.visual_size[feat] for feat in args.feat},
+        embedding_size=args.embedding_size,
+        unit_vector=args.unit_vector,
+        alpha=args.alpha,
+        #Language
         lang_size=dataset.language_size,
         max_length=dataset.max_words,
-        embedding_size=args.embedding_size,
+        lang_dropout=args.lang_dropout,
+        lang_hidden=args.lang_hidden,
+        lang_layers=args.lang_layers,
+        #Visual
         dropout=args.dropout,
         visual_hidden=args.visual_hidden,
-        lang_hidden=args.lang_hidden,
-        visual_layers=args.visual_layers,
-        lang_layers=args.lang_layers,
-        unit_vector=args.unit_vector,
-        alpha = args.alpha,
-        lang_dropout=args.lang_dropout
+        visual_layers=args.visual_layers
     )
     if args.clip_loss:
         args.arch = 'SMCNCL'
@@ -666,6 +685,10 @@ def setup_model(args, train_loader=None, test_loader=None):
             criterion_ = 'IntraInterMarginLossPlusClip'
             criterion_prm['c_inter'] = args.c_inter
             criterion_prm['c_intra'] = args.c_intra
+
+        if args.new_loss:
+            criterion_ = 'MILNCELoss'
+            criterion_prm = {'B':args.batch_size, 'device':args.device}
         criterion = loss.__dict__[criterion_](**criterion_prm)
 
     logging.info('Setting-up model mode')

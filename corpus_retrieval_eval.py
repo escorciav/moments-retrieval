@@ -189,13 +189,16 @@ def main(args):
         #multistream network - early fusiong
         arch_setup = dict(
             visual_size={feat:dataset.visual_size[feat] for feat in args.snapshot_tags},
+            embedding_size=args.embedding_size,
+            alpha = args.alpha,
+            # Visual info
+            visual_hidden=args.visual_hidden,
+            visual_layers=args.visual_layers,
+            #Language
             lang_size=dataset.language_size,
             max_length=dataset.max_words,
-            embedding_size=args.embedding_size,
-            visual_hidden=args.visual_hidden,
             lang_hidden=args.lang_hidden,
-            visual_layers=args.visual_layers,
-            alpha=args.alpha
+            lang_layers=args.lang_layers
         )
         key = '-'.join(args.tags)
         models_dict[key] = model.__dict__[args.arch](**arch_setup)

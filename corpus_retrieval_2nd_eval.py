@@ -79,9 +79,7 @@ def main(args):
             if not args.logfile.parent.exists():
                 args.logfile.parent.mkdir()
         if args.logfile.exists():
-            raise ValueError(
-                f'{args.logfile} already exists. Please provide a logfile or'
-                'backup existing results.')
+            raise ValueError(f'{args.logfile} already exists. Please provide a logfile or backup existing results.')
     setup_logging(args)
 
     logging.info('Corpus Retrieval Evaluation for 2nd Stage')

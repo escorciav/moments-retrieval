@@ -104,8 +104,9 @@ parser.add_argument('--w-inter', type=float, default=0.2,
                     help='Inter-loss weight')
 parser.add_argument('--w-intra', type=float, default=0.5,
                     help='Intra-loss weight')
-parser.add_argument('--new-loss', action='store_true',
-                    help='Enable MILNCELoss')                    
+parser.add_argument('--loss', default='MILNCELoss',
+                    choices=loss.PROPOSAL_FUNCTIONS,
+                    help='Select loss function.')
 # TODO: add weight for clip loss
 parser.add_argument('--c-inter', type=float, default=0.2,
                     help='Clip-inter-loss weight')
@@ -190,6 +191,8 @@ parser.add_argument('--no-shuffle', action='store_false', dest='shuffle',
                     help='Disable suffle dataset after each epoch')
 parser.add_argument('--n-negatives', type=int, default=1,
                     help='Number of inter negatives to consider during training')
+parser.add_argument('--n-positives', type=int, default=1,
+                    help='Number of positives to consider during training')
 # train/eval callbacks
 parser.add_argument('--patience', type=int, default=-1,
                     help=('stop optimization if there is no improvements '
@@ -575,6 +578,7 @@ def setup_dataset(args):
          'data_directory': data_directory,
          'augment_lang': args.augment_lang,
          'n_negatives':args.n_negatives,
+         'n_positives':args.n_positives,
          'sampling_probs':args.sampling_probs},
         # Validation or Testing
         {'eval': True, 'proposals_interface': proposal_generator,
@@ -686,9 +690,20 @@ def setup_model(args, train_loader=None, test_loader=None):
             criterion_prm['c_inter'] = args.c_inter
             criterion_prm['c_intra'] = args.c_intra
 
-        if args.new_loss:
+        if args.loss == 'MILNCELoss':
             criterion_ = 'MILNCELoss'
-            criterion_prm = {'B':args.batch_size, 'device':args.device}
+            criterion_prm = {'B':args.batch_size,
+                             'keys': args.feat,
+                             'device':args.device}
+        criterion = loss.__dict__[criterion_](**criterion_prm)
+
+        if args.loss == 'MILNCELossCrossentropyWithLogits':
+            criterion_ = 'MILNCELossCrossentropyWithLogits'
+            criterion_prm = {'B':args.batch_size,
+                             'num_pos':args.n_positives,
+                             'num_neg':args.n_negatives,
+                             'keys': args.feat,
+                             'device':args.device}
         criterion = loss.__dict__[criterion_](**criterion_prm)
 
     logging.info('Setting-up model mode')

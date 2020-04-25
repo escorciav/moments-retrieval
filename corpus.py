@@ -65,9 +65,9 @@ class CorpusVideoMomentRetrievalBase():
         # assert isinstance(description, list)
         lang_feature_, len_query_ = self.dataset._compute_language_feature(description)
         # torchify
-        lang_feature = torch.from_numpy(lang_feature_)
+        lang_feature = torch.from_numpy(lang_feature_[0])
         lang_feature.unsqueeze_(0)
-        len_query = torch.tensor([len_query_])
+        len_query = torch.tensor([len_query_[0]])
         return lang_feature, len_query
 
     def postprocess(self, distance):
@@ -696,7 +696,7 @@ class MomentRetrievalFromClipBasedProposalsTableNew(
         score_list, descending_list = [], []
         if  len(self.models) == 1:
             for k, model_k in self.models.items():
-                lang_code = model_k.encode_query(lang_feature.to(self.device), len_query)
+                lang_code = model_k.encode_query([lang_feature.to(self.device)], [len_query])
                 for key in self.moments_tables.keys():
                     if 'mask' not in key:
                         mask_key = '-'.join(['mask',key])
@@ -710,7 +710,7 @@ class MomentRetrievalFromClipBasedProposalsTableNew(
                         descending_list.append(descending_k)
         else:
             for k, model_k in self.models.items():
-                lang_code = model_k.encode_query(lang_feature, len_query)
+                lang_code = model_k.encode_query([lang_feature], [len_query])
                 mask_key = '-'.join(['mask',k])
                 scores_k, descending_k = model_k.search(
                                 lang_code[k], len_query, 

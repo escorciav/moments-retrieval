@@ -4,6 +4,8 @@ import torch.nn.functional as F
 from torch.nn.modules import TripletMarginLoss
 
 
+PROPOSAL_FUNCTIONS = ['IntraInterMarginLoss', 'MILNCELoss','MILNCELossCrossentropyWithLogits']
+
 class IntraInterTripletMarginLoss(nn.Module):
     "Intra-Inter Triplet Margin Loss"
 
@@ -99,25 +101,65 @@ class IntraInterMarginLossPlusClip(IntraInterMarginLoss):
 class MILNCELoss(nn.Module):
     "Multiple Instance Learn- ing (MIL) and Noise Contrastive Estimation (NCE)"
 
-    def __init__(self, B, device='cpu'):
+    def __init__(self, B, keys, device='cpu'):
         super(MILNCELoss, self).__init__()
         self.loss = nn.CrossEntropyLoss()
         self.B = B
+        self.keys = keys
         self.device = device
         self.zeros = torch.zeros(B,dtype=torch.long).to(device)
 
+    def _unpack(self, distances, key):
+        return [-1 * d[key] for d in distances]
+
+    def _compute_target(self, p):
+        batch_size = p[0][self.keys[0]].shape[0]
+        if batch_size == self.B:
+            return self.zeros
+        else:
+            return torch.zeros(batch_size,dtype=torch.long).to(self.device)
+
     def forward(self, p, n_intra, n_inter):
-        keys = list(p.keys())
-        batch_size = p[keys[0]].shape[0]
-        zeros_batch = self.zeros
-        if batch_size != self.B:
-            zeros_batch = torch.zeros(batch_size,dtype=torch.long).to(self.device)
         loss = 0
-        for k in keys:
-            dist_per_key_tuple = (-1*p[k], -1*n_intra[k]) + tuple([-1*ni[k] for ni in n_inter])
-            # dist_per_key_tuple = (p[k], n_intra[k], n_inter[k])
+        zeros_batch = self._compute_target(p)
+        for k in self.keys:
+            dist_per_key_tuple = (-1*p[0][k], -1*n_intra[k]) + tuple(self._unpack(n_inter, k))
             distances = torch.stack(dist_per_key_tuple, dim=1)
-            loss += self.loss(distances, zeros_batch)  # None are for compatibility with previous loss output
+            loss += self.loss(distances, zeros_batch)
+        return loss, None, None
+
+
+class MILNCELossCrossentropyWithLogits(nn.Module):
+    "Multiple Instance Learn- ing (MIL) and Noise Contrastive Estimation (NCE)"
+
+    def __init__(self, B, num_pos, num_neg, keys, device='cpu'):
+        super(MILNCELossCrossentropyWithLogits, self).__init__()
+        self.loss = F.binary_cross_entropy_with_logits
+        self.B = B
+        self.keys = keys
+        self.num_samples = num_pos + num_neg + 1
+        self.device = device
+        self.ancillary = torch.zeros(self.num_samples)
+        self.ancillary[:num_pos] = 1
+        self.target = self.ancillary.expand(B, self.num_samples).to(device)
+
+    def _unpack(self, distances, key):
+        return [-1 * d[key] for d in distances]
+
+    def _compute_target(self, p):
+        batch_size = p[0][self.keys[0]].shape[0]
+        if batch_size == self.B:
+            return self.target
+        else:
+            return self.ancillary.expand(batch_size, self.num_samples).to(self.device)
+
+    def forward(self, p, n_intra, n_inter):
+        loss = 0
+        target_batch = self._compute_target(p)
+        for k in self.keys:
+            dist_per_key_tuple = tuple(self._unpack(p, k)) + tuple([-1 * n_intra[k]]) + tuple(self._unpack(n_inter, k))
+            distances = torch.stack(dist_per_key_tuple, dim=1)
+            loss += self.loss(distances, target_batch)
         return loss, None, None
 
 if __name__ == '__main__':

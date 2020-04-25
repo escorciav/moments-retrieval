@@ -198,11 +198,15 @@ class UntrimmedBase(Dataset):
             for i, moment_i in enumerate(self.metadata):
                 # TODO: update to use spacy or allennlp
                 tokens = tokenization(moment_i['description'])
-                self.language_features[moment_i['annotation_id']] = self.lang_interface(tokens)
+                idx = moment_i['annotation_id']
                 if self.augment_lang:
+                    self.language_features[idx] = [self.lang_interface(tokens)]
                     for d in moment_i['nlpaug']:
                         tokens = tokenization(d)
                         self.language_features[idx].append(self.lang_interface(tokens))
+                else:
+                    self.language_features[idx] = self.lang_interface(tokens)
+
 
     def _check_lang_augmentation_data_availability(self):
         try:
@@ -348,12 +352,14 @@ class UntrimmedBasedMCNStyle(UntrimmedBase):
                  sampling_iou=0.35,ground_truth_rate=1, prob_nproposal_nextto=-1,
                  clip_length=None, h5_nis=None, nis_k=None, oracle=None, debug=False, oracle_map=None,
                  obj_detection_path=None, language_model='glove', bert_name=None, bert_feat_comb=None,
-                 data_directory=None, augment_lang=False, n_negatives=1, sampling_probs=Path('non-existent')):
+                 data_directory=None, augment_lang=False, n_negatives=1, n_positives=1,
+                 sampling_probs=Path('non-existent')):
         super(UntrimmedBasedMCNStyle, self).__init__()
         self.sampling_probs = sampling_probs
         self.convex_per_epoch = 0
         self.oracle = oracle
-        self.n_negatives=n_negatives
+        self.n_negatives = n_negatives
+        self.n_positives = n_positives
         self.augment_lang = augment_lang
         self.data_directory = data_directory
         if type(oracle) == int:
@@ -450,9 +456,17 @@ class UntrimmedBasedMCNStyle(UntrimmedBase):
         # feature, len_query = self.lang_interface(query)
         feature, len_query = None,None
         if self.augment_lang:
-            feature, len_query = random.choice(self.language_features[idx])
+            feature, len_query = [], []
+            tmp = self.language_features[idx][0]
+            feature.append(tmp[0])
+            len_query.append(tmp[1])
+            tmp = random.sample(self.language_features[idx][1:], self.n_positives-1)
+            for t in tmp:
+                feature.append(t[0])
+                len_query.append(t[1])
         else:
             feature, len_query = self.language_features[idx]
+            feature, len_query = [feature], [len_query]
         return feature, len_query
 
     def _compute_visual_feature(self, video_id, moment_loc):
@@ -473,8 +487,10 @@ class UntrimmedBasedMCNStyle(UntrimmedBase):
         neg_inter_visual_feature = None
         words_feature, len_query = self._compute_language_feature(moment_i['annotation_id'])
         num_segments = len(segments)
-        len_query = [len_query] * num_segments
-        words_feature = np.tile(words_feature, (num_segments, 1, 1))
+        # len_query = [len_query] * num_segments
+        # words_feature = np.tile(words_feature, (num_segments, 1, 1))
+        len_query = len_query * num_segments
+        words_feature = words_feature * num_segments
 
         # TODO: return a dict to avoid messing around with indices
         argout = (words_feature, len_query, pos_visual_feature,
@@ -567,8 +583,8 @@ class UntrimmedBasedMCNStyle(UntrimmedBase):
         "Sample another moment from other video as in original MCN paper"
         if self.sampling_probs.exists():
             prob_videos = self._prob_querytovideo[idx]
-            probs_per_epoch = (1 - self.convex_per_epoch) * prop_videos  + \
-                                self.convex_per_epoch  * (1 - prop_videos)
+            probs_per_epoch = (1 - self.convex_per_epoch) * prob_videos  + \
+                                self.convex_per_epoch  * (1 - prob_videos)
             neg_video_ind = torch.multinomial(probs_per_epoch, self.n_negatives)
         else:
             prob_videos = self._prob_querytovideo[idx, :]
@@ -576,7 +592,7 @@ class UntrimmedBasedMCNStyle(UntrimmedBase):
             # https://github.com/numpy/numpy/issues/8317
             prob_videos = prob_videos.astype(float, copy=False)
             prob_videos /= prob_videos.sum()
-            neg_video_ind = np.random.multinomial(self.n_negatives, prob_videos).nonzero()[0]
+            neg_video_ind = np.random.choice(a=len(prob_videos), size=self.n_negatives,replace=True, p=prob_videos)
 
         other_video = [self.videos[n_ind] for n_ind in neg_video_ind]
         video_id = self.metadata[idx]['video']
@@ -638,7 +654,10 @@ class UntrimmedBasedMCNStyle(UntrimmedBase):
             instance = ((instance[0 + ind][0, ...],) +
                         instance[1 + ind:3 + ind])
             ind = 0
-        self.feat_dim = {'language_size': instance[0 + ind].shape[1]}
+        if isinstance(instance[0 + ind],list):
+            self.feat_dim = {'language_size': instance[0 + ind][0].shape[1]}
+        else:
+            self.feat_dim = {'language_size': instance[0 + ind].shape[1]}
         for key in self.features:
             self.feat_dim.update(
                 {f'visual_size_{key}': instance[2 + ind][key].shape[-1]}
@@ -975,7 +994,10 @@ class UntrimmedSMCN(UntrimmedBasedMCNStyle):
             instance = ((instance[0 + ind][0, ...],) +
                         instance[1 + ind:3 + ind])
             ind = 0
-        self.feat_dim = {'language_size': instance[0 + ind].shape[1]}
+        if isinstance(instance[0 + ind], list):
+            self.feat_dim = {'language_size': instance[0 + ind][0].shape[1]}
+        else:
+            self.feat_dim = {'language_size': instance[0 + ind].shape[1]}
         for key in self.features:
             self.feat_dim.update(
                 {f'visual_size_{key}': instance[2 + ind][key].shape[-1]}
@@ -1066,7 +1088,10 @@ class UntrimmedCoceptsMCN(UntrimmedMCN):
             instance = ((instance[0 + ind][0, ...],) +
                         instance[1 + ind:3 + ind])
             ind = 0
-        self.feat_dim = {'language_size': instance[0 + ind].shape[1]}
+        if isinstance(instance[0 + ind], list):
+            self.feat_dim = {'language_size': instance[0 + ind][0].shape[1]}
+        else:
+            self.feat_dim = {'language_size': instance[0 + ind].shape[1]}
         for key in self.features:
             self.feat_dim.update(
                 {f'visual_size_{key}': instance[2 + ind][0][key].shape[-1]}
@@ -1156,7 +1181,10 @@ class UntrimmedCoceptsSMCN(UntrimmedSMCN):
             instance = ((instance[0 + ind][0, ...],) +
                         instance[1 + ind:3 + ind])
             ind = 0
-        self.feat_dim = {'language_size': instance[0 + ind].shape[1]}
+        if isinstance(instance[0 + ind], list):
+            self.feat_dim = {'language_size': instance[0 + ind][0].shape[1]}
+        else:
+            self.feat_dim = {'language_size': instance[0 + ind].shape[1]}
         for key in self.features:
             self.feat_dim.update(
                 {f'visual_size_{key}': instance[2 + ind][0][key].shape[-1]}
@@ -1338,14 +1366,14 @@ class UntrimmedCALChamfer(UntrimmedBasedMCNStyle):
         ind = 2 if self.debug else 0
         instance = self[0]
         if self.eval:
-            instance = ((instance[0 + ind][0, ...],) +
-                        instance[1 + ind:3 + ind])
+            instance = ((np.asarray(instance[0 + ind])[0, ...],) + instance[1 + ind:3 + ind])
             ind = 0
-        self.feat_dim = {'language_size': instance[0 + ind].shape[1]}
+        if isinstance(instance[0 + ind], list):
+            self.feat_dim = {'language_size': instance[0 + ind][0].shape[1]}
+        else:
+            self.feat_dim = {'language_size': instance[0 + ind].shape[1]}
         for key in self.features:
-            self.feat_dim.update(
-                {f'visual_size_{key}': instance[2 + ind][key].shape[-1]}
-            )
+            self.feat_dim.update({f'visual_size_{key}': instance[2 + ind][key].shape[-1]})
 
 
 class TemporalEndpointFeature():

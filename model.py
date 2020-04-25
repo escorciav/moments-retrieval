@@ -6,7 +6,7 @@ from torch.nn.utils.rnn import pad_sequence
 from chamfer import DoubleMaskedChamferDistance
 import copy
 import numpy as np
-MOMENT_RETRIEVAL_MODELS = ['MCN', 'SMCN', 'SMCNTalcv1', 'CALChamfer','LateFusion','EarlyFusion', 'old_MCN','old_SMCN']
+MOMENT_RETRIEVAL_MODELS = ['MCN', 'SMCN', 'CALChamfer']
 
 
 class MCN(nn.Module):
@@ -300,146 +300,6 @@ class SMCN(MCN):
         return argout
 
 
-class SMCNCL(SMCN):
-    "SMCN model plus single clip score"
-
-    def __init__(self, *args, **kwargs):
-        super(SMCNCL, self).__init__(*args, **kwargs)
-
-    def forward(self, padded_query, query_length, visual_pos,
-                visual_neg_intra=None, visual_neg_inter=None):
-        # v_v_embedded_* are tensors of shape [B, N, D]
-        (v_embedded_pos, v_embedded_neg_intra,
-         v_embedded_neg_inter) = self.encode_visual(
-             visual_pos, visual_neg_intra, visual_neg_inter)
-
-        l_embedded = self.encode_query(padded_query, query_length)
-        # transform l_emdedded into a tensor of shape [B, 1, D]
-        l_embedded = l_embedded.unsqueeze(1)
-
-        # meta-comparison
-        # sorry this is a mega empanada. Yes, it's deadline time!
-        argout = self.compare_emdedded_snippets(
-            v_embedded_pos, v_embedded_neg_intra, v_embedded_neg_inter,
-            l_embedded, visual_pos, visual_neg_intra, visual_neg_inter)
-        return argout
-
-    def compare_emdedded_snippets(self, embedded_p, embedded_n_intra,
-                                  embedded_n_inter, embedded_a,
-                                  pos, neg_intra, neg_inter):
-        all_masks = self._get_masks(pos, neg_intra, neg_inter)
-        c_neg_intra, c_neg_inter = None, None
-        c_neg_intra_clip, c_neg_inter_clip = None, None
-
-        mask_p, mask_p_clip = all_masks[:2]
-        c_pos = self.pool_compared_snippets(
-            self.compare_emdeddings(embedded_a, embedded_p), mask_p)
-        c_pos_clip = self.pool_compared_snippets(
-            self.compare_emdeddings(embedded_a, embedded_p), mask_p_clip)
-        if embedded_n_intra is not None:
-            mask_n_intra, mask_n_intra_clip = all_masks[2:4]
-            c_neg_intra = self.pool_compared_snippets(
-                self.compare_emdeddings(embedded_a, embedded_n_intra),
-                mask_n_intra)
-            c_neg_intra_clip = self.pool_compared_snippets(
-                self.compare_emdeddings(embedded_a, embedded_n_intra),
-                mask_n_intra_clip)
-        if embedded_n_inter is not None:
-            mask_n_inter, mask_n_inter_clip = all_masks[4:]
-            c_neg_inter = self.pool_compared_snippets(
-                self.compare_emdeddings(embedded_a, embedded_n_inter),
-                mask_n_inter)
-            c_neg_inter_clip = self.pool_compared_snippets(
-                self.compare_emdeddings(embedded_a, embedded_n_inter),
-                mask_n_inter_clip)
-        return (c_pos, c_neg_intra, c_neg_inter,
-                c_pos_clip, c_neg_intra_clip, c_neg_inter_clip)
-
-    def _unpack_visual(self, *args):
-        """Get visual feature and mask inside a dict
-
-        You must add the keys into the dict such that you respect the order
-        feat, mask, ...
-
-        Note:
-            - Assumes cpython >= 3.6
-        """
-        argout = ()
-        for i in args:
-            if isinstance(i, dict):
-                # only works in cpython >= 3.6
-                # TODO: hotspot, cuando se parten los pistones.
-                argout += tuple(i.values())[:2]
-            elif i is None:
-                argout += (None, None)
-            else:
-                argout += (i,)
-        return argout
-
-    def _get_masks(self, *args):
-        "Get masks inside a dict. similar to `_unpack_visual`"
-        argout = ()
-        for i in args:
-            if isinstance(i, dict):
-                # only works in
-                argout += tuple(i.values())[1:]
-            elif i is None:
-                argout += (None, None)
-            else:
-                argout += (i,)
-        return argout
-
-
-class SMCNTalcv1(SMCN):
-    "SMCNTalc model version 1"
-
-    def __init__(self, num_chunks=6, *args, **kwargs):
-        self.num_chunks = num_chunks
-        super(SMCNTalcv1, self).__init__(*args, **kwargs)
-        # TODO: add capacity to this caga
-        self.lang_res_branch = nn.Linear(self.lang_encoder.in_features,
-                                         num_chunks * self.embedding_size)
-
-    def forward(self, padded_query, query_length, visual_pos,
-                visual_neg_intra=None, visual_neg_inter=None):
-        # v_v_embedded_* are tensors of shape [B, N, D]
-        (v_embedded_pos, v_embedded_neg_intra,
-         v_embedded_neg_inter) = self.encode_visual(
-             visual_pos, visual_neg_intra, visual_neg_inter)
-
-        l_embedded = self.encode_query(padded_query, query_length)
-
-        # meta-comparison
-        c_pos, c_neg_intra, c_neg_inter = self.compare_emdedded_snippets(
-            v_embedded_pos, v_embedded_neg_intra, v_embedded_neg_inter,
-            l_embedded, visual_pos, visual_neg_intra, visual_neg_inter)
-        return c_pos, c_neg_intra, c_neg_inter
-
-    def encode_query(self, padded_query, query_length):
-        B = len(padded_query)
-        packed_query = pack_padded_sequence(
-            padded_query, query_length, batch_first=True)
-        packed_output, _ = self.sentence_encoder(packed_query)
-        output, _ = pad_packed_sequence(packed_output, batch_first=True,
-                                        total_length=self.max_length)
-        # TODO: try max-pooling
-        last_output = output[range(B), query_length - 1, :]
-        # 1st alternative
-        residual = self.lang_encoder(last_output)
-        extra_stuff = self.lang_res_branch(last_output)
-        # MLP generates time... gimme that sh!t to get an extra day XD
-        # create time dimension [B, S*ES] -> [B, S, ES]
-        extra_stuff = extra_stuff.view(B, -1, self.embedding_size)
-        # create time dimension [B, ES] -> [B, 1, ES]
-        residual = residual.view(B, 1, -1)
-        language_code = residual + extra_stuff
-        return language_code
-
-    def search(self, query, table):
-        "Exhaustive search of query in table"
-        raise NotImplementedError
-
-
 class CALChamfer(SMCN):
     '''CALChamfer
 
@@ -484,16 +344,21 @@ class CALChamfer(SMCN):
 
     def forward(self, padded_query, query_length, visual_pos,
                 visual_neg_intra=None, visual_neg_inter=None):
+
+        if not isinstance(padded_query, list):
+            padded_query, query_length = [padded_query], [query_length]
+
         # v_v_embedded_* are tensors of shape [B, N, D]
         (v_embedded_pos, v_embedded_neg_intra,
          v_embedded_neg_inter) = self.encode_visual(
              visual_pos, visual_neg_intra, visual_neg_inter)
 
         l_embedded = self.encode_query(padded_query, query_length)
-        l_mask = self._gen_lan_mask(self.max_length,query_length).to(l_embedded[self.keys[0]].device)
+        l_mask = self._gen_lan_mask(self.max_length,query_length,device=l_embedded[self.keys[0]][0].device)
 
         #embedding normalization
         if self.unit_vector:
+            raise Exception("Not maintained - A developer must double check this - write to the authors.")
             l_embedded = {k:F.normalize(l_embedded[k], dim=-1) for k in self.keys}
             v_embedded_pos = {k:F.normalize(v_embedded_pos[k], dim=-1) for k in self.keys}
             if v_embedded_neg_intra is not None:
@@ -509,16 +374,16 @@ class CALChamfer(SMCN):
         return c_pos, c_neg_intra, c_neg_inter
 
     def encode_query(self, padded_query, query_length):
-        B = len(padded_query)
-        packed_query = pack_padded_sequence(padded_query, 
-                                            query_length,
-                                            batch_first=True)
-        packed_output = {k:self.sentence_encoder[k](packed_query) for k in self.keys}
-        output = {k:pad_packed_sequence(packed_output[k][0], batch_first=True,
-                                        total_length=self.max_length) for k in self.keys}
+        B = len(padded_query[0])
+        packed_query = [pack_padded_sequence(p,l,batch_first=True)
+                                    for p,l in zip(padded_query,query_length)]
+
+        packed_output = {k:[self.sentence_encoder[k](p) for p in packed_query] for k in self.keys}
+        output = {k:[pad_packed_sequence(p[0], batch_first=True,
+                        total_length=self.max_length) for p in packed_output[k]] for k in self.keys}
 
         # Pass hidden states though a shared linear layer.
-        embedded_lang = {k:self.state_encoder[k](output[k][0]) for k in self.keys}
+        embedded_lang = {k:[self.state_encoder[k](o[0]) for o in output[k]] for k in self.keys}
 
         return embedded_lang
 
@@ -543,9 +408,8 @@ class CALChamfer(SMCN):
                                     
         return embedded_pos, embedded_neg_intra, embedded_neg_inter
 
-    def compare_emdedded_snippets(self, embedded_p, embedded_n_intra,
-                                  embedded_n_inter, embedded_a, l_mask,
-                                  pos, neg_intra, neg_inter):
+    def compare_emdedded_snippets(self, embedded_p, embedded_n_intra,embedded_n_inter,
+                                  embedded_a, l_mask, pos, neg_intra, neg_inter):
         pos, neg_intra, neg_inter = self._unpack_visual(pos, neg_intra, neg_inter)
         c_neg_intra, c_neg_inter = None, None
         mask_p, mask_n_intra, mask_n_inter = {}, {}, []
@@ -557,20 +421,18 @@ class CALChamfer(SMCN):
             mask_key = '-'.join(['mask',k])
             mask_p[k] = pos[mask_key]
             mask_n_intra[k] = neg_intra[mask_key]
-            # mask_n_inter[k] = neg_inter[mask_key]
-        mask_n_inter = [{k: ni['-'.join(['mask',k])] for k in self.keys} for ni in neg_inter]
+        mask_n_inter = [{k: ni['-'.join(['mask', k])] for k in self.keys} for ni in neg_inter]
         
-        c_pos = {k:self.compare_emdeddings(embedded_p[k], embedded_a[k], 
-                                mask_p[k], l_mask) for k in self.keys}
+        c_pos = [{k:self.compare_emdeddings(embedded_p[k], embedded_a[k][idx], mask_p[k], l_mask[idx])
+                  for k in self.keys} for idx in range(len(l_mask))]
 
+        # keep only the first tensor from embedded_a[k] and l_mask as it is the one coming from the annotations
         if mask_n_intra[self.keys[0]] is not None:
-            c_neg_intra = {k:self.compare_emdeddings(embedded_n_intra[k], embedded_a[k],
-                                            mask_n_intra[k], l_mask) for k in self.keys}
-        # if mask_n_inter[self.keys[0]] is not None:
-        #     c_neg_inter = {k:self.compare_emdeddings(embedded_n_inter[k], embedded_a[k],
-        #                                     mask_n_inter[k], l_mask) for k in self.keys}
+            c_neg_intra = {k:self.compare_emdeddings(embedded_n_intra[k], embedded_a[k][0],mask_n_intra[k], l_mask[0])
+                           for k in self.keys}
+
         if mask_n_inter[0][self.keys[0]] is not None:
-            c_neg_inter = [{k:self.compare_emdeddings(eni[k], embedded_a[k], mni[k], l_mask) for k in self.keys}
+            c_neg_inter = [{k:self.compare_emdeddings(eni[k], embedded_a[k][0], mni[k], l_mask[0]) for k in self.keys}
                             for eni,mni in zip(embedded_n_inter,mask_n_inter)]
 
         return c_pos, c_neg_intra, c_neg_inter
@@ -581,16 +443,24 @@ class CALChamfer(SMCN):
     def predict(self, *args):
         "Compute distance between visual and sentence"
         d_pos, *_ = self.forward(*args)
-        d_pos = torch.stack([v for _,v in d_pos.items()]).sum(dim=0)
+        d_pos = torch.stack([v for _,v in d_pos[0].items()]).sum(dim=0)
         return d_pos, False
 
-    def _gen_lan_mask(self,num_words,query_length):
+    def _gen_lan_mask(self,num_words,query_length, device):
         #TO DO: move this task to dataset_untrimmed
-        B = query_length.size()[0]              # Batch size
-        mask = torch.zeros(B,num_words)         # Mask initialization to zero
-        # mask fill in with lenght of each single query
-        for i in range(B):
-            mask[i,0:query_length[i]] = 1
+        B = query_length[0].size()[0]           # Batch size
+        mask = []
+        for ql in query_length:
+            m = torch.zeros(B,num_words,device=device)         # Mask initialization to zero
+            # mask fill in with lenght of each single query
+            for i in range(B):
+                m[i,0:ql[i]] = 1
+            mask.append(m)
+        return mask
+
+    def _gen_lan_mask_corpus(self, max_num_words, query_length):
+        mask = torch.zeros(1, max_num_words)    # Mask initialization to zero
+        mask[0, 0:query_length] = 1
         return mask
 
     def search(self, query, query_length, moments, v_mask, batch_size):
@@ -598,12 +468,15 @@ class CALChamfer(SMCN):
 
         TODO: batch to avoid out of memory?
         """
+        if isinstance(query, list):
+            query = query[0]
+            query_length = query_length[0]
 
         if batch_size == 0:
             B = moments.shape[0]
             _, d1, d2 = query.size()
             query  = query.expand(B, d1, d2)
-            l_mask = self._gen_lan_mask(self.max_length,query_length)
+            l_mask = self._gen_lan_mask_corpus(self.max_length,query_length)
             l_mask = l_mask.expand(B, l_mask.size()[1])
             chamfer_distance = self.compare_emdeddings(moments, query, v_mask, l_mask)
 
@@ -617,7 +490,7 @@ class CALChamfer(SMCN):
             
             # Reshape query and creation query mask
             query_ = query.expand(batch_size, d1_q, d2_q)
-            l_mask = self._gen_lan_mask(self.max_length,query_length).to('cuda')
+            l_mask = self._gen_lan_mask_corpus(self.max_length,query_length).to('cuda')
             l_mask_= l_mask.expand(batch_size, l_mask.size()[1])
         
             #Batchify chamfer distance calculation
@@ -657,285 +530,6 @@ class CALChamfer(SMCN):
             else:
                 argout.append(i)
         return argout
-
-
-class EarlyFusion(SMCN):
-    '''CALChamfer
-
-    Extends SMCN by adding the chamfer distance as metric for computing the
-    distance between two sets of embeddings. The description is encoded
-    through an LSTM layer of which every hidden state is mapped to the
-    embedding state and constitute the set of language embeddings.
-
-    Chamfer distance is applied to all brances Lang-rgb / Lang-obj (if presents)
-    '''
-
-    def __init__(self, *args, **kwargs):
-        super(EarlyFusion, self).__init__(*args, **kwargs)
-        bi_norm = 1
-        if self.bi_lstm:
-            bi_norm = 2
-
-        lang_layers = 2
-
-        # Language branch
-        self.sentence_encoder = nn.LSTM(
-            self.lang_size, self.lang_hidden, 
-            batch_first=True, bidirectional=self.bi_lstm, 
-            num_layers=1)
-
-        state_encoder = [nn.Linear(bi_norm * self.lang_hidden, int(self.lang_hidden/2)),
-                            nn.ReLU(inplace=True)]
-        self.state_encoder = nn.Sequential(
-                *state_encoder,
-                nn.Linear(int(self.lang_hidden/2), self.embedding_size),
-                nn.Dropout(self.lang_dropout)
-            )
-
-        self.chamfer_distance = DoubleMaskedChamferDistance()
-        self.init_parameters()
-
-    def forward(self, padded_query, query_length, visual_pos,
-                visual_neg_intra=None, visual_neg_inter=None):
-        # v_v_embedded_* are tensors of shape [B, N, D]
-        (v_embedded_pos, v_embedded_neg_intra,
-         v_embedded_neg_inter) = self.encode_visual(
-             visual_pos, visual_neg_intra, visual_neg_inter)
-
-        l_embedded = self.encode_query(padded_query, query_length)
-        l_mask = self._gen_lan_mask(self.max_length,query_length).to(l_embedded.device)
-
-        #embedding normalization
-        if self.unit_vector:
-            l_embedded = F.normalize(l_embedded, dim=-1) 
-            v_embedded_pos = {k:F.normalize(v_embedded_pos[k], dim=-1) for k in self.keys}
-            if v_embedded_neg_intra is not None:
-                v_embedded_neg_intra = {k:F.normalize(v_embedded_neg_intra[k], dim=-1) for k in self.keys}
-            if v_embedded_neg_inter is not None:
-                v_embedded_neg_inter = {k:F.normalize(v_embedded_neg_inter[k], dim=-1) for k in self.keys}
-            
-        # meta-comparison
-        c_pos, c_neg_intra, c_neg_inter = self.compare_emdedded_snippets(
-            v_embedded_pos, v_embedded_neg_intra, v_embedded_neg_inter,
-            l_embedded, l_mask, visual_pos, visual_neg_intra, visual_neg_inter)
-        return c_pos, c_neg_intra, c_neg_inter
-
-    def encode_query(self, padded_query, query_length):
-        B = len(padded_query)
-        packed_query = pack_padded_sequence(padded_query, 
-                                            query_length,
-                                            batch_first=True)
-        packed_output, _ = self.sentence_encoder(packed_query)
-        output, _  = pad_packed_sequence(packed_output, batch_first=True,
-                                        total_length=self.max_length)
-
-        # Pass hidden states though a shared linear layer.
-        embedded_lang = self.state_encoder(output)
-
-        return embedded_lang
-
-    def encode_visual(self, pos, neg_intra, neg_inter):
-        pos, neg_intra, neg_inter = self._unpack_visual(pos, neg_intra, neg_inter)
-        embedded_neg_intra, embedded_neg_inter = None, None
-
-        embedded_pos = {k:self.fwd_visual_snippets(k,pos[k]) for k in self.keys}
-
-        mask_key = '-'.join(['mask',self.keys[0]])          
-        if neg_intra[mask_key] is not None:
-            embedded_neg_intra = {k:self.fwd_visual_snippets(k,neg_intra[k]) for k in self.keys}
-                                    
-        if neg_inter[mask_key] is not None:
-            embedded_neg_inter = {k:self.fwd_visual_snippets(k,neg_inter[k]) for k in self.keys}
-                                    
-        return embedded_pos, embedded_neg_intra, embedded_neg_inter
-
-    def compare_emdedded_snippets(self, embedded_p, embedded_n_intra,
-                                  embedded_n_inter, embedded_a, l_mask,
-                                  pos, neg_intra, neg_inter):
-        pos, neg_intra, neg_inter = self._unpack_visual(pos, neg_intra, neg_inter)
-        c_neg_intra, c_neg_inter = None, None
-        mask_p, mask_n_intra, mask_n_inter = {}, {}, {}
-        
-        for k in self.keys:
-            mask_key = '-'.join(['mask',k])
-            mask_p[k] = pos[mask_key]
-            mask_n_intra[k] = neg_intra[mask_key]
-            mask_n_inter[k] = neg_inter[mask_key]
-        
-        # merge two stream based on mask. 
-        embedded_p,embedded_n_intra,embedded_n_inter,mask_p,mask_n_intra,mask_n_inter  = \
-            self.merge_features(embedded_p,embedded_n_intra,embedded_n_inter,mask_p,mask_n_intra,mask_n_inter)
-        
-        c_pos = self.compare_emdeddings(embedded_p, embedded_a,mask_p, l_mask) 
-
-        if mask_n_inter is not None:
-            c_neg_intra = self.compare_emdeddings(embedded_n_intra, embedded_a,
-                                            mask_n_intra, l_mask)
-        if mask_n_inter is not None:
-            c_neg_inter = self.compare_emdeddings(embedded_n_inter, embedded_a,
-                                            mask_n_inter, l_mask)
-        c_pos = {'unified_score': c_pos}
-        c_neg_intra = {'unified_score': c_neg_intra}
-        c_neg_inter = {'unified_score': c_neg_inter}
-        return c_pos, c_neg_intra, c_neg_inter
-
-    def compare_emdeddings(self, v, l, mv, ml):
-        return self.chamfer_distance(v, l, mv, ml)
-
-    def merge_features(self, embedded_p,embedded_n_intra,embedded_n_inter,
-                                        mask_p,mask_n_intra,mask_n_inter):
-
-        intra_flag = mask_n_intra[self.keys[0]] is not None
-        inter_flag = mask_n_inter[self.keys[0]] is not None
-
-        B = embedded_p['rgb'].shape[0]
-        F = embedded_p['rgb'].shape[2]
-        n1 = int(max(mask_p['rgb'].sum(dim=1)+mask_p['obj'].sum(dim=1)))
-        n2 = 0
-        if intra_flag:
-            n2 = int(max(mask_n_intra['rgb'].sum(dim=1)+mask_n_intra['obj'].sum(dim=1)))
-        n3 = 0
-        if inter_flag:
-            n3 = int(max(mask_n_inter['rgb'].sum(dim=1)+mask_n_inter['obj'].sum(dim=1)))
-        T = max(n1,n2,n3)  
-
-        device = embedded_p['rgb'].device
-        new_embedded_p = torch.zeros(B,T,F).to(device)
-        new_mask_p     = torch.zeros(B,T).to(device)
-        elem_rgb_p     = mask_p['rgb'].sum(dim=1)
-        elem_obj_p     = mask_p['obj'].sum(dim=1)
-
-        if intra_flag:
-            new_embedded_n_intra = torch.zeros(B,T,F).to(device)
-            new_mask_n_intra     = torch.zeros(B,T).to(device)
-            elem_rgb_n_intra     = mask_n_intra['rgb'].sum(dim=1)
-            elem_obj_n_intra     = mask_n_intra['obj'].sum(dim=1)
-
-        if inter_flag:
-            new_embedded_n_inter = torch.zeros(B,T,F).to(device)
-            new_mask_n_inter     = torch.zeros(B,T).to(device)
-            elem_rgb_n_inter     = mask_n_inter['rgb'].sum(dim=1)
-            elem_obj_n_inter     = mask_n_inter['obj'].sum(dim=1)
-            
-        for i in range(B):
-            idx1,idx2 = int(elem_rgb_p[i]), int(elem_obj_p[i])
-            new_embedded_p[i,:idx1]          = embedded_p['rgb'][i,:idx1]
-            new_embedded_p[i,idx1:idx1+idx2] = embedded_p['obj'][i,:idx2]
-            new_mask_p[i,:idx1+idx2]         = 1
-
-            if intra_flag:
-                idx1,idx2 = int(elem_rgb_n_intra[i]), int(elem_obj_n_intra[i])
-                new_embedded_n_intra[i,:idx1]          = embedded_n_intra['rgb'][i,:idx1]
-                new_embedded_n_intra[i,idx1:idx1+idx2] = embedded_n_intra['obj'][i,:idx2]
-                new_mask_n_intra[i,:idx1+idx2]         = 1
-            
-            if inter_flag:
-                idx1,idx2 = int(elem_rgb_n_inter[i]), int(elem_obj_n_inter[i])
-                new_embedded_n_inter[i,:idx1]          = embedded_n_inter['rgb'][i,:idx1]
-                new_embedded_n_inter[i,idx1:idx1+idx2] = embedded_n_inter['obj'][i,:idx2]
-                new_mask_n_inter[i,:idx1+idx2]         = 1
-
-        return new_embedded_p,new_embedded_n_intra,new_embedded_n_inter,new_mask_p,new_mask_n_intra,new_mask_n_inter
-
-    def merge_features_corpus(self, embedded_p, mask_p):
- 
-        B = embedded_p['rgb'].shape[0]
-        F = embedded_p['rgb'].shape[2]
-        T = int(max(mask_p['rgb'].sum(dim=1)+mask_p['obj'].sum(dim=1)))
-    
-        new_embedded_p = torch.zeros(B,T,F)
-        new_mask_p     = torch.zeros(B,T)
-        elem_rgb_p     = mask_p['rgb'].sum(dim=1)
-        elem_obj_p     = mask_p['obj'].sum(dim=1)
-            
-        for i in range(B):
-            idx1,idx2 = int(elem_rgb_p[i]), int(elem_obj_p[i])
-            new_embedded_p[i,:idx1]          = embedded_p['rgb'][i,:idx1]
-            new_embedded_p[i,idx1:idx1+idx2] = embedded_p['obj'][i,:idx2]
-            new_mask_p[i,:idx1+idx2]         = 1
-        
-        return new_embedded_p, new_mask_p
-
-    def predict(self, *args):
-        "Compute distance between visual and sentence"
-        d_pos, *_ = self.forward(*args)
-        d_pos = torch.stack([v for _,v in d_pos.items()]).sum(dim=0)
-        return d_pos, False
-
-    def _gen_lan_mask(self,num_words,query_length):
-        #TO DO: move this task to dataset_untrimmed
-        B = query_length.size()[0]              # Batch size
-        mask = torch.zeros(B,num_words)         # Mask initialization to zero
-        # mask fill in with lenght of each single query
-        for i in range(B):
-            mask[i,0:query_length[i]] = 1
-        return mask
-
-    def search(self, query, query_length, moments):
-        """Exhaustive search of query in table
-
-        TODO: batch to avoid out of memory?
-        """
-        B = moments['rgb'].shape[0]
-        query  = query.repeat(B,1,1)
-        l_mask = self._gen_lan_mask(self.max_length,query_length).repeat(B,1)
-
-        embeddings  = {k:v for  k,v in moments.items() if 'mask' not in k}
-        masks       = {k.split('-')[-1]:v for  k,v in moments.items() if 'mask' in k}
-        feats,v_mask= self.merge_features_corpus(embeddings, masks)
-
-        chamfer_distance = self.compare_emdeddings(feats, query, v_mask, l_mask)
-     
-        return chamfer_distance, False
-
-    def _unpack_visual(self, *args):
-        "Get visual feature inside a dict"
-        argout = []
-        keys = args[0].keys()
-        for i in args:
-            if isinstance(i, dict):
-                # assert len(i) == 2 or len(i)==3
-                # only works in cpython >= 3.6
-                argout.append(i)
-            elif i is None:
-                argout.append({k:None for k in keys})
-            else:
-                argout.append(i)
-        return argout
-
-
-class LateFusion(SMCN):
-    "Commbine SMCN with resnet features and  SMCN with obj features"
-    def __init__(self, **arch_setup):
-        super(LateFusion, self).__init__()
-        # Instantiate models
-        arch_resnet = {k:v for k,v in arch_setup.items() if k != 'visual_size' or k!='alpha'}
-        arch_resnet['visual_size'] = {'rgb': arch_setup['visual_size']['rgb']}
-        self.resnet = SMCN(**arch_resnet)
-
-        arch_obj_feat = {k:v for k,v in arch_setup.items() if k != 'visual_size' or k!='alpha'}
-        arch_obj_feat['visual_size'] = {'obj': arch_setup['visual_size']['obj']}
-        self.obj_feat = SMCN(**arch_obj_feat)
-        self.alpha = arch_setup['alpha']
-
-    def predict(self, *args):
-        "Compute scores for both models"
-        # pass data as it is to the models
-        d1, *_ = self.resnet.forward(*args)
-        d2, *_ = self.obj_feat.forward(*args)
-        # combine the scores
-        d_pos =  self.alpha * d1['rgb'] + (1-self.alpha) * d2['obj']
-        return d_pos, False
-
-    def load_state_dict(self,snapshots):
-        self.resnet.load_state_dict(snapshots)
-        snap = './data/interim/didemo/best_models/smcn_tef_weighted_avg_glove_42.pth.tar'
-        snapshots = torch.load(snap).get('state_dict')
-        self.obj_feat.load_state_dict(snapshots)
-
-    def eval(self):
-        self.resnet.eval()
-        self.obj_feat.eval()
 
 
 if __name__ == '__main__':

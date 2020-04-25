@@ -28,9 +28,18 @@ def collate_data(batch):
     if len(all_tensors) == 7:
         debug_mode = True
         idxs, source_ids, *all_tensors = all_tensors
-    al_s, idx = all_tensors[1].sort(descending=True)
-    a_s = all_tensors[0][idx, ...]
-    a_s.requires_grad_()
+    al_s, a_s = [],[]
+    if isinstance(all_tensors[1], list):
+        for i,t in enumerate(all_tensors[1]):
+            tmp_al_s, idx = t.sort(descending=True)
+            al_s.append(tmp_al_s)
+            tmp_a_s = all_tensors[0][i][idx, ...]
+            tmp_a_s.requires_grad_()
+            a_s.append(tmp_a_s)
+    else:
+        al_s, idx = all_tensors[1].sort(descending=True)
+        a_s = all_tensors[0][idx, ...]
+        a_s.requires_grad_()
     # dicts_of_tensors = (
     #     {k: v[idx, ...].requires_grad_() for k, v in i.items()}
     #     for i in all_tensors[2:])
@@ -229,7 +238,10 @@ def ship_to(x, device):
         if isinstance(i, dict):
             y.append({k: v.to(device) for k, v in i.items()})
         elif isinstance(i, list):
-            y.append([{k: v.to(device) for k, v in d.items()} for d in i])
+            if isinstance(i[0], dict):
+                y.append([{k: v.to(device) for k, v in d.items()} for d in i])
+            elif isinstance(i[0], torch.Tensor):
+                y.append([elem.to(device) for elem in i])
         elif isinstance(i, torch.Tensor):
             y.append(i.to(device))
         else:

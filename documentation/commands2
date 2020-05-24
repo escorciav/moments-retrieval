@@ -1,0 +1,291 @@
+Concept oracle with person-related tokens
+[man,person,woman,girl,baby,boy,people,child,guy,kid,lady,someone,crowd]
+
+dataset_dir=data/processed/didemo
+
+#SMCN TEF - 2.json 
+
+    -Top NOUN
+X    parameters="--test-list $dataset_dir/test-01.json --h5-path $dataset_dir/resnet152_rgb_max_cl-2.5.h5 --snapshot ./data/interim/didemo/best_models/smcn_40/a/2.json --concepts-oracle 1 --oracle-map $dataset_dir/concepts/concepts_map_NOUN_person_related.json"
+
+
+#SMCN NO-TEF - 2.json 
+
+X    -Top NOUN
+    parameters="--test-list $dataset_dir/test-01.json --h5-path $dataset_dir/resnet152_rgb_max_cl-2.5.h5 --snapshot ./data/interim/didemo/best_models/smcn_40/b/2.json  --concepts-oracle 1 --oracle-map $dataset_dir/concepts/concepts_map_NOUN_person_related.json"
+
+#MCN TEF - 2.json
+
+X    -Top NOUN
+    parameters="--test-list $dataset_dir/test-01.json --h5-path $dataset_dir/resnet152_rgb_max_cl-2.5.h5 --snapshot ./data/interim/didemo/best_models/mcn_41/a/2.json  --concepts-oracle 1 --oracle-map $dataset_dir/concepts/concepts_map_NOUN_person_related.json"
+
+#MCN NO-TEF - 1.json
+
+X    -Top NOUN
+    parameters="--test-list $dataset_dir/test-01.json --h5-path $dataset_dir/resnet152_rgb_max_cl-2.5.h5 --snapshot ./data/interim/didemo/best_models/mcn_41/b/1.json --concepts-oracle 1 --oracle-map $dataset_dir/concepts/concepts_map_NOUN_person_related.json"
+
+
+python corpus_retrieval_eval.py $parameters
+
+
+################ CHARADES-STA
+
+dataset_dir=data/processed/charades-sta
+
+#SMCN TEF - 4.json
+
+    parameters="--test-list $dataset_dir/test-01.json --h5-path $dataset_dir/resnet152_rgb_max_cl-3.h5 --snapshot ./data/interim/charades-sta/best_models/smcn_42/a/4.json --concepts-oracle 1 --oracle-map $dataset_dir/concepts/concepts_map_NOUN_person_related.json"
+
+#SMCN NO-TEF - 3.json
+
+X    parameters="--test-list $dataset_dir/test-01.json --h5-path $dataset_dir/resnet152_rgb_max_cl-3.h5 --snapshot ./data/interim/charades-sta/best_models/smcn_42/b/3.json --concepts-oracle 1 --oracle-map $dataset_dir/concepts/concepts_map_NOUN_person_related.json"
+
+#MCN TEF - 4.json
+
+X    parameters="--test-list $dataset_dir/test-01.json --h5-path $dataset_dir/resnet152_rgb_max_cl-3.h5 --snapshot ./data/interim/charades-sta/best_models/mcn_42/a/4.json --concepts-oracle 1 --oracle-map $dataset_dir/concepts/concepts_map_NOUN_person_related.json"
+
+#MCN NO-TEF - 3.json
+
+X    parameters="--test-list $dataset_dir/test-01.json --h5-path $dataset_dir/resnet152_rgb_max_cl-3.h5 --snapshot ./data/interim/charades-sta/best_models/mcn_42/b/3.json --concepts-oracle 1 --oracle-map $dataset_dir/concepts/concepts_map_NOUN_person_related.json"
+
+
+python corpus_retrieval_eval.py $parameters
+
+
+
+##############################################################################################################################################################################################################################################################
+
+Object oracle without the use of the tokens for reranking.
+dataset_dir=data/processed/didemo
+
+#SMCN TEF - 2.json  
+X    parameters="--test-list $dataset_dir/test-01.json --h5-path $dataset_dir/resnet152_rgb_max_cl-2.5.h5 --snapshot ./data/interim/didemo/best_models/smcn_40/a/2.json --concepts-oracle 1 --obj-detection-path $dataset_dir/obj_detection/didemo_obj_detection_th_0.95.json "
+
+#SMCN NO-TEF - 2.json
+X    parameters="--test-list $dataset_dir/test-01.json --h5-path $dataset_dir/resnet152_rgb_max_cl-2.5.h5 --snapshot ./data/interim/didemo/best_models/smcn_40/b/2.json --concepts-oracle 1 --obj-detection-path $dataset_dir/obj_detection/didemo_obj_detection_th_0.95.json "
+
+#MCN TEF - 2.json
+X    parameters="--test-list $dataset_dir/test-01.json --h5-path $dataset_dir/resnet152_rgb_max_cl-5.h5 --snapshot ./data/interim/didemo/best_models/mcn_41/a/2.json --concepts-oracle 1 --obj-detection-path $dataset_dir/obj_detection/didemo_obj_detection_th_0.95.json "
+
+#MCN NO-TEF - 1.json
+X    parameters="--test-list $dataset_dir/test-01.json --h5-path $dataset_dir/resnet152_rgb_max_cl-5.h5 --snapshot ./data/interim/didemo/best_models/mcn_41/b/1.json --concepts-oracle 1 --obj-detection-path $dataset_dir/obj_detection/didemo_obj_detection_th_0.95.json "
+
+python corpus_retrieval_eval.py $parameters
+
+
+################################################# dataset_dir=data/processed/charades-sta
+#SMCN TEF - 4.json
+X    parameters="--test-list $dataset_dir/test-01.json --h5-path $dataset_dir/resnet152_rgb_max_cl-3.h5 --snapshot ./data/interim/charades-sta/best_models/smcn_42/a/4.json --concepts-oracle 1 --obj-detection-path $dataset_dir/obj_detection/charades_sta_obj_detection_th_0.95.json "
+
+#SMCN NO-TEF - 3.json
+X    parameters="--test-list $dataset_dir/test-01.json --h5-path $dataset_dir/resnet152_rgb_max_cl-3.h5 --snapshot ./data/interim/charades-sta/best_models/smcn_42/b/3.json --concepts-oracle 1 --obj-detection-path $dataset_dir/obj_detection/charades_sta_obj_detection_th_0.95.json "
+
+#MCN TEF - 4.json
+X    parameters="--test-list $dataset_dir/test-01.json --h5-path $dataset_dir/resnet152_rgb_max_cl-3.h5 --snapshot ./data/interim/charades-sta/best_models/mcn_42/a/4.json --concepts-oracle 1 --obj-detection-path $dataset_dir/obj_detection/charades_sta_obj_detection_th_0.95.json "
+
+#MCN NO-TEF - 3.json
+X    parameters="--test-list $dataset_dir/test-01.json --h5-path $dataset_dir/resnet152_rgb_max_cl-3.h5 --snapshot ./data/interim/charades-sta/best_models/mcn_42/b/3.json --concepts-oracle 1 --obj-detection-path $dataset_dir/obj_detection/charades_sta_obj_detection_th_0.95.json "
+
+
+python corpus_retrieval_eval.py $parameters
+
+
+##########################################################################################################################################################################################################################################################################################################################################################################################################################################################################################################################################################################################################################################################################################################################################################################################
+
+Object oracle without the use of the tokens for reranking.
+dataset_dir=data/processed/didemo
+
+#SMCN TEF - 2.json  
+x    parameters="--test-list $dataset_dir/test-01.json --h5-path $dataset_dir/resnet152_rgb_max_cl-2.5.h5 --snapshot ./data/interim/didemo/best_models/smcn_40/a/2.json --concepts-oracle 1 --obj-detection-path $dataset_dir/obj_detection/didemo_obj_detection_th_0.8.json "
+
+#SMCN NO-TEF - 2.json
+x    parameters="--test-list $dataset_dir/test-01.json --h5-path $dataset_dir/resnet152_rgb_max_cl-2.5.h5 --snapshot ./data/interim/didemo/best_models/smcn_40/b/2.json --concepts-oracle 1 --obj-detection-path $dataset_dir/obj_detection/didemo_obj_detection_th_0.8.json "
+
+#MCN TEF - 2.json
+x    parameters="--test-list $dataset_dir/test-01.json --h5-path $dataset_dir/resnet152_rgb_max_cl-5.h5 --snapshot ./data/interim/didemo/best_models/mcn_41/a/2.json --concepts-oracle 1 --obj-detection-path $dataset_dir/obj_detection/didemo_obj_detection_th_0.8.json "
+
+#MCN NO-TEF - 1.json
+x    parameters="--test-list $dataset_dir/test-01.json --h5-path $dataset_dir/resnet152_rgb_max_cl-5.h5 --snapshot ./data/interim/didemo/best_models/mcn_41/b/1.json --concepts-oracle 1 --obj-detection-path $dataset_dir/obj_detection/didemo_obj_detection_th_0.8.json "
+
+python corpus_retrieval_eval.py $parameters
+
+
+################################################# dataset_dir=data/processed/charades-sta
+#SMCN TEF - 4.json
+    parameters="--test-list $dataset_dir/test-01.json --h5-path $dataset_dir/resnet152_rgb_max_cl-3.h5 --snapshot ./data/interim/charades-sta/best_models/smcn_42/a/4.json --concepts-oracle 1 --obj-detection-path $dataset_dir/obj_detection/charades_sta_obj_detection_th_0.8.json "
+
+#SMCN NO-TEF - 3.json
+    parameters="--test-list $dataset_dir/test-01.json --h5-path $dataset_dir/resnet152_rgb_max_cl-3.h5 --snapshot ./data/interim/charades-sta/best_models/smcn_42/b/3.json --concepts-oracle 1 --obj-detection-path $dataset_dir/obj_detection/charades_sta_obj_detection_th_0.8.json "
+
+#MCN TEF - 4.json
+x    parameters="--test-list $dataset_dir/test-01.json --h5-path $dataset_dir/resnet152_rgb_max_cl-3.h5 --snapshot ./data/interim/charades-sta/best_models/mcn_42/a/4.json --concepts-oracle 1 --obj-detection-path $dataset_dir/obj_detection/charades_sta_obj_detection_th_0.8.json "
+
+#MCN NO-TEF - 3.json
+x    parameters="--test-list $dataset_dir/test-01.json --h5-path $dataset_dir/resnet152_rgb_max_cl-3.h5 --snapshot ./data/interim/charades-sta/best_models/mcn_42/b/3.json --concepts-oracle 1 --obj-detection-path $dataset_dir/obj_detection/charades_sta_obj_detection_th_0.8.json "
+
+
+python corpus_retrieval_eval.py $parameters
+
+
+##########################################################################################################################################################################################################################################################################################################################################################################################################################################################################################################################################################################################################################################################################################################################################################################################
+
+Object oracle without the use of the tokens for reranking.
+dataset_dir=data/processed/didemo
+
+#SMCN TEF - 2.json  
+    th = 0.95
+    parameters="--test-list $dataset_dir/test-01.json --h5-path $dataset_dir/resnet152_rgb_max_cl-2.5.h5 --snapshot ./data/interim/didemo/best_models/smcn_40/a/2.json --concepts-oracle 1 --obj-detection-path $dataset_dir/obj_detection/didemo_obj_detection_th_$th.json --oracle-map $dataset_dir/concepts/concepts_map_all_words.json "
+
+#SMCN NO-TEF - 2.json
+    parameters="--test-list $dataset_dir/test-01.json --h5-path $dataset_dir/resnet152_rgb_max_cl-2.5.h5 --snapshot ./data/interim/didemo/best_models/smcn_40/b/2.json --concepts-oracle 1 --obj-detection-path $dataset_dir/obj_detection/didemo_obj_detection_th_$th.json --oracle-map $dataset_dir/concepts/concepts_map_all_words.json "
+
+#MCN TEF - 2.json
+    parameters="--test-list $dataset_dir/test-01.json --h5-path $dataset_dir/resnet152_rgb_max_cl-5.h5 --snapshot ./data/interim/didemo/best_models/mcn_41/a/2.json --concepts-oracle 1 --obj-detection-path $dataset_dir/obj_detection/didemo_obj_detection_th_$th.json --oracle-map $dataset_dir/concepts/concepts_map_all_words.json "
+
+#MCN NO-TEF - 1.json
+    parameters="--test-list $dataset_dir/test-01.json --h5-path $dataset_dir/resnet152_rgb_max_cl-5.h5 --snapshot ./data/interim/didemo/best_models/mcn_41/b/1.json --concepts-oracle 1 --obj-detection-path $dataset_dir/obj_detection/didemo_obj_detection_th_$th.json --oracle-map $dataset_dir/concepts/concepts_map_all_words.json "
+
+python corpus_retrieval_eval.py $parameters
+
+
+################################################# 
+dataset_dir=data/processed/charades-sta
+#SMCN TEF - 4.json
+    parameters="--test-list $dataset_dir/test-01.json --h5-path $dataset_dir/resnet152_rgb_max_cl-3.h5 --snapshot ./data/interim/charades-sta/best_models/smcn_42/a/4.json --concepts-oracle 1 --obj-detection-path $dataset_dir/obj_detection/charades_sta_obj_detection_th_$th.json --oracle-map $dataset_dir/concepts/concepts_map_all_words.json "
+
+#SMCN NO-TEF - 3.json
+    parameters="--test-list $dataset_dir/test-01.json --h5-path $dataset_dir/resnet152_rgb_max_cl-3.h5 --snapshot ./data/interim/charades-sta/best_models/smcn_42/b/3.json --concepts-oracle 1 --obj-detection-path $dataset_dir/obj_detection/charades_sta_obj_detection_th_$th.json --oracle-map $dataset_dir/concepts/concepts_map_all_words.json "
+
+#MCN TEF - 4.json
+    parameters="--test-list $dataset_dir/test-01.json --h5-path $dataset_dir/resnet152_rgb_max_cl-3.h5 --snapshot ./data/interim/charades-sta/best_models/mcn_42/a/4.json --concepts-oracle 1 --obj-detection-path $dataset_dir/obj_detection/charades_sta_obj_detection_th_$th.json --oracle-map $dataset_dir/concepts/concepts_map_all_words.json "
+
+#MCN NO-TEF - 3.json
+    parameters="--test-list $dataset_dir/test-01.json --h5-path $dataset_dir/resnet152_rgb_max_cl-3.h5 --snapshot ./data/interim/charades-sta/best_models/mcn_42/b/3.json --concepts-oracle 1 --obj-detection-path $dataset_dir/obj_detection/charades_sta_obj_detection_th_$th.json --oracle-map $dataset_dir/concepts/concepts_map_all_words.json "
+
+
+python corpus_retrieval_eval.py $parameters
+
+
+##########################################################################################################################################################################################################################################################################################################################################################################################################################################################################################################################################################################################################################################################################################################################################################################################
+
+Object oracle without the use of the tokens for reranking.
+dataset_dir=data/processed/didemo
+
+#SMCN TEF - 2.json  
+x    parameters="--test-list $dataset_dir/test-01.json --h5-path $dataset_dir/resnet152_rgb_max_cl-2.5.h5 --snapshot ./data/interim/didemo/best_models/smcn_40/a/2.json --concepts-oracle 1 --obj-detection-path $dataset_dir/obj_detection/didemo_obj_detection_th_0.99.json "
+
+#SMCN NO-TEF - 2.json
+x    parameters="--test-list $dataset_dir/test-01.json --h5-path $dataset_dir/resnet152_rgb_max_cl-2.5.h5 --snapshot ./data/interim/didemo/best_models/smcn_40/b/2.json --concepts-oracle 1 --obj-detection-path $dataset_dir/obj_detection/didemo_obj_detection_th_0.99.json "
+
+#MCN TEF - 2.json
+x    parameters="--test-list $dataset_dir/test-01.json --h5-path $dataset_dir/resnet152_rgb_max_cl-5.h5 --snapshot ./data/interim/didemo/best_models/mcn_41/a/2.json --concepts-oracle 1 --obj-detection-path $dataset_dir/obj_detection/didemo_obj_detection_th_0.99.json "
+
+#MCN NO-TEF - 1.json
+x    parameters="--test-list $dataset_dir/test-01.json --h5-path $dataset_dir/resnet152_rgb_max_cl-5.h5 --snapshot ./data/interim/didemo/best_models/mcn_41/b/1.json --concepts-oracle 1 --obj-detection-path $dataset_dir/obj_detection/didemo_obj_detection_th_0.99.json "
+
+python corpus_retrieval_eval.py $parameters
+
+
+################################################# dataset_dir=data/processed/charades-sta
+#SMCN TEF - 4.json
+x    parameters="--test-list $dataset_dir/test-01.json --h5-path $dataset_dir/resnet152_rgb_max_cl-3.h5 --snapshot ./data/interim/charades-sta/best_models/smcn_42/a/4.json --concepts-oracle 1 --obj-detection-path $dataset_dir/obj_detection/charades_sta_obj_detection_th_0.99.json "
+
+#SMCN NO-TEF - 3.json
+x    parameters="--test-list $dataset_dir/test-01.json --h5-path $dataset_dir/resnet152_rgb_max_cl-3.h5 --snapshot ./data/interim/charades-sta/best_models/smcn_42/b/3.json --concepts-oracle 1 --obj-detection-path $dataset_dir/obj_detection/charades_sta_obj_detection_th_0.99.json "
+
+#MCN TEF - 4.json
+x    parameters="--test-list $dataset_dir/test-01.json --h5-path $dataset_dir/resnet152_rgb_max_cl-3.h5 --snapshot ./data/interim/charades-sta/best_models/mcn_42/a/4.json --concepts-oracle 1 --obj-detection-path $dataset_dir/obj_detection/charades_sta_obj_detection_th_0.99.json "
+
+#MCN NO-TEF - 3.json
+x    parameters="--test-list $dataset_dir/test-01.json --h5-path $dataset_dir/resnet152_rgb_max_cl-3.h5 --snapshot ./data/interim/charades-sta/best_models/mcn_42/b/3.json --concepts-oracle 1 --obj-detection-path $dataset_dir/obj_detection/charades_sta_obj_detection_th_0.99.json "
+
+
+python corpus_retrieval_eval.py $parameters
+
+
+##########################################################################################################################################################################################################################################################################################################################################################################################################################################################################################################################################################################################################################################################################################################################################################################################
+
+
+COCO DATASET
+
+
+Object oracle WITH the use of the tokens for reranking.
+dataset_dir=data/processed/didemo
+
+#SMCN TEF - 2.json  
+
+    th=0.95
+    parameters="--test-list $dataset_dir/test-01.json --h5-path $dataset_dir/resnet152_rgb_max_cl-2.5.h5 --snapshot ./data/interim/didemo/best_models/smcn_40/a/2.json --concepts-oracle 1 --obj-detection-path $dataset_dir/obj_detection/coco/didemo_obj_detection_th_$th.json --use-concepts-and-obj-predictions --oracle-map $dataset_dir/concepts/concepts_map_all_words.json "
+
+#SMCN NO-TEF - 2.json
+    parameters="--test-list $dataset_dir/test-01.json --h5-path $dataset_dir/resnet152_rgb_max_cl-2.5.h5 --snapshot ./data/interim/didemo/best_models/smcn_40/b/2.json --concepts-oracle 1 --obj-detection-path $dataset_dir/obj_detection/coco/didemo_obj_detection_th_$th.json --use-concepts-and-obj-predictions --oracle-map $dataset_dir/concepts/concepts_map_all_words.json "
+
+#MCN TEF - 2.json
+    parameters="--test-list $dataset_dir/test-01.json --h5-path $dataset_dir/resnet152_rgb_max_cl-5.h5 --snapshot ./data/interim/didemo/best_models/mcn_41/a/2.json --concepts-oracle 1 --obj-detection-path $dataset_dir/obj_detection/coco/didemo_obj_detection_th_$th.json --use-concepts-and-obj-predictions --oracle-map $dataset_dir/concepts/concepts_map_all_words.json "
+
+#MCN NO-TEF - 1.json
+    parameters="--test-list $dataset_dir/test-01.json --h5-path $dataset_dir/resnet152_rgb_max_cl-5.h5 --snapshot ./data/interim/didemo/best_models/mcn_41/b/1.json --concepts-oracle 1 --obj-detection-path $dataset_dir/obj_detection/coco/didemo_obj_detection_th_$th.json --use-concepts-and-obj-predictions --oracle-map $dataset_dir/concepts/concepts_map_all_words.json "
+
+python corpus_retrieval_eval.py $parameters
+
+
+################################################# 
+dataset_dir=data/processed/charades-sta
+#SMCN TEF - 4.json
+    parameters="--test-list $dataset_dir/test-01.json --h5-path $dataset_dir/resnet152_rgb_max_cl-3.h5 --snapshot ./data/interim/charades-sta/best_models/smcn_42/a/4.json --concepts-oracle 1 --obj-detection-path $dataset_dir/obj_detection/coco/charades_sta_obj_detection_th_$th.json --use-concepts-and-obj-predictions --oracle-map $dataset_dir/concepts/concepts_map_all_words.json "
+
+#SMCN NO-TEF - 3.json
+    parameters="--test-list $dataset_dir/test-01.json --h5-path $dataset_dir/resnet152_rgb_max_cl-3.h5 --snapshot ./data/interim/charades-sta/best_models/smcn_42/b/3.json --concepts-oracle 1 --obj-detection-path $dataset_dir/obj_detection/coco/charades_sta_obj_detection_th_$th.json --use-concepts-and-obj-predictions --oracle-map $dataset_dir/concepts/concepts_map_all_words.json "
+
+#MCN TEF - 4.json
+    parameters="--test-list $dataset_dir/test-01.json --h5-path $dataset_dir/resnet152_rgb_max_cl-3.h5 --snapshot ./data/interim/charades-sta/best_models/mcn_42/a/4.json --concepts-oracle 1 --obj-detection-path $dataset_dir/obj_detection/coco/charades_sta_obj_detection_th_$th.json --use-concepts-and-obj-predictions --oracle-map $dataset_dir/concepts/concepts_map_all_words.json "
+
+#MCN NO-TEF - 3.json
+    parameters="--test-list $dataset_dir/test-01.json --h5-path $dataset_dir/resnet152_rgb_max_cl-3.h5 --snapshot ./data/interim/charades-sta/best_models/mcn_42/b/3.json --concepts-oracle 1 --obj-detection-path $dataset_dir/obj_detection/coco/charades_sta_obj_detection_th_$th.json --use-concepts-and-obj-predictions --oracle-map $dataset_dir/concepts/concepts_map_all_words.json "
+
+
+python corpus_retrieval_eval.py $parameters
+
+
+
+##########################################################################################################################################################################################################################################################################################################################################################################################################################################################################################################################################################################################################################################################################################################################################################################################
+
+VISUAL GENOME DATA
+
+Object oracle WITH the use of the tokens for reranking.
+dataset_dir=data/processed/didemo
+
+th=obj_th_0.0_attr_th_0.0
+
+#SMCN TEF - 2.json  
+
+    parameters="--test-list $dataset_dir/val-01.json --h5-path $dataset_dir/resnet152_rgb_max_cl-2.5.h5 --snapshot ./data/interim/didemo/best_models/smcn_40/a/2.json --concepts-oracle 1 --obj-detection-path $dataset_dir/obj_detection/visual_genome/didemo_obj_detection_$th.json --use-concepts-and-obj-predictions --oracle-map $dataset_dir/concepts/concepts_map_all_words.json "
+
+#SMCN NO-TEF - 2.json
+    parameters="--test-list $dataset_dir/val-01.json --h5-path $dataset_dir/resnet152_rgb_max_cl-2.5.h5 --snapshot ./data/interim/didemo/best_models/smcn_40/b/2.json --concepts-oracle 1 --obj-detection-path $dataset_dir/obj_detection/visual_genome/didemo_obj_detection_$th.json --use-concepts-and-obj-predictions --oracle-map $dataset_dir/concepts/concepts_map_all_words.json "
+
+#MCN TEF - 2.json
+    parameters="--test-list $dataset_dir/val-01.json --h5-path $dataset_dir/resnet152_rgb_max_cl-5.h5 --snapshot ./data/interim/didemo/best_models/mcn_41/a/2.json --concepts-oracle 1 --obj-detection-path $dataset_dir/obj_detection/visual_genome/didemo_obj_detection_$th.json --use-concepts-and-obj-predictions --oracle-map $dataset_dir/concepts/concepts_map_all_words.json "
+
+#MCN NO-TEF - 1.json
+    parameters="--test-list $dataset_dir/val-01.json --h5-path $dataset_dir/resnet152_rgb_max_cl-5.h5 --snapshot ./data/interim/didemo/best_models/mcn_41/b/1.json --concepts-oracle 1 --obj-detection-path $dataset_dir/obj_detection/visual_genome/didemo_obj_detection_$th.json --use-concepts-and-obj-predictions --oracle-map $dataset_dir/concepts/concepts_map_all_words.json "
+
+python corpus_retrieval_eval.py $parameters
+
+
+################################################# 
+dataset_dir=data/processed/charades-sta
+#SMCN TEF - 4.json
+    parameters="--test-list $dataset_dir/val-02_01.json --h5-path $dataset_dir/resnet152_rgb_max_cl-3.h5 --snapshot ./data/interim/charades-sta/best_models/smcn_42/a/4.json --concepts-oracle 1 --obj-detection-path $dataset_dir/obj_detection/visual_genome/charades_sta_obj_detection_$th.json --use-concepts-and-obj-predictions --oracle-map $dataset_dir/concepts/concepts_map_all_words.json "
+
+#SMCN NO-TEF - 3.json
+    parameters="--test-list $dataset_dir/val-02_01.json --h5-path $dataset_dir/resnet152_rgb_max_cl-3.h5 --snapshot ./data/interim/charades-sta/best_models/smcn_42/b/3.json --concepts-oracle 1 --obj-detection-path $dataset_dir/obj_detection/visual_genome/charades_sta_obj_detection_$th.json --use-concepts-and-obj-predictions --oracle-map $dataset_dir/concepts/concepts_map_all_words.json "
+
+#MCN TEF - 4.json
+    parameters="--test-list $dataset_dir/val-02_01.json --h5-path $dataset_dir/resnet152_rgb_max_cl-3.h5 --snapshot ./data/interim/charades-sta/best_models/mcn_42/a/4.json --concepts-oracle 1 --obj-detection-path $dataset_dir/obj_detection/visual_genome/charades_sta_obj_detection_$th.json --use-concepts-and-obj-predictions --oracle-map $dataset_dir/concepts/concepts_map_all_words.json "
+
+#MCN NO-TEF - 3.json
+    parameters="--test-list $dataset_dir/val-02_01.json --h5-path $dataset_dir/resnet152_rgb_max_cl-3.h5 --snapshot ./data/interim/charades-sta/best_models/mcn_42/b/3.json --concepts-oracle 1 --obj-detection-path $dataset_dir/obj_detection/visual_genome/charades_sta_obj_detection_$th.json --use-concepts-and-obj-predictions --oracle-map $dataset_dir/concepts/concepts_map_all_words.json "
+
+
+python corpus_retrieval_eval.py $parameters

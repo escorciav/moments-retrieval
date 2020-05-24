@@ -1,0 +1,45 @@
+conda activate moments-retrieval-devel
+
+dataset_dir=data/processed/activitynet-captions
+export CUDA_VISIBLE_DEVICES=
+
+6a
+parameters="--arch CALChamfer --train-list $dataset_dir/train.json --val-list $dataset_dir/val-01.json --test-list $dataset_dir/val.json --h5-path $dataset_dir/resnet152_rgb_max_cl-2.5.h5 $dataset_dir/obj_predictions_perc_50_glove_bb_spatial.h5 --ground-truth-rate 1.0 --min-length 5 --momentum 0.95 --negative-sampling-iou 0.35 --nms-threshold 0.6 --original-setup --proposals-in-train --scales 2 4 6 8 10 12 14 16 18 20 22 24 26  --stride 0.3 --feat rgb obj --proposal-interface SlidingWindowMSRSS --seed 1701 --logfile ./data/interim/activitynet-captions/CALChamfer/CALChamfer_tef_multistream_6a_$CUDA_VISIBLE_DEVICES --lr 0.025 --batch-size 64" 
+
+6b
+parameters="--arch CALChamfer --train-list $dataset_dir/train.json --val-list $dataset_dir/val-01.json --test-list $dataset_dir/val.json --h5-path $dataset_dir/resnet152_rgb_max_cl-2.5.h5 $dataset_dir/obj_predictions_perc_50_glove_bb_spatial.h5 --ground-truth-rate 1.0 --min-length 5 --momentum 0.95 --negative-sampling-iou 0.35 --nms-threshold 0.6 --original-setup --proposals-in-train --scales 2 4 6 8 10 12 14 16 18 20 22 24 26  --stride 0.3 --feat rgb obj --proposal-interface SlidingWindowMSRSS --seed 1701 --loc NONE --logfile ./data/interim/activitynet-captions/CALChamfer/CALChamfer_notef_multistream_6b_$CUDA_VISIBLE_DEVICES --lr 0.025 --batch-size 64" 
+
+6c
+parameters="--arch CALChamfer  --train-list $dataset_dir/train.json --val-list $dataset_dir/val-01.json --test-list $dataset_dir/val.json --h5-path $dataset_dir/resnet152_rgb_max_cl-2.5.h5 --ground-truth-rate 1.0 --min-length 5 --momentum 0.95 --negative-sampling-iou 0.35 --nms-threshold 0.6 --original-setup --proposals-in-train  --scales 2 4 6 8 10 12 14 16 18 20 22 24 26  --stride 0.3 --feat rgb --proposal-interface SlidingWindowMSRSS --seed 1701 --logfile ./data/interim/activitynet-captions/CALChamfer/CALChamfer_tef_singlestream_6c_$CUDA_VISIBLE_DEVICES --lr 0.025 --batch-size 64"
+
+6d
+parameters="--arch CALChamfer  --train-list $dataset_dir/train.json --val-list $dataset_dir/val-01.json --test-list $dataset_dir/val.json --h5-path $dataset_dir/resnet152_rgb_max_cl-2.5.h5 --ground-truth-rate 1.0 --min-length 5 --momentum 0.95 --negative-sampling-iou 0.35 --nms-threshold 0.6 --original-setup --proposals-in-train  --scales 2 4 6 8 10 12 14 16 18 20 22 24 26  --stride 0.3 --feat rgb --proposal-interface SlidingWindowMSRSS --seed 1701 --loc NONE --logfile ./data/interim/activitynet-captions/CALChamfer/CALChamfer_notef_singlestream_6d_$CUDA_VISIBLE_DEVICES --lr 0.025 --batch-size 64"
+
+6e
+parameters="--arch CALChamfer  --train-list $dataset_dir/train.json --val-list $dataset_dir/val-01.json --test-list $dataset_dir/val.json --h5-path $dataset_dir/obj_predictions_perc_50_glove_bb_spatial.h5 --ground-truth-rate 1.0 --min-length 5 --momentum 0.95 --negative-sampling-iou 0.35 --nms-threshold 0.6 --original-setup --proposals-in-train --scales 2 4 6 8 10 12 14 16 18 20 22 24 26  --stride 0.3 --feat obj --proposal-interface SlidingWindowMSRSS --seed 1701 --logfile ./data/interim/activitynet-captions/CALChamfer/CALChamfer_tef_singlestream_6e_$CUDA_VISIBLE_DEVICES --lr 0.025 --batch-size 64"
+
+6f
+parameters="--arch CALChamfer  --train-list $dataset_dir/train.json --val-list $dataset_dir/val-01.json --test-list $dataset_dir/val.json --h5-path $dataset_dir/obj_predictions_perc_50_glove_bb_spatial.h5 --ground-truth-rate 1.0 --min-length 5 --momentum 0.95 --negative-sampling-iou 0.35 --nms-threshold 0.6 --original-setup --proposals-in-train --scales 2 4 6 8 10 12 14 16 18 20 22 24 26  --stride 0.3 --feat obj --proposal-interface SlidingWindowMSRSS --seed 1701 --loc NONE --logfile ./data/interim/activitynet-captions/CALChamfer/CALChamfer_notef_singlestream_6f_$CUDA_VISIBLE_DEVICES --lr 0.025 --batch-size 64"
+
+
+python train.py --gpu-id 0 $parameters
+
+
+6a - corpus
+dataset_dir=data/processed/activitynet-captions 
+-test
+parameters="--test-list $dataset_dir/val.json --h5-path $dataset_dir/resnet152_rgb_max_cl-2.5.h5 $dataset_dir/obj_predictions_perc_50_glove_bb_spatial.h5 --tags rgb obj --snapshot ./data/interim/activitynet-captions/CALChamfer/CALChamfer_tef_multistream_6a_$CUDA_VISIBLE_DEVICES.json --snapshot-tags rgb obj --logfile ./data/interim/activitynet-captions/CALChamfer/CALChamfer_tef_multistream_6a_$CUDA_VISIBLE_DEVICES_corpus_val.json --new "
+
+-val
+parameters="--test-list $dataset_dir/val-01.json --h5-path $dataset_dir/resnet152_rgb_max_cl-2.5.h5 $dataset_dir/obj_predictions_perc_50_glove_bb_spatial.h5 --tags rgb obj --snapshot ./data/interim/activitynet-captions/CALChamfer/CALChamfer_tef_multistream_6a_$CUDA_VISIBLE_DEVICES.json --snapshot-tags rgb obj --logfile ./data/interim/activitynet-captions/CALChamfer/CALChamfer_tef_multistream_6a_$CUDA_VISIBLE_DEVICES_corpus_val.json --new "
+
+python corpus_retrieval_eval.py $parameters
+
+6b
+
+-test
+parameters="--test-list $dataset_dir/val.json --h5-path $dataset_dir/resnet152_rgb_max_cl-2.5.h5 $dataset_dir/obj_predictions_perc_50_glove_bb_spatial.h5 --tags rgb obj --snapshot ./data/interim/activitynet-captions/CALChamfer/CALChamfer_notef_multistream_6b_$CUDA_VISIBLE_DEVICES.json --snapshot-tags rgb obj --logfile ./data/interim/activitynet-captions/CALChamfer/CALChamfer_notef_multistream_6b_$CUDA_VISIBLE_DEVICES_corpus_val.json --new "
+
+-val
+parameters="--test-list $dataset_dir/val-01.json --h5-path $dataset_dir/resnet152_rgb_max_cl-2.5.h5 $dataset_dir/obj_predictions_perc_50_glove_bb_spatial.h5 --tags rgb obj --snapshot ./data/interim/activitynet-captions/CALChamfer/CALChamfer_notef_multistream_6b_$CUDA_VISIBLE_DEVICES.json --snapshot-tags rgb obj --logfile ./data/interim/activitynet-captions/CALChamfer/CALChamfer_notef_multistream_6b_$CUDA_VISIBLE_DEVICES_corpus_val.json --new "
+

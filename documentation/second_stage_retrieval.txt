@@ -1,0 +1,95 @@
+
+
+
+CAL NOTEF - test
+parameters="--test-list $dataset_dir/test-01.json 
+--h5-path $dataset_dir/resnet152_rgb_max_cl-2.5.h5 
+--snapshot $interim/didemo/2.json
+--logfile $interim/didemo/2_corpus_test.json 
+--dump --n-display 0.2 --dump-per-instance-results "
+
+
+##### CAL NOTEF - train - didemo
+
+dataset_dir=data/processed/didemo
+interim=data/interim
+parameters="--test-list $dataset_dir/train-01.json 
+--h5-path $dataset_dir/resnet152_rgb_max_cl-2.5.h5 
+--snapshot $interim/didemo/2.json
+--logfile $interim/didemo/2_corpus_val.json 
+--dump --n-display 0.2 --dump-per-instance-results "
+
+python corpus_retrieval_eval.py $parameters
+
+
+###### CAL NOTEF - train - charades
+
+dataset_dir=data/processed/charades-sta
+interim=data/interim
+
+parameters="--test-list $dataset_dir/train-01.json 
+--h5-path $dataset_dir/resnet152_rgb_max_cl-3.h5 
+--snapshot $interim/charades/3.json
+--logfile $interim/charades/3_corpus_train.json 
+--dump --n-display 0.2 --dump-per-instance-results "
+
+python corpus_retrieval_eval.py $parameters
+
+
+
+# Second stage evaluation
+
+dataset_dir=data/processed/didemo
+interim=data/interim
+
+split=test
+parameters="
+--test-list   $dataset_dir/$split-01.json 
+--h5-path     $dataset_dir/resnet152_rgb_max_cl-2.5.h5 $dataset_dir/obj_predictions_perc_50_glove_bb_spatial.h5 
+--snapshot    $interim/didemo/CALChamfer/final/second_stage/models/CALChamfer_tef_glove_extra_5.json
+--h5-1ststage $interim/didemo/CALChamfer/final/second_stage/models/smcn_40/smcb_40_2_corpus_val.h5
+--logfile     $interim/didemo/CALChamfer/final/second_stage/CAL_CALChamfer_tef_corpus_2nd_stage_$split.json
+--k-first 200 --nms-threshold 1.0 --dump "
+
+python corpus_retrieval_2nd_eval.py $parameters
+
+
+# Second stage evaluation
+
+dataset_dir=data/processed/didemo
+interim=data/interim
+
+split=test
+parameters="
+--test-list   $dataset_dir/$split-01.json 
+--h5-path     $dataset_dir/resnet152_rgb_max_cl-2.5.h5 $dataset_dir/obj_predictions_perc_50_glove_bb_spatial.h5 
+--snapshot    $interim/didemo/CALChamfer/final/second_stage/models/CALChamfer_tef_glove_extra_5.json
+--h5-1ststage $interim/didemo/CALChamfer/final/second_stage/models/smcn_40/smcb_40_2_corpus_$split.h5
+--logfile     $interim/didemo/CALChamfer/final/second_stage/CAL_STAL_tef_corpus_2nd_stage_$split.json
+--k-first 200 --nms-threshold 1.0 --dump "
+
+python corpus_retrieval_2nd_eval.py $parameters
+
+
+dataset_dir=data/processed/charades-sta
+interim=data/interim
+
+split=test
+parameters="
+--test-list   $dataset_dir/$split-01.json 
+--h5-path     $dataset_dir/resnet152_rgb_max_cl-3.h5 $dataset_dir/obj_predictions_perc_50_glove_bb_spatial.h5 
+--snapshot    $interim/charades-sta/CALChamfer/second_stage/models/CALChamfer_tef_multistream_5a_1.json
+--h5-1ststage $interim/charades-sta/CALChamfer/second_stage/models/CALChamfer_notef_multistream_5b_5_corpus_test.h5
+--logfile     $interim/charades-sta/CALChamfer/second_stage/STAL_STAL_tef_corpus_2nd_stage_$split.json
+--k-first 200 --nms-threshold 1.0 --dump "
+
+python corpus_retrieval_2nd_eval.py $parameters
+
+
+
+
+# Retrain 
+
+
+
+

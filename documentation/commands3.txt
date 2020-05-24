@@ -1,0 +1,560 @@
+Object detection reranking - SMCN - VAL DATA -CHARADES
+
+COCO
+
+dataset_dir=data/processed/charades-sta
+
+#SMCN TEF - 4.json
+    parameters="--test-list $dataset_dir/val-02_01.json --h5-path $dataset_dir/resnet152_rgb_max_cl-3.h5 --snapshot ./data/interim/charades-sta/best_models/smcn_42/a/4.json --concepts-oracle 1 --oracle-map $dataset_dir/concepts/intersection_concepts_coco_classes.json"
+
+#SMCN NO-TEF - 3.json
+
+    parameters="--test-list $dataset_dir/val-02_01.json --h5-path $dataset_dir/resnet152_rgb_max_cl-3.h5 --snapshot ./data/interim/charades-sta/best_models/smcn_42/b/3.json --concepts-oracle 1 --oracle-map $dataset_dir/concepts/intersection_concepts_coco_classes.json"
+
+VISUAL GENOME
+
+#SMCN TEF - 4.json
+    parameters="--test-list $dataset_dir/val-02_01.json --h5-path $dataset_dir/resnet152_rgb_max_cl-3.h5 --snapshot ./data/interim/charades-sta/best_models/smcn_42/a/4.json --concepts-oracle 1 --oracle-map $dataset_dir/concepts/intersection_concepts_visual_genome_classes.json"
+
+#SMCN NO-TEF - 3.json
+
+    parameters="--test-list $dataset_dir/val-02_01.json --h5-path $dataset_dir/resnet152_rgb_max_cl-3.h5 --snapshot ./data/interim/charades-sta/best_models/smcn_42/b/3.json --concepts-oracle 1 --oracle-map $dataset_dir/concepts/intersection_concepts_visual_genome_classes.json"
+
+python corpus_retrieval_eval.py $parameters
+
+
+
+#############################################################################################################################################################################################################################################################################################################################################################################################
+
+Conditionig
+
+th=     0.0,0.2,0.4,0.6,0.8,0.9,0.99
+
+DIDEMO
+
+dataset_dir=data/processed/didemo
+
+#SMCN TEF - 2.json  
+
+    parameters="--test-list $dataset_dir/val-01.json --h5-path $dataset_dir/resnet152_rgb_max_cl-2.5.h5 --snapshot ./data/interim/didemo/best_models/smcn_40/a/2.json --concepts-oracle 1 --obj-detection-path $dataset_dir/obj_detection/visual_genome/didemo_obj_detection_obj_th_$th.json --use-concepts-and-obj-predictions --oracle-map $dataset_dir/concepts/concepts_map_all_words.json --logfile ./data/interim/didemo/conditioning/smcn_tef_obj_th_$th"
+
+#SMCN NO-TEF - 2.json
+
+    parameters="--test-list $dataset_dir/val-01.json --h5-path $dataset_dir/resnet152_rgb_max_cl-2.5.h5 --snapshot ./data/interim/didemo/best_models/smcn_40/b/2.json --concepts-oracle 1 --obj-detection-path $dataset_dir/obj_detection/visual_genome/didemo_obj_detection_obj_th_$th.json --use-concepts-and-obj-predictions --oracle-map $dataset_dir/concepts/concepts_map_all_words.json --logfile ./data/interim/didemo/conditioning/smcn_notef_obj_th_$th"
+
+#MCN TEF - 2.json
+
+    parameters="--test-list $dataset_dir/val-01.json --h5-path $dataset_dir/resnet152_rgb_max_cl-2.5.h5 --snapshot ./data/interim/didemo/best_models/mcn_41/a/2.json --concepts-oracle 1 --obj-detection-path $dataset_dir/obj_detection/visual_genome/didemo_obj_detection_obj_th_$th.json --use-concepts-and-obj-predictions --oracle-map $dataset_dir/concepts/concepts_map_all_words.json --logfile ./data/interim/didemo/conditioning/mcn_tef_obj_th_$th"
+
+#MCN NO-TEF - 1.json
+
+    parameters="--test-list $dataset_dir/val-01.json --h5-path $dataset_dir/resnet152_rgb_max_cl-2.5.h5 --snapshot ./data/interim/didemo/best_models/mcn_41/b/1.json --concepts-oracle 1 --obj-detection-path $dataset_dir/obj_detection/visual_genome/didemo_obj_detection_obj_th_$th.json --use-concepts-and-obj-predictions --oracle-map $dataset_dir/concepts/concepts_map_all_words.json --logfile ./data/interim/didemo/conditioning/mcn_notef_obj_th_$th"
+
+
+CHARADES
+
+dataset_dir=data/processed/charades-sta
+
+#SMCN TEF - 4.json
+
+    parameters="--test-list $dataset_dir/val-02_01.json --h5-path $dataset_dir/resnet152_rgb_max_cl-3.h5 --snapshot ./data/interim/charades-sta/best_models/smcn_42/a/4.json --concepts-oracle 1 --obj-detection-path $dataset_dir/obj_detection/visual_genome/charades_sta_obj_detection_obj_th_$th.json --use-concepts-and-obj-predictions --oracle-map $dataset_dir/concepts/concepts_map_all_words.json --logfile ./data/interim/charades-sta/conditioning/smcn_tef_obj_th_$th"
+
+#SMCN NO-TEF - 3.json
+
+    parameters="--test-list $dataset_dir/val-02_01.json --h5-path $dataset_dir/resnet152_rgb_max_cl-3.h5 --snapshot ./data/interim/charades-sta/best_models/smcn_42/b/3.json --concepts-oracle 1 --obj-detection-path $dataset_dir/obj_detection/visual_genome/charades_sta_obj_detection_obj_th_$th.json --use-concepts-and-obj-predictions --oracle-map $dataset_dir/concepts/concepts_map_all_words.json --logfile ./data/interim/charades-sta/conditioning/smcn_notef_obj_th_$th"
+
+#MCN TEF - 4.json
+
+    parameters="--test-list $dataset_dir/val-02_01.json --h5-path $dataset_dir/resnet152_rgb_max_cl-3.h5 --snapshot ./data/interim/charades-sta/best_models/mcn_42/a/4.json --concepts-oracle 1 --obj-detection-path $dataset_dir/obj_detection/visual_genome/charades_sta_obj_detection_obj_th_$th.json --use-concepts-and-obj-predictions --oracle-map $dataset_dir/concepts/concepts_map_all_words.json --logfile ./data/interim/charades-sta/conditioning/mcn_tef_obj_th_$th"
+
+
+#MCN NO-TEF - 3.json
+
+    parameters="--test-list $dataset_dir/val-02_01.json --h5-path $dataset_dir/resnet152_rgb_max_cl-3.h5 --snapshot ./data/interim/charades-sta/best_models/mcn_42/b/3.json --concepts-oracle 1 --obj-detection-path $dataset_dir/obj_detection/visual_genome/charades_sta_obj_detection_obj_th_$th.json --use-concepts-and-obj-predictions --oracle-map $dataset_dir/concepts/concepts_map_all_words.json --logfile ./data/interim/charades-sta/conditioning/mcn_notef_obj_th_$th"
+
+python corpus_retrieval_eval.py $parameters
+
+ACTIVITYNET
+
+dataset_dir=data/processed/activitynet-captions
+
+concepts=concepts_map_all_words.json
+
+
+0,2,4,5,6,7,8,9,99
+th=0.0
+th_name=0_0
+
+SMCN TEF - 1.json  
+
+    parameters="--test-list $dataset_dir/val-01.json --h5-path $dataset_dir/resnet152_rgb_max_cl-2.5.h5 --snapshot ./data/interim/activitynet-captions/best_models/smcn_43/a/1.json --concepts-oracle 1 --obj-detection-path $dataset_dir/obj_detection/visual_genome/activitynet_captions_obj_detection_obj_th_$th.json --use-concepts-and-obj-predictions --oracle-map $dataset_dir/concepts/$concepts --logfile ./data/interim/activitynet-captions/conditioning/smcn_tef_obj_th_$th_name"
+
+concepts=concepts_map_all_words.json
+20,40,50,60,70,90,95
+perc=90
+
+SMCN TEF - 1.json  
+
+    parameters="--test-list $dataset_dir/val-01.json --h5-path $dataset_dir/resnet152_rgb_max_cl-2.5.h5 --snapshot ./data/interim/activitynet-captions/best_models/smcn_43/a/1.json --concepts-oracle 1 --obj-detection-path $dataset_dir/obj_detection/visual_genome/activitynet_captions_obj_detection_perc_$perc.json --use-concepts-and-obj-predictions --oracle-map $dataset_dir/concepts/$concepts --logfile ./data/interim/activitynet-captions/conditioning/smcn_tef_obj_perc_$perc"
+
+
+
+python corpus_retrieval_eval.py $parameters
+
+
+
+
+
+###################################################################################################
+Standard evaluation corpus_retrieval_eval
+DIDEMO
+
+dataset_dir=data/processed/didemo
+
+#SMCN TEF - 2.json  
+
+    parameters="--test-list $dataset_dir/val-01.json --h5-path $dataset_dir/resnet152_rgb_max_cl-2.5.h5 --snapshot ./data/interim/didemo/best_models/smcn_40/a/2.json --logfile ./data/interim/didemo/conditioning/smcn_tef_corpus"
+
+#SMCN NO-TEF - 2.json
+
+    parameters="--test-list $dataset_dir/val-01.json --h5-path $dataset_dir/resnet152_rgb_max_cl-2.5.h5 --snapshot ./data/interim/didemo/best_models/smcn_40/b/2.json --logfile ./data/interim/didemo/conditioning/smcn_notef_corpus"
+
+#MCN TEF - 2.json
+
+    parameters="--test-list $dataset_dir/val-01.json --h5-path $dataset_dir/resnet152_rgb_max_cl-2.5.h5 --snapshot ./data/interim/didemo/best_models/mcn_41/a/2.json --logfile ./data/interim/didemo/conditioning/mcn_tef_corpus"
+
+#MCN NO-TEF - 1.json
+
+    parameters="--test-list $dataset_dir/val-01.json --h5-path $dataset_dir/resnet152_rgb_max_cl-2.5.h5 --snapshot ./data/interim/didemo/best_models/mcn_41/b/1.json --logfile ./data/interim/didemo/conditioning/mcn_notef_corpus"
+
+
+python corpus_retrieval_eval.py $parameters
+
+
+######################################################################################################
+oracle
+
+dataset_dir=data/processed/didemo
+concepts=concepts_map_all_words.json
+concepts=intersection_concepts_visual_genome_classes.json
+
+#SMCN TEF - 2.json 
+
+    parameters="--test-list $dataset_dir/val-01.json --h5-path $dataset_dir/resnet152_rgb_max_cl-2.5.h5 --snapshot ./data/interim/didemo/best_models/smcn_40/a/2.json --concepts-oracle 1 --oracle-map $dataset_dir/concepts/$concepts   --logfile ./data/interim/didemo/conditioning/smcn_tef_concept_oracle"
+
+#SMCN NO-TEF - 2.json 
+
+    parameters="--test-list $dataset_dir/val-01.json --h5-path $dataset_dir/resnet152_rgb_max_cl-2.5.h5 --snapshot ./data/interim/didemo/best_models/smcn_40/b/2.json  --concepts-oracle 1 --oracle-map $dataset_dir/concepts/$concepts  --logfile ./data/interim/didemo/conditioning/smcn_notef_concept_oracle"
+
+
+#MCN TEF - 2.json
+
+    parameters="--test-list $dataset_dir/val-01.json --h5-path $dataset_dir/resnet152_rgb_max_cl-2.5.h5 --snapshot ./data/interim/didemo/best_models/mcn_41/a/2.json  --concepts-oracle 1 --oracle-map $dataset_dir/concepts/$concepts  --logfile ./data/interim/didemo/conditioning/mcn_tef_concept_oracle"
+
+
+#MCN NO-TEF - 1.json
+
+    parameters="--test-list $dataset_dir/val-01.json --h5-path $dataset_dir/resnet152_rgb_max_cl-2.5.h5 --snapshot ./data/interim/didemo/best_models/mcn_41/b/1.json --concepts-oracle 1 --oracle-map $dataset_dir/concepts/$concepts  --logfile ./data/interim/didemo/conditioning/mcn_notef_concept_oracle"
+
+python corpus_retrieval_eval.py $parameters
+
+
+################ CHARADES-STA
+
+dataset_dir=data/processed/charades-sta
+concepts=concepts_map_all_words.json
+concepts=intersection_concepts_visual_genome_classes.json
+
+#SMCN TEF - 4.json
+
+    parameters="--test-list $dataset_dir/val-02_01.json --h5-path $dataset_dir/resnet152_rgb_max_cl-3.h5 --snapshot ./data/interim/charades-sta/best_models/smcn_42/a/4.json --concepts-oracle 1 --oracle-map $dataset_dir/concepts/$concepts --logfile ./data/interim/charades-sta/smcn_tef_concept_oracle"
+
+
+#SMCN NO-TEF - 3.json
+
+    parameters="--test-list $dataset_dir/val-02_01.json --h5-path $dataset_dir/resnet152_rgb_max_cl-3.h5 --snapshot ./data/interim/charades-sta/best_models/smcn_42/b/3.json --concepts-oracle 1 --oracle-map $dataset_dir/concepts/$concepts --logfile ./data/interim/charades-sta/smcn_notef_concept_oracle"
+
+#MCN TEF - 4.json
+
+    parameters="--test-list $dataset_dir/val-02_01.json --h5-path $dataset_dir/resnet152_rgb_max_cl-3.h5 --snapshot ./data/interim/charades-sta/best_models/mcn_42/a/4.json --concepts-oracle 1 --oracle-map $dataset_dir/concepts/$concepts --logfile ./data/interim/charades-sta/mcn_tef_concept_oracle"
+
+#MCN NO-TEF - 3.json
+
+    parameters="--test-list $dataset_dir/val-02_01.json --h5-path $dataset_dir/resnet152_rgb_max_cl-3.h5 --snapshot ./data/interim/charades-sta/best_models/mcn_42/b/3.json --concepts-oracle 1 --oracle-map $dataset_dir/concepts/$concepts --logfile ./data/interim/charades-sta/mcn_notef_concept_oracle"
+
+
+python corpus_retrieval_eval.py $parameters
+
+######################################################################################################
+######################################################################################################
+######################################################################################################
+
+
+Conditionig with percentile
+
+DIDEMO
+
+dataset_dir=data/processed/didemo
+perc=50
+
+#SMCN TEF - 2.json  
+
+    parameters="--test-list $dataset_dir/val-01.json --h5-path $dataset_dir/resnet152_rgb_max_cl-2.5.h5 --snapshot ./data/interim/didemo/best_models/smcn_40/a/2.json --concepts-oracle 1 --obj-detection-path $dataset_dir/obj_detection/visual_genome/didemo_obj_detection_perc_$perc.json --use-concepts-and-obj-predictions --oracle-map $dataset_dir/concepts/concepts_map_all_words.json --logfile ./data/interim/didemo/conditioning/smcn_tef_obj_perc_$perc"
+
+#SMCN NO-TEF - 2.json
+
+    parameters="--test-list $dataset_dir/val-01.json --h5-path $dataset_dir/resnet152_rgb_max_cl-2.5.h5 --snapshot ./data/interim/didemo/best_models/smcn_40/b/2.json --concepts-oracle 1 --obj-detection-path $dataset_dir/obj_detection/visual_genome/didemo_obj_detection_perc_$perc.json --use-concepts-and-obj-predictions --oracle-map $dataset_dir/concepts/concepts_map_all_words.json --logfile ./data/interim/didemo/conditioning/smcn_notef_obj_perc_$perc"
+
+
+#MCN TEF - 2.json
+
+    parameters="--test-list $dataset_dir/val-01.json --h5-path $dataset_dir/resnet152_rgb_max_cl-2.5.h5 --snapshot ./data/interim/didemo/best_models/mcn_41/a/2.json --concepts-oracle 1 --obj-detection-path $dataset_dir/obj_detection/visual_genome/didemo_obj_detection_perc_$perc.json --use-concepts-and-obj-predictions --oracle-map $dataset_dir/concepts/concepts_map_all_words.json --logfile ./data/interim/didemo/conditioning/mcn_tef_obj_perc_$perc"
+
+#MCN NO-TEF - 1.json
+
+    parameters="--test-list $dataset_dir/val-01.json --h5-path $dataset_dir/resnet152_rgb_max_cl-2.5.h5 --snapshot ./data/interim/didemo/best_models/mcn_41/b/1.json --concepts-oracle 1 --obj-detection-path $dataset_dir/obj_detection/visual_genome/didemo_obj_detection_perc_$perc.json --use-concepts-and-obj-predictions --oracle-map $dataset_dir/concepts/concepts_map_all_words.json --logfile ./data/interim/didemo/conditioning/mcn_notef_obj_perc_$perc"
+
+
+python corpus_retrieval_eval.py $parameters
+
+
+
+######################################################################################################
+######################################################################################################
+######################################################################################################
+
+
+Conditionig with percentile and RANKING MERGING
+
+DIDEMO
+
+dataset_dir=data/processed/didemo
+perc=50
+k1=1000
+k2=1000
+
+#SMCN TEF - 2.json  
+
+    parameters="--test-list $dataset_dir/val-01.json --h5-path $dataset_dir/resnet152_rgb_max_cl-2.5.h5 --snapshot ./data/interim/didemo/best_models/smcn_40/a/2.json --concepts-oracle 1 --obj-detection-path $dataset_dir/obj_detection/visual_genome/didemo_obj_detection_perc_$perc.json --use-concepts-and-obj-predictions --oracle-map $dataset_dir/concepts/concepts_map_all_words.json --logfile ./data/interim/didemo/conditioning/smcn_tef_obj_perc_$perc --merge-rankings --k1 $k1 --k2 $k2"
+
+#SMCN NO-TEF - 2.json
+
+    parameters="--test-list $dataset_dir/val-01.json --h5-path $dataset_dir/resnet152_rgb_max_cl-2.5.h5 --snapshot ./data/interim/didemo/best_models/smcn_40/b/2.json --concepts-oracle 1 --obj-detection-path $dataset_dir/obj_detection/visual_genome/didemo_obj_detection_perc_$perc.json --use-concepts-and-obj-predictions --oracle-map $dataset_dir/concepts/concepts_map_all_words.json --logfile ./data/interim/didemo/conditioning/smcn_notef_obj_perc_$perc --merge-rankings --k1 $k1 --k2 $k2"
+
+
+#MCN TEF - 2.json
+
+    parameters="--test-list $dataset_dir/val-01.json --h5-path $dataset_dir/resnet152_rgb_max_cl-2.5.h5 --snapshot ./data/interim/didemo/best_models/mcn_41/a/2.json --concepts-oracle 1 --obj-detection-path $dataset_dir/obj_detection/visual_genome/didemo_obj_detection_perc_$perc.json --use-concepts-and-obj-predictions --oracle-map $dataset_dir/concepts/concepts_map_all_words.json --logfile ./data/interim/didemo/conditioning/mcn_tef_obj_perc_$perc --merge-rankings --k1 $k1 --k2 $k2"
+
+#MCN NO-TEF - 1.json
+
+    parameters="--test-list $dataset_dir/val-01.json --h5-path $dataset_dir/resnet152_rgb_max_cl-2.5.h5 --snapshot ./data/interim/didemo/best_models/mcn_41/b/1.json --concepts-oracle 1 --obj-detection-path $dataset_dir/obj_detection/visual_genome/didemo_obj_detection_perc_$perc.json --use-concepts-and-obj-predictions --oracle-map $dataset_dir/concepts/concepts_map_all_words.json --logfile ./data/interim/didemo/conditioning/mcn_notef_obj_perc_$perc --merge-rankings --k1 $k1 --k2 $k2"
+
+
+python corpus_retrieval_eval.py $parameters
+
+#################################################################################################
+Standard evaluation corpus_retrieval_eval
+ACTVITYNET
+
+dataset_dir=data/processed/activitynet-captions
+
+#SMCN TEF - 1.json  
+
+    parameters="--test-list $dataset_dir/val-01.json --h5-path $dataset_dir/resnet152_rgb_max_cl-2.5.h5 --snapshot ./data/interim/activitynet-captions/best_models/smcn_43/a/1.json --logfile ./data/interim/activitynet-captions/smcn_tef_corpus"
+
+#SMCN NO-TEF - 4.json
+
+    parameters="--test-list $dataset_dir/val-01.json --h5-path $dataset_dir/resnet152_rgb_max_cl-2.5.h5 --snapshot ./data/interim/activitynet-captions/best_models/smcn_43/b/4.json --logfile ./data/interim/activitynet-captions/smcn_notef_corpus"
+
+#MCN TEF - 2.json
+
+    parameters="--test-list $dataset_dir/val-01.json --h5-path $dataset_dir/resnet152_rgb_max_cl-2.5.h5 --snapshot ./data/interim/activitynet-captions/best_models/mcn_43/a/2.json --logfile ./data/interim/activitynet-captions/mcn_tef_corpus"
+
+#MCN NO-TEF - 1.json
+
+    parameters="--test-list $dataset_dir/val-01.json --h5-path $dataset_dir/resnet152_rgb_max_cl-2.5.h5 --snapshot ./data/interim/activitynet-captions/best_models/mcn_43/b/5.json --logfile ./data/interim/activitynet-captions/mcn_notef_corpus"
+
+
+python corpus_retrieval_eval.py $parameters
+
+
+#############################################################################################################################################################################################################################################################################################################################################################################################
+oracle
+
+dataset_dir=data/processed/activitynet-captions
+
+concepts=concepts_map_all_words.json
+concepts=intersection_concepts_visual_genome_classes.json
+
+
+SMCN TEF - 1.json  
+
+    parameters="--test-list $dataset_dir/val-01.json --h5-path $dataset_dir/resnet152_rgb_max_cl-2.5.h5 --snapshot ./data/interim/activitynet-captions/best_models/smcn_43/a/1.json --concepts-oracle 1 --oracle-map $dataset_dir/concepts/$concepts --logfile ./data/interim/activitynet-captions/smcn_tef_oracle"
+
+#SMCN NO-TEF - 4.json
+
+    parameters="--test-list $dataset_dir/val-01.json --h5-path $dataset_dir/resnet152_rgb_max_cl-2.5.h5 --snapshot ./data/interim/activitynet-captions/best_models/smcn_43/b/4.json --concepts-oracle 1 --oracle-map $dataset_dir/concepts/$concepts --logfile ./data/interim/activitynet-captions/smcn_notef_oracle"
+
+#MCN TEF - 2.json
+
+    parameters="--test-list $dataset_dir/val-01.json --h5-path $dataset_dir/resnet152_rgb_max_cl-2.5.h5 --snapshot ./data/interim/activitynet-captions/best_models/mcn_43/a/2.json --concepts-oracle 1 --oracle-map $dataset_dir/concepts/$concepts --logfile ./data/interim/activitynet-captions/mcn_tef_oracle"
+
+#MCN NO-TEF - 1.json
+
+    parameters="--test-list $dataset_dir/val-01.json --h5-path $dataset_dir/resnet152_rgb_max_cl-2.5.h5 --snapshot ./data/interim/activitynet-captions/best_models/mcn_43/b/5.json --concepts-oracle 1 --oracle-map $dataset_dir/concepts/$concepts --logfile ./data/interim/activitynet-captions/mcn_notef_oracle"
+
+
+python corpus_retrieval_eval.py $parameters
+
+
+#############################################################################################################################################################################################################################################################################################################################################################################################
+
+oracle - interception visual genome
+
+dataset_dir=data/processed/activitynet-captions
+
+
+SMCN TEF - 1.json  
+
+    parameters="--test-list $dataset_dir/val-01.json --h5-path $dataset_dir/resnet152_rgb_max_cl-2.5.h5 --snapshot ./data/interim/activitynet-captions/best_models/smcn_43/a/1.json --concepts-oracle 1 --oracle-map $dataset_dir/concepts/intersection_concepts_visual_genome_classes.json --logfile ./data/interim/activitynet-captions/smcn_tef_oracle_intersection_VG"
+
+#SMCN NO-TEF - 4.json
+
+    parameters="--test-list $dataset_dir/val-01.json --h5-path $dataset_dir/resnet152_rgb_max_cl-2.5.h5 --snapshot ./data/interim/activitynet-captions/best_models/smcn_43/b/4.json --concepts-oracle 1 --oracle-map $dataset_dir/concepts/intersection_concepts_visual_genome_classes.json --logfile ./data/interim/activitynet-captions/smcn_notef_oracle_intersection_VG"
+
+#MCN TEF - 2.json
+
+    parameters="--test-list $dataset_dir/val-01.json --h5-path $dataset_dir/resnet152_rgb_max_cl-2.5.h5 --snapshot ./data/interim/activitynet-captions/best_models/mcn_43/a/2.json --concepts-oracle 1 --oracle-map $dataset_dir/concepts/intersection_concepts_visual_genome_classes.json --logfile ./data/interim/activitynet-captions/mcn_tef_oracle_intersection_VG"
+
+#MCN NO-TEF - 1.json
+
+    parameters="--test-list $dataset_dir/val-01.json --h5-path $dataset_dir/resnet152_rgb_max_cl-2.5.h5 --snapshot ./data/interim/activitynet-captions/best_models/mcn_43/b/5.json --concepts-oracle 1 --oracle-map $dataset_dir/concepts/intersection_concepts_visual_genome_classes.json --logfile ./data/interim/activitynet-captions/mcn_notef_oracle_intersection_VG"
+
+
+python corpus_retrieval_eval.py $parameters
+
+
+#############################################################################################################################################################################################################################################################################################################################################################################################
+
+Corpus convex combination 
+
+dataset_dir=data/processed/didemo
+
+parameters="                       
+--test-list $dataset_dir/val-01.json 
+--h5-path $dataset_dir/resnet152_rgb_max_cl-2.5.h5 $dataset_dir/obj_predictions_perc_50_glove_bb_spatial.h5 
+--tags rgb obj 
+--snapshot ./data/interim/didemo/CALChamfer/final/c/CALChamfer_tef_singlestream_4c_1.json ./data/interim/didemo/CALChamfer/final/e/CALChamfer_tef_singlestream_4e_1.json
+--snapshot-tags rgb obj  
+--logfile ./data/interim/didemo/CALChamfer/final/corpus_convex_comb_4c_4e_1_alpah0_1 
+--new --alpha 0.1"
+
+python corpus_retrieval_eval.py $parameters
+
+
+CALChamfer - multi stream
+
+dataset_dir=data/processed/didemo
+
+parameters="--test-list $dataset_dir/val-01.json 
+--h5-path $dataset_dir/resnet152_rgb_max_cl-2.5.h5 $dataset_dir/obj_predictions_perc_50_glove_bb_spatial.h5 
+--tags rgb obj --snapshot ./data/interim/didemo/CALChamfer_dropout_0_1.json 
+--snapshot-tags rgb obj 
+--logfile ./data/interim/didemo/CALChamfer_dropout_0_1_corpus --new "
+
+python corpus_retrieval_eval.py $parameters
+
+
+################ ABLATION
+
+models 4c and 4e 
+4c [1,3,9], 4e []
+
+dataset_dir=data/processed/didemo
+
+alpha=0.1
+alpha_name=0_1
+
+parameters="                       
+--test-list $dataset_dir/val-01.json 
+--h5-path $dataset_dir/resnet152_rgb_max_cl-2.5.h5 $dataset_dir/obj_predictions_perc_50_glove_bb_spatial.h5 
+--tags rgb obj 
+--snapshot ./data/interim/didemo/CALChamfer/final/c/CALChamfer_tef_singlestream_4c_1.json ./data/interim/didemo/CALChamfer/final/e/CALChamfer_tef_singlestream_4e_1.json
+--snapshot-tags rgb obj  
+--logfile ./data/interim/didemo/CALChamfer/final/corpus_convex_comb_4c_4e_1_alpha_$alpha_name
+--new --alpha $alpha "
+
+python corpus_retrieval_eval.py $parameters
+
+
+models 4d and 4f
+4d [5,3,10], 4f []
+
+parameters="                       
+--test-list $dataset_dir/val-01.json 
+--h5-path $dataset_dir/resnet152_rgb_max_cl-2.5.h5 $dataset_dir/obj_predictions_perc_50_glove_bb_spatial.h5 
+--tags rgb obj 
+--snapshot ./data/interim/didemo/CALChamfer/final/c/CALChamfer_tef_singlestream_4d_1.json ./data/interim/didemo/CALChamfer/final/e/CALChamfer_tef_singlestream_4f_1.json
+--snapshot-tags rgb obj  
+--logfile ./data/interim/didemo/CALChamfer/final/corpus_convex_comb_4c_4e_1_alpha_$alpha_name
+--new --alpha $alpha "
+
+python corpus_retrieval_eval.py $parameters
+
+############# end ablation
+
+
+
+CALChamfer - single stream
+
+dataset_dir=data/processed/didemo
+
+parameters="--test-list $dataset_dir/val-01.json --h5-path $dataset_dir/obj_predictions_perc_50_glove_bb_spatial.h5 --tags obj --snapshot /data/interim/didemo/CALChamfer_single_stream.pth.tar --snapshot-tags  obj --logfile ./data/interim/didemo/CALChamfer_single_stream_corpus.log --new "
+
+python corpus_retrieval_eval.py $parameters
+
+
+#############################################################################################################################################################################################################################################################################################################################################################################################
+
+Single video convex combination 
+
+dataset_dir=data/processed/didemo
+
+parameters="--arch LateFusion --train-list $dataset_dir/train-01.json --test-list $dataset_dir/val-01.json --h5-path $dataset_dir/resnet152_rgb_max_cl-2.5.h5  $dataset_dir/obj_predictions_perc_50_avg_glove.h5 --feat rgb obj --momentum 0.9 --negative-sampling-iou 0.99  --nms-threshold 1 --original-setup   --scales 2 3 4 5 6  --min-length 3  --proposals-in-train --nms-threshold 1.0  --proposal-interface DidemoICCV17SS --evaluate --snapshot /home/soldanm/Documents/Projects/CVPR2020/moments-retrieval/data/interim/didemo/best_models/smcn_40_new_architecture.json"
+
+python train.py --gpu-id 0 $parameters
+
+
+
+##############################################################
+
+
+
+SECOND STAGE retrieval - single stream
+
+dataset_dir=data/processed/didemo
+interim_dir=data/interim/didemo/CALChamfer/final/c
+
+parameters="
+--test-list $dataset_dir/val-01.json 
+--h5-path $dataset_dir/resnet152_rgb_max_cl-2.5.h5 
+--snapshot $interim_dir/CALChamfer_tef_singlestream_4c_1.json 
+--h5-1ststage $interim_dir/CALChamfer_tef_singlestream_4c_1_corpus_val.h5 
+--k-first 200 
+--nms-threshold 1.0  "
+
+
+python corpus_retrieval_2nd_eval.py $parameters --debug 
+
+SECOND STAGE retrieval - multi stream
+
+dataset_dir=data/processed/didemo
+interim_dir=data/interim/didemo/CALChamfer/final/a
+
+parameters="
+--test-list $dataset_dir/test-01.json 
+--h5-path $dataset_dir/resnet152_rgb_max_cl-2.5.h5 $dataset_dir/obj_predictions_perc_50_glove_bb_spatial.h5 
+--snapshot $interim_dir/CALChamfer_tef_multistream_4a_1.json 
+--h5-1ststage $interim_dir/CALChamfer_tef_multistream_4a_1_corpus_test.h5 
+--k-first 200 
+--nms-threshold 1.0  "
+
+
+python corpus_retrieval_2nd_eval.py $parameters --debug 
+
+
+
+
+##################################################
+SECOND STAGE CAL - STAL
+
+dataset_dir=data/processed/didemo
+dest_folder=./data/interim/didemo/CALChamfer/second_stage
+
+split=test
+parameters="
+--test-list   $dataset_dir/$split-01.json 
+--h5-path     $dataset_dir/resnet152_rgb_max_cl-2.5.h5 $dataset_dir/obj_predictions_perc_50_glove_bb_spatial.h5 
+--snapshot    $dest_folder/models/CALChamfer_tef_glove_extra_5.json
+--h5-1ststage $dest_folder/models/smcn_40/4/test/4_corpus-eval.h5
+--logfile     $dest_folder/CAL_CALChamfer_tef_corpus_2nd_stage_$split.json
+--k-first 200 --nms-threshold 1.0 --dump "
+
+python corpus_retrieval_2nd_eval.py $parameters
+
+
+dataset_dir=data/processed/charades-sta
+dest_folder=data/interim/charades-sta/CALChamfer/second_stage
+
+split=test
+parameters="
+--test-list   $dataset_dir/$split-01.json 
+--h5-path     $dataset_dir/resnet152_rgb_max_cl-3.h5 $dataset_dir/obj_predictions_perc_50_glove_bb_spatial.h5 
+--snapshot    $dest_folder/models/CALChamfer_tef_multistream_5a_hps_137.json
+--h5-1ststage $dest_folder/models/smcn_42/3/test/3_corpus-eval.h5
+--logfile     $dest_folder/CAL_STAL_tef_corpus_2nd_stage_137_$split.json
+--k-first 200 --nms-threshold 1.0 --dump "
+
+python corpus_retrieval_2nd_eval.py $parameters
+
+
+
+######################################################
+SECOND STAGE APPROX CAL - STAL
+
+
+dataset_dir=data/processed/didemo
+dest_folder=data/interim/didemo/CALChamfer/final/second_stage
+
+split=test
+parameters="
+--corpus-setup TwoStageClipPlusGeneric 
+--test-list data/processed/didemo/test-03.json 
+--h5-path data/processed/didemo/resnet152_rgb_max_cl-2.5.h5 
+--snapshot workers/tyler/data/interim/smcn_40/a/1.json 
+--h5-1ststage data/processed/didemo/resnet152_rgb_max_cl-2.5.h5 
+--snapshot-1ststage workers/tyler/data/interim/smcn_40/b/1.json 
+--k-first 200"
+
+
+python corpus_retrieval_2nd_eval.py
+
+
+###################################################
+
+CORPUS EVALUATION ACTIVITYNET-CAPTIONS
+
+VALIDATION
+dataset_dir=data/processed/activitynet-captions
+interim=data/interim/activitynet-captions/CALChamfer
+
+
+parameters="--test-list $dataset_dir/val-01.json 
+--h5-path  $dataset_dir/resnet152_rgb_max_cl-2.5.h5 $dataset_dir/obj_predictions_perc_50_glove_bb_spatial.h5 
+--tags rgb obj 
+--snapshot $interim/CALChamfer_tef_multistream_6a_0.json
+--snapshot-tags rgb obj 
+--logfile  $interim/CALChamfer_tef_multistream_6a_0_corpus_val.json 
+--new --dump --n-display 0.1 --dump-per-instance-results "
+
+python corpus_retrieval_eval.py $parameters
+
+
+
+TEST
+
+dataset_dir=data/processed/activitynet-captions
+interim=data/interim/activitynet-captions/CALChamfer
+
+parameters="--test-list $dataset_dir/val.json 
+--h5-path  $dataset_dir/resnet152_rgb_max_cl-2.5.h5 $dataset_dir/obj_predictions_perc_50_glove_bb_spatial.h5 
+--tags rgb obj 
+--snapshot $interim/CALChamfer_tef_multistream_6a_0.json
+--snapshot-tags rgb obj 
+--logfile  $interim/CALChamfer_tef_multistream_6a_0_corpus_test.json 
+--new --dump --n-display 0.1 --dump-per-instance-results "
+
+python corpus_retrieval_eval.py $parameters
+
+

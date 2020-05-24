@@ -479,11 +479,7 @@ def setup_dataset(args):
         dataset_name = 'UntrimmedMCN'
     elif args.arch == 'SMCN':
         dataset_name = 'UntrimmedSMCN'
-    elif args.arch == 'LateFusion':
-        dataset_name = 'UntrimmedSMCN'
     elif args.arch == 'STAL':
-        dataset_name = 'UntrimmedSTAL'
-    elif args.arch == 'EarlyFusion':
         dataset_name = 'UntrimmedSTAL'
     else:
         raise ValueError(f'Unsuported arch: {args.arch}, call 911!')
@@ -578,12 +574,13 @@ def setup_dataset(args):
 
         datasets[subset] = {'dataset': dataset, 
                             'params' : extras_loader}
-    
-    max_clips = max([v['dataset'].get_max_clips() 
-                    for k,v in datasets.items() if v is not None])
-    for _,v in datasets.items():
-        if v is not None:
-            v['dataset'].set_padding_size(max_clips)
+
+    if args.arch != 'MCN':
+        max_clips = max([v['dataset'].get_max_clips()
+                        for k,v in datasets.items() if v is not None])
+        for _,v in datasets.items():
+            if v is not None:
+                v['dataset'].set_padding_size(max_clips)
 
     loaders = {k:None for k,_ in datasets.items()}
     for k,v in datasets.items():

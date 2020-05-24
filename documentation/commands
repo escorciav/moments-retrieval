@@ -1,0 +1,613 @@
+
+
+
+################################################################################################################################################################################################################################################################
+
+                                                 SINGLE VIDEO RETRIEVAL
+BEST HYPER-PARAMETERS
+
+
+DIDEMO
+dataset_dir="data/processed/didemo"
+data_split=" --train-list $dataset_dir/train-01.json --test-list $dataset_dir/val-01.json --h5-path $dataset_dir/resnet152_rgb_max_cl-2.5.h5 "
+bert_parameters="  "
+logfile=" --dump-results --logfile ./data/interim/didemo/SMCN_TEF_ "
+dataset_dependent_parameters=" --momentum 0.9 --negative-sampling-iou 0.99  --nms-threshold 1 --original-setup   --scales 2 3 4 5 6  --min-length 3  --proposals-in-train   --proposal-interface DidemoICCV17SS  "
+parameters="--arch SMCN  --feat rgb $data_split $bert_parameters $logfile $dataset_dependent_parameters "
+
+python train.py --gpu-id 0 $parameters
+
+CHARADES-STA
+
+dataset_dir="data/processed/charades-sta"
+data_split=" --train-list $dataset_dir/train-02_01.json  --test-list $dataset_dir/val-02_01.json  --h5-path $dataset_dir/resnet152_rgb_max_cl-3.h5  "
+bert_parameters="  "
+logfile=" --dump-results --logfile ./data/interim/charades-sta/SMCN_TEF_ "
+dataset_dependent_parameters=" --momentum 0.95  --negative-sampling-iou 0.35 --nms-threshold 0.6  --original-setup  --scales 2 3 4 5 6 7 8  --min-length 3  --proposals-in-train   --proposal-interface SlidingWindowMSRSS  "
+parameters="--arch SMCN  --feat rgb $data_split $bert_parameters $logfile $dataset_dependent_parameters "
+
+python train.py --gpu-id 0 $parameters
+
+###############################
+
+
+DIDEMO
+TRAINING SMCN
+dataset_dir=data/processed/didemo
+
+parameters="--arch SMCN --proposal-interface DidemoICCV17SS --nms-threshold 1.0 --original-setup --proposals-in-train --negative-sampling-iou 0.99 --train-list $dataset_dir/train-01.json --val-list $dataset_dir/val-01.json --test-list $dataset_dir/test-01.json --h5-path $dataset_dir/resnet152_rgb_max_cl-2.5.h5"
+
+python train.py --gpu-id 0 $parameters
+
+
+CHARADES-STA
+TRAINING SMCN
+dataset_dir=data/processed/charades-sta
+
+parameters="--arch SMCN --feat rgb --train-list $dataset_dir/train-01.json --val-list $dataset_dir/test-01.json --test-list $dataset_dir/val-02_01.json --h5-path $dataset_dir/rgb_resnet152_max_cs-3.h5"
+
+python train.py --gpu-id 0 $parameters
+
+
+EVALUATION 
+dataset_dir=data/processed/didemo
+
+parameters="--arch SMCN --proposal-interface DidemoICCV17SS --test-list $dataset_dir/test-01.json --h5-path $dataset_dir/resnet152_rgb_max_cl-2.5.h5 --evaluate --snapshot ./data/interim/didemo/SMCN/SMCN_TEF_2_5s_6.json"
+
+python train.py --gpu-id 0 $parameters
+
+
+
+################################################################################################################################################################################################################################################################
+
+                                                     CORPUS RETRIEVAL
+
+dataset_dir=data/processed/didemo
+
+
+parameters="--test-list $dataset_dir/test-01.json --h5-path $dataset_dir/resnet152_rgb_max_cl-2.5.h5 --snapshot ./data/interim/didemo/SMCN/SMCN_TEF_2_5s_6.json --dump-per-instance-results"
+
+
+parameters="--test-list $dataset_dir/test-01.json --h5-path $dataset_dir/resnet152_rgb_max_cl-2.5.h5 --snapshot ./data/interim/didemo/SMCN/SMCN_TEF_2_5s_6.json --concepts-oracle 0 --oracle-map $dataset_dir/concepts/concepts_map_all_words.json
+
+python corpus_retrieval_eval.py $parameters
+
+################################################################################################################################################################################################################################################################
+
+dataset_dir=data/processed/didemo
+
+#SMCN TEF - 2.json  
+    -NOUN_VERBS
+X    parameters="--test-list $dataset_dir/concepts/NOUN_VERB_test-01.json --h5-path $dataset_dir/resnet152_rgb_max_cl-2.5.h5 --snapshot ./data/interim/didemo/best_models/smcn_40/a/2.json --concepts"
+
+X    -Top 50 NOUN_VERBS
+    parameters="--test-list $dataset_dir/concepts/NOUN_VERB_test-01_top_50.json --h5-path $dataset_dir/resnet152_rgb_max_cl-2.5.h5 --snapshot ./data/interim/didemo/best_models/smcn_40/a/2.json --concepts"
+
+    -NOUN
+X    parameters="--test-list $dataset_dir/concepts/NOUN_test-01.json --h5-path $dataset_dir/resnet152_rgb_max_cl-2.5.h5 --snapshot ./data/interim/didemo/best_models/smcn_40/a/2.json --concepts"
+
+X    -Top 50 NOUN
+    parameters="--test-list $dataset_dir/concepts/NOUN_test-01_top_50.json --h5-path $dataset_dir/resnet152_rgb_max_cl-2.5.h5 --snapshot ./data/interim/didemo/best_models/smcn_40/a/2.json --concepts"
+
+X    -VERB
+    parameters="--test-list $dataset_dir/concepts/VERB_test-01.json --h5-path $dataset_dir/resnet152_rgb_max_cl-2.5.h5 --snapshot ./data/interim/didemo/best_models/smcn_40/a/2.json --concepts"
+
+X    -Top 50 VERB
+    parameters="--test-list $dataset_dir/concepts/VERB_test-01_top_50.json --h5-path $dataset_dir/resnet152_rgb_max_cl-2.5.h5 --snapshot ./data/interim/didemo/best_models/smcn_40/a/2.json --concepts"
+
+
+#SMCN NO-TEF - 2.json
+    -NOUN_VERBS
+X    parameters="--test-list $dataset_dir/concepts/NOUN_VERB_test-01.json --h5-path $dataset_dir/resnet152_rgb_max_cl-2.5.h5 --snapshot ./data/interim/didemo/best_models/smcn_40/b/2.json --concepts"
+
+    -Top 50 NOUN_VERBS
+X    parameters="--test-list $dataset_dir/concepts/NOUN_VERB_test-01_top_50.json --h5-path $dataset_dir/resnet152_rgb_max_cl-2.5.h5 --snapshot ./data/interim/didemo/best_models/smcn_40/b/2.json --concepts"
+
+    -NOUN
+X    parameters="--test-list $dataset_dir/concepts/NOUN_test-01.json --h5-path $dataset_dir/resnet152_rgb_max_cl-2.5.h5 --snapshot ./data/interim/didemo/best_models/smcn_40/b/2.json --concepts"
+
+    -Top 50 NOUN
+X    parameters="--test-list $dataset_dir/concepts/NOUN_test-01_top_50.json --h5-path $dataset_dir/resnet152_rgb_max_cl-2.5.h5 --snapshot ./data/interim/didemo/best_models/smcn_40/b/2.json --concepts"
+
+X    -VERB
+    parameters="--test-list $dataset_dir/concepts/VERB_test-01.json --h5-path $dataset_dir/resnet152_rgb_max_cl-2.5.h5 --snapshot ./data/interim/didemo/best_models/smcn_40/b/2.json --concepts"
+
+X    -Top 50 VERB
+    parameters="--test-list $dataset_dir/concepts/VERB_test-01_top_50.json --h5-path $dataset_dir/resnet152_rgb_max_cl-2.5.h5 --snapshot ./data/interim/didemo/best_models/smcn_40/b/2.json --concepts"
+
+
+#MCN TEF - 2.json
+X    -NOUN_VERBS
+    parameters="--test-list $dataset_dir/concepts/NOUN_VERB_test-01.json --h5-path $dataset_dir/resnet152_rgb_max_cl-2.5.h5 --snapshot ./data/interim/didemo/best_models/mcn_41/a/2.json --concepts"
+
+X    -Top 50 NOUN_VERBS
+    parameters="--test-list $dataset_dir/concepts/NOUN_VERB_test-01_top_50.json --h5-path $dataset_dir/resnet152_rgb_max_cl-2.5.h5 --snapshot ./data/interim/didemo/best_models/mcn_41/a/2.json --concepts"
+
+X    -NOUN
+    parameters="--test-list $dataset_dir/concepts/NOUN_test-01.json --h5-path $dataset_dir/resnet152_rgb_max_cl-2.5.h5 --snapshot ./data/interim/didemo/best_models/mcn_41/a/2.json --concepts"
+
+X    -Top 50 NOUN
+    parameters="--test-list $dataset_dir/concepts/NOUN_test-01_top_50.json --h5-path $dataset_dir/resnet152_rgb_max_cl-2.5.h5 --snapshot ./data/interim/didemo/best_models/mcn_41/a/2.json --concepts"
+
+X    -VERB
+    parameters="--test-list $dataset_dir/concepts/VERB_test-01.json --h5-path $dataset_dir/resnet152_rgb_max_cl-2.5.h5 --snapshot ./data/interim/didemo/best_models/mcn_41/a/2.json --concepts"
+
+X    -Top 50 VERB
+    parameters="--test-list $dataset_dir/concepts/VERB_test-01_top_50.json --h5-path $dataset_dir/resnet152_rgb_max_cl-2.5.h5 --snapshot ./data/interim/didemo/best_models/mcn_41/a/2.json --concepts"
+    
+
+#MCN NO-TEF - 1.json
+    -NOUN_VERBS
+X    parameters="--test-list $dataset_dir/concepts/NOUN_VERB_test-01.json --h5-path $dataset_dir/resnet152_rgb_max_cl-2.5.h5 --snapshot ./data/interim/didemo/best_models/mcn_41/b/1.json --concepts"
+
+X    -Top 50 NOUN_VERBS
+    parameters="--test-list $dataset_dir/concepts/NOUN_VERB_test-01_top_50.json --h5-path $dataset_dir/resnet152_rgb_max_cl-2.5.h5 --snapshot ./data/interim/didemo/best_models/mcn_41/b/1.json --concepts"
+
+X    -NOUN
+    parameters="--test-list $dataset_dir/concepts/NOUN_test-01.json --h5-path $dataset_dir/resnet152_rgb_max_cl-2.5.h5 --snapshot ./data/interim/didemo/best_models/mcn_41/b/1.json --concepts"
+
+X    -Top 50 NOUN
+    parameters="--test-list $dataset_dir/concepts/NOUN_test-01_top_50.json --h5-path $dataset_dir/resnet152_rgb_max_cl-2.5.h5 --snapshot ./data/interim/didemo/best_models/mcn_41/b/1.json --concepts"
+
+X    -VERB
+    parameters="--test-list $dataset_dir/concepts/VERB_test-01.json --h5-path $dataset_dir/resnet152_rgb_max_cl-2.5.h5 --snapshot ./data/interim/didemo/best_models/mcn_41/b/1.json --concepts"
+
+X    -Top 50 VERB
+    parameters="--test-list $dataset_dir/concepts/VERB_test-01_top_50.json --h5-path $dataset_dir/resnet152_rgb_max_cl-2.5.h5 --snapshot ./data/interim/didemo/best_models/mcn_41/b/1.json --concepts"
+
+
+python corpus_retrieval_eval.py $parameters
+
+
+##############################################################################################################################################################################################################################################################
+
+dataset_dir=data/processed/charades-sta
+
+#SMCN TEF - 4.json
+X    -NOUN_VERBS
+    parameters="--test-list $dataset_dir/concepts/NOUN_VERB_test-01.json --h5-path $dataset_dir/resnet152_rgb_max_cl-3.h5 --snapshot ./data/interim/charades-sta/best_models/smcn_42/a/4.json --concepts"
+
+X    -Top 50 NOUN_VERBS
+    parameters="--test-list $dataset_dir/concepts/NOUN_VERB_test-01_top_50.json --h5-path $dataset_dir/resnet152_rgb_max_cl-3.h5 --snapshot ./data/interim/charades-sta/best_models/smcn_42/a/4.json --concepts"
+
+X    -NOUN
+    parameters="--test-list $dataset_dir/concepts/NOUN_test-01.json --h5-path $dataset_dir/resnet152_rgb_max_cl-3.h5 --snapshot ./data/interim/charades-sta/best_models/smcn_42/a/4.json --concepts"
+
+X    -Top 50 NOUN
+    parameters="--test-list $dataset_dir/concepts/NOUN_test-01_top_50.json --h5-path $dataset_dir/resnet152_rgb_max_cl-3.h5 --snapshot ./data/interim/charades-sta/best_models/smcn_42/a/4.json --concepts"
+
+X    -VERB
+    parameters="--test-list $dataset_dir/concepts/VERB_test-01.json --h5-path $dataset_dir/resnet152_rgb_max_cl-3.h5 --snapshot ./data/interim/charades-sta/best_models/smcn_42/a/4.json --concepts"
+
+X    -Top 50 VERB
+    parameters="--test-list $dataset_dir/concepts/VERB_test-01_top_50.json --h5-path $dataset_dir/resnet152_rgb_max_cl-3.h5 --snapshot ./data/interim/charades-sta/best_models/smcn_42/a/4.json --concepts"
+
+
+#SMCN NO-TEF - 3.json
+X    -NOUN_VERBS
+    parameters="--test-list $dataset_dir/concepts/NOUN_VERB_test-01.json --h5-path $dataset_dir/resnet152_rgb_max_cl-3.h5 --snapshot ./data/interim/charades-sta/best_models/smcn_42/b/3.json --concepts"
+
+X    -Top 50 NOUN_VERBS
+    parameters="--test-list $dataset_dir/concepts/NOUN_VERB_test-01_top_50.json --h5-path $dataset_dir/resnet152_rgb_max_cl-3.h5 --snapshot ./data/interim/charades-sta/best_models/smcn_42/b/3.json --concepts"
+
+X    -NOUN
+    parameters="--test-list $dataset_dir/concepts/NOUN_test-01.json --h5-path $dataset_dir/resnet152_rgb_max_cl-3.h5 --snapshot ./data/interim/charades-sta/best_models/smcn_42/b/3.json --concepts"
+
+X    -Top 50 NOUN
+    parameters="--test-list $dataset_dir/concepts/NOUN_test-01_top_50.json --h5-path $dataset_dir/resnet152_rgb_max_cl-3.h5 --snapshot ./data/interim/charades-sta/best_models/smcn_42/b/3.json --concepts"
+
+X    -VERB
+    parameters="--test-list $dataset_dir/concepts/VERB_test-01.json --h5-path $dataset_dir/resnet152_rgb_max_cl-3.h5 --snapshot ./data/interim/charades-sta/best_models/smcn_42/b/3.json --concepts"
+
+X    -Top 50 VERB
+    parameters="--test-list $dataset_dir/concepts/VERB_test-01_top_50.json --h5-path $dataset_dir/resnet152_rgb_max_cl-3.h5 --snapshot ./data/interim/charades-sta/best_models/smcn_42/b/3.json --concepts"
+
+
+#MCN TEF - 4.json
+X    -NOUN_VERBS
+    parameters="--test-list $dataset_dir/concepts/NOUN_VERB_test-01.json --h5-path $dataset_dir/resnet152_rgb_max_cl-3.h5 --snapshot ./data/interim/charades-sta/best_models/mcn_42/a/4.json --concepts"
+
+X    -Top 50 NOUN_VERBS
+    parameters="--test-list $dataset_dir/concepts/NOUN_VERB_test-01_top_50.json --h5-path $dataset_dir/resnet152_rgb_max_cl-3.h5 --snapshot ./data/interim/charades-sta/best_models/mcn_42/a/4.json --concepts"
+
+X    -NOUN
+    parameters="--test-list $dataset_dir/concepts/NOUN_test-01.json --h5-path $dataset_dir/resnet152_rgb_max_cl-3.h5 --snapshot ./data/interim/charades-sta/best_models/mcn_42/a/4.json --concepts"
+
+X    -Top 50 NOUN
+    parameters="--test-list $dataset_dir/concepts/NOUN_test-01_top_50.json --h5-path $dataset_dir/resnet152_rgb_max_cl-3.h5 --snapshot ./data/interim/charades-sta/best_models/mcn_42/a/4.json --concepts"
+
+X    -VERB
+    parameters="--test-list $dataset_dir/concepts/VERB_test-01.json --h5-path $dataset_dir/resnet152_rgb_max_cl-3.h5 --snapshot ./data/interim/charades-sta/best_models/mcn_42/a/4.json --concepts"
+
+X    -Top 50 VERB
+    parameters="--test-list $dataset_dir/concepts/VERB_test-01_top_50.json --h5-path $dataset_dir/resnet152_rgb_max_cl-3.h5 --snapshot ./data/interim/charades-sta/best_models/mcn_42/a/4.json --concepts"
+    
+
+#MCN NO-TEF - 3.json
+X    -NOUN_VERBS
+    parameters="--test-list $dataset_dir/concepts/NOUN_VERB_test-01.json --h5-path $dataset_dir/resnet152_rgb_max_cl-3.h5 --snapshot ./data/interim/charades-sta/best_models/mcn_42/b/3.json --concepts"
+
+X    -Top 50 NOUN_VERBS
+    parameters="--test-list $dataset_dir/concepts/NOUN_VERB_test-01_top_50.json --h5-path $dataset_dir/resnet152_rgb_max_cl-3.h5 --snapshot ./data/interim/charades-sta/best_models/mcn_42/b/3.json --concepts"
+
+X    -NOUN
+    parameters="--test-list $dataset_dir/concepts/NOUN_test-01.json --h5-path $dataset_dir/resnet152_rgb_max_cl-3.h5 --snapshot ./data/interim/charades-sta/best_models/mcn_42/b/3.json --concepts"
+
+X    -Top 50 NOUN
+    parameters="--test-list $dataset_dir/concepts/NOUN_test-01_top_50.json --h5-path $dataset_dir/resnet152_rgb_max_cl-3.h5 --snapshot ./data/interim/charades-sta/best_models/mcn_42/b/3.json --concepts"
+
+X    -VERB
+    parameters="--test-list $dataset_dir/concepts/VERB_test-01.json --h5-path $dataset_dir/resnet152_rgb_max_cl-3.h5 --snapshot ./data/interim/charades-sta/best_models/mcn_42/b/3.json --concepts"
+
+X    -Top 50 VERB
+    parameters="--test-list $dataset_dir/concepts/VERB_test-01_top_50.json --h5-path $dataset_dir/resnet152_rgb_max_cl-3.h5 --snapshot ./data/interim/charades-sta/best_models/mcn_42/b/3.json --concepts"
+
+python corpus_retrieval_eval.py $parameters
+
+
+################################################################################################################################################################################################################################################################
+
+ORACLE 
+
+develop:
+parameters="--test-list $dataset_dir/test-01.json --h5-path $dataset_dir/resnet152_rgb_max_cl-2.5.h5 --snapshot ./data/interim/didemo/SMCN/SMCN_TEF_2_5s_6.json --concepts-oracle 0 --oracle-map $dataset_dir/concepts/concepts_map_all_words.json
+
+################ DIDEMO
+
+dataset_dir=data/processed/didemo
+
+#SMCN TEF - 2.json 
+
+X    -NOUN_VERBS
+    parameters="--test-list $dataset_dir/test-01.json --h5-path $dataset_dir/resnet152_rgb_max_cl-2.5.h5 --snapshot ./data/interim/didemo/best_models/smcn_40/a/2.json --concepts-oracle 0 --oracle-map $dataset_dir/concepts/concepts_map_all_words.json"
+
+X    -NOUN
+    parameters="--test-list $dataset_dir/test-01.json --h5-path $dataset_dir/resnet152_rgb_max_cl-2.5.h5 --snapshot ./data/interim/didemo/best_models/smcn_40/a/2.json --concepts-oracle 1 --oracle-map $dataset_dir/concepts/concepts_map_all_words.json"
+
+X    -VERB    
+    parameters="--test-list $dataset_dir/test-01.json --h5-path $dataset_dir/resnet152_rgb_max_cl-2.5.h5 --snapshot ./data/interim/didemo/best_models/smcn_40/a/2.json --concepts-oracle 2 --oracle-map $dataset_dir/concepts/concepts_map_all_words.json"
+
+
+#SMCN NO-TEF - 2.json 
+
+X    -NOUN_VERBS
+    parameters="--test-list $dataset_dir/test-01.json --h5-path $dataset_dir/resnet152_rgb_max_cl-2.5.h5 --snapshot ./data/interim/didemo/best_models/smcn_40/b/2.json  --concepts-oracle 0 --oracle-map $dataset_dir/concepts/concepts_map_all_words.json"
+
+X    -NOUN
+    parameters="--test-list $dataset_dir/test-01.json --h5-path $dataset_dir/resnet152_rgb_max_cl-2.5.h5 --snapshot ./data/interim/didemo/best_models/smcn_40/b/2.json  --concepts-oracle 1 --oracle-map $dataset_dir/concepts/concepts_map_all_words.json"
+
+X    -VERB    
+    parameters="--test-list $dataset_dir/test-01.json --h5-path $dataset_dir/resnet152_rgb_max_cl-2.5.h5 --snapshot ./data/interim/didemo/best_models/smcn_40/b/2.json  --concepts-oracle 2 --oracle-map $dataset_dir/concepts/concepts_map_all_words.json"
+
+
+#MCN TEF - 2.json
+
+X    -NOUN_VERBS
+    parameters="--test-list $dataset_dir/test-01.json --h5-path $dataset_dir/resnet152_rgb_max_cl-2.5.h5 --snapshot ./data/interim/didemo/best_models/mcn_41/a/2.json  --concepts-oracle 0 --oracle-map $dataset_dir/concepts/concepts_map_all_words.json"
+
+X    -NOUN
+    parameters="--test-list $dataset_dir/test-01.json --h5-path $dataset_dir/resnet152_rgb_max_cl-2.5.h5 --snapshot ./data/interim/didemo/best_models/mcn_41/a/2.json  --concepts-oracle 1 --oracle-map $dataset_dir/concepts/concepts_map_all_words.json"
+
+X    -VERB    
+    parameters="--test-list $dataset_dir/test-01.json --h5-path $dataset_dir/resnet152_rgb_max_cl-2.5.h5 --snapshot ./data/interim/didemo/best_models/mcn_41/a/2.json  --concepts-oracle 2 --oracle-map $dataset_dir/concepts/concepts_map_all_words.json"
+
+
+#MCN NO-TEF - 1.json
+
+X    -NOUN_VERBS
+    parameters="--test-list $dataset_dir/test-01.json --h5-path $dataset_dir/resnet152_rgb_max_cl-2.5.h5 --snapshot ./data/interim/didemo/best_models/mcn_41/b/1.json --concepts-oracle 0 --oracle-map $dataset_dir/concepts/concepts_map_all_words.json"
+
+X    -NOUN
+    parameters="--test-list $dataset_dir/test-01.json --h5-path $dataset_dir/resnet152_rgb_max_cl-2.5.h5 --snapshot ./data/interim/didemo/best_models/mcn_41/b/1.json --concepts-oracle 1 --oracle-map $dataset_dir/concepts/concepts_map_all_words.json"
+
+X    -VERB    
+    parameters="--test-list $dataset_dir/test-01.json --h5-path $dataset_dir/resnet152_rgb_max_cl-2.5.h5 --snapshot ./data/interim/didemo/best_models/mcn_41/b/1.json --concepts-oracle 2 --oracle-map $dataset_dir/concepts/concepts_map_all_words.json"
+
+#############################################
+#SMCN TEF - 2.json 
+
+X    -Top 50 NOUN_VERBS
+    parameters="--test-list $dataset_dir/test-01.json --h5-path $dataset_dir/resnet152_rgb_max_cl-2.5.h5 --snapshot ./data/interim/didemo/best_models/smcn_40/a/2.json --concepts-oracle 0 --oracle-map $dataset_dir/concepts/concepts_map_NOUN_VERB_top_50.json"
+
+X    -Top 50 NOUN
+    parameters="--test-list $dataset_dir/test-01.json --h5-path $dataset_dir/resnet152_rgb_max_cl-2.5.h5 --snapshot ./data/interim/didemo/best_models/smcn_40/a/2.json --concepts-oracle 1 --oracle-map $dataset_dir/concepts/concepts_map_NOUN_top_50.json"
+
+X    -Top 50 VERB    
+    parameters="--test-list $dataset_dir/test-01.json --h5-path $dataset_dir/resnet152_rgb_max_cl-2.5.h5 --snapshot ./data/interim/didemo/best_models/smcn_40/a/2.json --concepts-oracle 2 --oracle-map $dataset_dir/concepts/concepts_map_VERB_top_50.json"
+
+
+#SMCN NO-TEF - 2.json 
+
+X    -Top 50 NOUN_VERBS
+    parameters="--test-list $dataset_dir/test-01.json --h5-path $dataset_dir/resnet152_rgb_max_cl-2.5.h5 --snapshot ./data/interim/didemo/best_models/smcn_40/b/2.json  --concepts-oracle 0 --oracle-map $dataset_dir/concepts/concepts_map_NOUN_VERB_top_50.json"
+
+X    -Top 50 NOUN
+    parameters="--test-list $dataset_dir/test-01.json --h5-path $dataset_dir/resnet152_rgb_max_cl-2.5.h5 --snapshot ./data/interim/didemo/best_models/smcn_40/b/2.json  --concepts-oracle 1 --oracle-map $dataset_dir/concepts/concepts_map_NOUN_top_50.json"
+
+X    -Top 50 VERB    
+    parameters="--test-list $dataset_dir/test-01.json --h5-path $dataset_dir/resnet152_rgb_max_cl-2.5.h5 --snapshot ./data/interim/didemo/best_models/smcn_40/b/2.json  --concepts-oracle 2 --oracle-map $dataset_dir/concepts/concepts_map_VERB_top_50.json"
+
+
+#MCN TEF - 2.json
+
+X    -Top 50 NOUN_VERBS
+    parameters="--test-list $dataset_dir/test-01.json --h5-path $dataset_dir/resnet152_rgb_max_cl-2.5.h5 --snapshot ./data/interim/didemo/best_models/mcn_41/a/2.json  --concepts-oracle 0 --oracle-map $dataset_dir/concepts/concepts_map_NOUN_VERB_top_50.json"
+
+X    -Top 50 NOUN
+    parameters="--test-list $dataset_dir/test-01.json --h5-path $dataset_dir/resnet152_rgb_max_cl-2.5.h5 --snapshot ./data/interim/didemo/best_models/mcn_41/a/2.json  --concepts-oracle 1 --oracle-map $dataset_dir/concepts/concepts_map_NOUN_top_50.json"
+
+X    -Top 50 VERB    
+    parameters="--test-list $dataset_dir/test-01.json --h5-path $dataset_dir/resnet152_rgb_max_cl-2.5.h5 --snapshot ./data/interim/didemo/best_models/mcn_41/a/2.json  --concepts-oracle 2 --oracle-map $dataset_dir/concepts/concepts_map_VERB_top_50.json"
+
+
+#MCN NO-TEF - 1.json
+
+X    -Top 50 NOUN_VERBS
+    parameters="--test-list $dataset_dir/test-01.json --h5-path $dataset_dir/resnet152_rgb_max_cl-2.5.h5 --snapshot ./data/interim/didemo/best_models/mcn_41/b/1.json --concepts-oracle 0 --oracle-map $dataset_dir/concepts/concepts_map_NOUN_VERB_top_50.json"
+
+X    -Top 50 NOUN
+    parameters="--test-list $dataset_dir/test-01.json --h5-path $dataset_dir/resnet152_rgb_max_cl-2.5.h5 --snapshot ./data/interim/didemo/best_models/mcn_41/b/1.json --concepts-oracle 1 --oracle-map $dataset_dir/concepts/concepts_map_NOUN_top_50.json"
+
+X    -Top 50 VERB    
+    parameters="--test-list $dataset_dir/test-01.json --h5-path $dataset_dir/resnet152_rgb_max_cl-2.5.h5 --snapshot ./data/interim/didemo/best_models/mcn_41/b/1.json --concepts-oracle 2 --oracle-map $dataset_dir/concepts/concepts_map_VERB_top_50.json"
+
+
+
+python corpus_retrieval_eval.py $parameters
+
+
+
+################ CHARADES-STA
+
+dataset_dir=data/processed/charades-sta
+
+#SMCN TEF - 4.json
+
+X    -NOUN_VERBS
+    parameters="--test-list $dataset_dir/test-01.json --h5-path $dataset_dir/resnet152_rgb_max_cl-3.h5 --snapshot ./data/interim/charades-sta/best_models/smcn_42/a/4.json --concepts-oracle 0 --oracle-map $dataset_dir/concepts/concepts_map_all_words.json"
+
+    -NOUN
+X    parameters="--test-list $dataset_dir/test-01.json --h5-path $dataset_dir/resnet152_rgb_max_cl-3.h5 --snapshot ./data/interim/charades-sta/best_models/smcn_42/a/4.json --concepts-oracle 1 --oracle-map $dataset_dir/concepts/concepts_map_all_words.json"
+
+X    -VERB    
+    parameters="--test-list $dataset_dir/test-01.json --h5-path $dataset_dir/resnet152_rgb_max_cl-3.h5 --snapshot ./data/interim/charades-sta/best_models/smcn_42/a/4.json --concepts-oracle 2 --oracle-map $dataset_dir/concepts/concepts_map_all_words.json"
+
+
+#SMCN NO-TEF - 3.json
+
+X    -NOUN_VERBS
+    parameters="--test-list $dataset_dir/test-01.json --h5-path $dataset_dir/resnet152_rgb_max_cl-3.h5 --snapshot ./data/interim/charades-sta/best_models/smcn_42/b/3.json --concepts-oracle 0 --oracle-map $dataset_dir/concepts/concepts_map_all_words.json"
+
+    -NOUN
+X    parameters="--test-list $dataset_dir/test-01.json --h5-path $dataset_dir/resnet152_rgb_max_cl-3.h5 --snapshot ./data/interim/charades-sta/best_models/smcn_42/b/3.json --concepts-oracle 1 --oracle-map $dataset_dir/concepts/concepts_map_all_words.json"
+
+X    -VERB    
+    parameters="--test-list $dataset_dir/test-01.json --h5-path $dataset_dir/resnet152_rgb_max_cl-3.h5 --snapshot ./data/interim/charades-sta/best_models/smcn_42/b/3.json --concepts-oracle 2 --oracle-map $dataset_dir/concepts/concepts_map_all_words.json"
+
+
+#MCN TEF - 4.json
+
+X    -NOUN_VERBS
+    parameters="--test-list $dataset_dir/test-01.json --h5-path $dataset_dir/resnet152_rgb_max_cl-3.h5 --snapshot ./data/interim/charades-sta/best_models/mcn_42/a/4.json --concepts-oracle 0 --oracle-map $dataset_dir/concepts/concepts_map_all_words.json"
+
+    -NOUN
+X    parameters="--test-list $dataset_dir/test-01.json --h5-path $dataset_dir/resnet152_rgb_max_cl-3.h5 --snapshot ./data/interim/charades-sta/best_models/mcn_42/a/4.json --concepts-oracle 1 --oracle-map $dataset_dir/concepts/concepts_map_all_words.json"
+
+X    -VERB    
+    parameters="--test-list $dataset_dir/test-01.json --h5-path $dataset_dir/resnet152_rgb_max_cl-3.h5 --snapshot ./data/interim/charades-sta/best_models/mcn_42/a/4.json --concepts-oracle 2 --oracle-map $dataset_dir/concepts/concepts_map_all_words.json"
+
+
+#MCN NO-TEF - 3.json
+
+X    -NOUN_VERBS
+    parameters="--test-list $dataset_dir/test-01.json --h5-path $dataset_dir/resnet152_rgb_max_cl-3.h5 --snapshot ./data/interim/charades-sta/best_models/mcn_42/b/3.json --concepts-oracle 0 --oracle-map $dataset_dir/concepts/concepts_map_all_words.json"
+
+X    -NOUN
+    parameters="--test-list $dataset_dir/test-01.json --h5-path $dataset_dir/resnet152_rgb_max_cl-3.h5 --snapshot ./data/interim/charades-sta/best_models/mcn_42/b/3.json --concepts-oracle 1 --oracle-map $dataset_dir/concepts/concepts_map_all_words.json"
+
+X    -VERB    
+    parameters="--test-list $dataset_dir/test-01.json --h5-path $dataset_dir/resnet152_rgb_max_cl-3.h5 --snapshot ./data/interim/charades-sta/best_models/mcn_42/b/3.json --concepts-oracle 2 --oracle-map $dataset_dir/concepts/concepts_map_all_words.json"
+
+##################
+
+#SMCN TEF - 4.json
+
+X    -Top 50 NOUN_VERBS
+    parameters="--test-list $dataset_dir/test-01.json --h5-path $dataset_dir/resnet152_rgb_max_cl-3.h5 --snapshot ./data/interim/charades-sta/best_models/smcn_42/a/4.json --concepts-oracle 0 --oracle-map $dataset_dir/concepts/concepts_map_NOUN_VERB_top_50.json"
+
+X    -Top 50 NOUN
+    parameters="--test-list $dataset_dir/test-01.json --h5-path $dataset_dir/resnet152_rgb_max_cl-3.h5 --snapshot ./data/interim/charades-sta/best_models/smcn_42/a/4.json --concepts-oracle 1 --oracle-map $dataset_dir/concepts/concepts_map_NOUN_top_50.json"
+
+X    -Top 50 VERB    
+    parameters="--test-list $dataset_dir/test-01.json --h5-path $dataset_dir/resnet152_rgb_max_cl-3.h5 --snapshot ./data/interim/charades-sta/best_models/smcn_42/a/4.json --concepts-oracle 2 --oracle-map $dataset_dir/concepts/concepts_map_VERB_top_50.json"
+
+
+#SMCN NO-TEF - 3.json
+
+X    -Top 50 NOUN_VERBS
+    parameters="--test-list $dataset_dir/test-01.json --h5-path $dataset_dir/resnet152_rgb_max_cl-3.h5 --snapshot ./data/interim/charades-sta/best_models/smcn_42/b/3.json --concepts-oracle 0 --oracle-map $dataset_dir/concepts/concepts_map_NOUN_VERB_top_50.json"
+
+X    -Top 50 NOUN
+    parameters="--test-list $dataset_dir/test-01.json --h5-path $dataset_dir/resnet152_rgb_max_cl-3.h5 --snapshot ./data/interim/charades-sta/best_models/smcn_42/b/3.json --concepts-oracle 1 --oracle-map $dataset_dir/concepts/concepts_map_NOUN_top_50.json"
+
+X    -Top 50 VERB    
+    parameters="--test-list $dataset_dir/test-01.json --h5-path $dataset_dir/resnet152_rgb_max_cl-3.h5 --snapshot ./data/interim/charades-sta/best_models/smcn_42/b/3.json --concepts-oracle 2 --oracle-map $dataset_dir/concepts/concepts_map_VERB_top_50.json"
+
+
+#MCN TEF - 4.json
+
+X    -Top 50 NOUN_VERBS
+    parameters="--test-list $dataset_dir/test-01.json --h5-path $dataset_dir/resnet152_rgb_max_cl-3.h5 --snapshot ./data/interim/charades-sta/best_models/mcn_42/a/4.json --concepts-oracle 0 --oracle-map $dataset_dir/concepts/concepts_map_NOUN_VERB_top_50.json"
+
+X    -Top 50 NOUN
+    parameters="--test-list $dataset_dir/test-01.json --h5-path $dataset_dir/resnet152_rgb_max_cl-3.h5 --snapshot ./data/interim/charades-sta/best_models/mcn_42/a/4.json --concepts-oracle 1 --oracle-map $dataset_dir/concepts/concepts_map_NOUN_top_50.json"
+
+X    -Top 50 VERB    
+    parameters="--test-list $dataset_dir/test-01.json --h5-path $dataset_dir/resnet152_rgb_max_cl-3.h5 --snapshot ./data/interim/charades-sta/best_models/mcn_42/a/4.json --concepts-oracle 2 --oracle-map $dataset_dir/concepts/concepts_map_VERB_top_50.json"
+
+
+#MCN NO-TEF - 3.json
+
+X    -Top 50 NOUN_VERBS
+    parameters="--test-list $dataset_dir/test-01.json --h5-path $dataset_dir/resnet152_rgb_max_cl-3.h5 --snapshot ./data/interim/charades-sta/best_models/mcn_42/b/3.json --concepts-oracle 0 --oracle-map $dataset_dir/concepts/concepts_map_NOUN_VERB_top_50.json"
+
+X    -Top 50 NOUN
+    parameters="--test-list $dataset_dir/test-01.json --h5-path $dataset_dir/resnet152_rgb_max_cl-3.h5 --snapshot ./data/interim/charades-sta/best_models/mcn_42/b/3.json --concepts-oracle 1 --oracle-map $dataset_dir/concepts/concepts_map_NOUN_top_50.json"
+
+X    -Top 50 VERB    
+    parameters="--test-list $dataset_dir/test-01.json --h5-path $dataset_dir/resnet152_rgb_max_cl-3.h5 --snapshot ./data/interim/charades-sta/best_models/mcn_42/b/3.json --concepts-oracle 2 --oracle-map $dataset_dir/concepts/concepts_map_VERB_top_50.json"
+
+python corpus_retrieval_eval.py $parameters
+
+
+
+
+
+
+
+
+
+################################################################################################################################################################################################################################################################
+
+
+BERT
+
+DIDEMO:
+
+dataset_dir=data/processed/didemo
+data_split="--train-list $dataset_dir/train-01.json --test-list $dataset_dir/val-01.json --val-list $dataset_dir/test-01.json --h5-path $dataset_dir/resnet152_rgb_max_cl-2.5.h5"
+bert_parameters="--language-model bert --bert-name bert-base-uncased --bert-feat-comb 0 --bert-load-precomputed-features "
+parameters="--arch SMCN --proposal-interface DidemoICCV17SS --nms-threshold 1.0 --original-setup --proposals-in-train --negative-sampling-iou 0.99 --eval-on-epoch 30 $data_split $bert_parameters"
+
+python train.py --gpu-id 0 $parameters
+
+
+
+rsync -rltD --progress 10.68.74.30:/home/soldanm/Documents/Projects/CVPR2020/moments-retrieval/data/processed/didemo/bert/bert_large_uncased_comb_mode_2.json /home/soldanm/projects/CVPR2020/moments-retrieval/data/processed/didemo/bert/--
+
+
+
+
+
+################################################################################################################################################################################################################################################################
+
+
+OBJECT DETECTION ORACLE FOR CORPUS RETRIEVAL
+
+
+dataset_dir=data/processed/didemo
+
+
+#SMCN TEF - 2.json  
+
+    parameters="--test-list $dataset_dir/test-01.json --h5-path $dataset_dir/resnet152_rgb_max_cl-2.5.h5 --snapshot ./data/interim/didemo/best_models/smcn_40/a/2.json --concepts-oracle 1 --obj-detection-path $dataset_dir/didemo_obj_detection.json --oracle-map $dataset_dir/concepts/concepts_map_all_words.json "
+
+
+#SMCN NO-TEF - 2.json
+
+    parameters="--test-list $dataset_dir/test-01.json --h5-path $dataset_dir/resnet152_rgb_max_cl-2.5.h5 --snapshot ./data/interim/didemo/best_models/smcn_40/b/2.json --concepts-oracle 1 --obj-detection-path $dataset_dir/didemo_obj_detection.json --oracle-map $dataset_dir/concepts/concepts_map_all_words.json"
+
+
+#MCN TEF - 2.json
+
+    parameters="--test-list $dataset_dir/test-01.json --h5-path $dataset_dir/resnet152_rgb_max_cl-5.h5 --snapshot ./data/interim/didemo/best_models/mcn_41/a/2.json --concepts-oracle 1 --obj-detection-path $dataset_dir/didemo_obj_detection.json --oracle-map $dataset_dir/concepts/concepts_map_all_words.json"
+
+
+#MCN NO-TEF - 1.json
+
+    parameters="--test-list $dataset_dir/test-01.json --h5-path $dataset_dir/resnet152_rgb_max_cl-5.h5 --snapshot ./data/interim/didemo/best_models/mcn_41/b/1.json --concepts-oracle 1 --obj-detection-path $dataset_dir/didemo_obj_detection.json --oracle-map $dataset_dir/concepts/concepts_map_all_words.json"
+
+
+python corpus_retrieval_eval.py $parameters
+
+
+#################################################
+
+
+dataset_dir=data/processed/charades-sta
+
+#SMCN TEF - 4.json
+
+    parameters="--test-list $dataset_dir/test-01.json --h5-path $dataset_dir/resnet152_rgb_max_cl-3.h5 --snapshot ./data/interim/charades-sta/best_models/smcn_42/a/4.json --concepts-oracle 1 --obj-detection-path $dataset_dir/charades_sta_obj_detection.json --oracle-map $dataset_dir/concepts/concepts_map_all_words.json"
+
+#SMCN NO-TEF - 3.json
+
+    parameters="--test-list $dataset_dir/test-01.json --h5-path $dataset_dir/resnet152_rgb_max_cl-3.h5 --snapshot ./data/interim/charades-sta/best_models/smcn_42/b/3.json --concepts-oracle 1 --obj-detection-path $dataset_dir/charades_sta_obj_detection.json --oracle-map $dataset_dir/concepts/concepts_map_all_words.json"
+
+
+#MCN TEF - 4.json
+
+    parameters="--test-list $dataset_dir/test-01.json --h5-path $dataset_dir/resnet152_rgb_max_cl-3.h5 --snapshot ./data/interim/charades-sta/best_models/mcn_42/a/4.json --concepts-oracle 1 --obj-detection-path $dataset_dir/charades_sta_obj_detection.json --oracle-map $dataset_dir/concepts/concepts_map_all_words.json"
+
+
+#MCN NO-TEF - 3.json
+
+    parameters="--test-list $dataset_dir/test-01.json --h5-path $dataset_dir/resnet152_rgb_max_cl-3.h5 --snapshot ./data/interim/charades-sta/best_models/mcn_42/b/3.json --concepts-oracle 1 --obj-detection-path $dataset_dir/charades_sta_obj_detection.json --oracle-map $dataset_dir/concepts/concepts_map_all_words.json"
+
+
+python corpus_retrieval_eval.py $parameters
+
+
+
+#############################################################################################################################################################################################################################################################
+STANDARD CORPUS
+
+
+dataset_dir=data/processed/didemo
+
+
+#SMCN TEF - 2.json  
+
+    parameters="--test-list $dataset_dir/test-01.json --h5-path $dataset_dir/resnet152_rgb_max_cl-2.5.h5 --snapshot ./data/interim/didemo/best_models/smcn_40/a/2.json"
+
+
+#SMCN NO-TEF - 2.json
+
+    parameters="--test-list $dataset_dir/test-01.json --h5-path $dataset_dir/resnet152_rgb_max_cl-2.5.h5 --snapshot ./data/interim/didemo/best_models/smcn_40/b/2.json"
+
+
+#MCN TEF - 2.json
+
+    parameters="--test-list $dataset_dir/test-01.json --h5-path $dataset_dir/resnet152_rgb_max_cl-5.h5 --snapshot ./data/interim/didemo/best_models/mcn_41/a/2.json"
+
+
+#MCN NO-TEF - 1.json
+
+    parameters="--test-list $dataset_dir/test-01.json --h5-path $dataset_dir/resnet152_rgb_max_cl-5.h5 --snapshot ./data/interim/didemo/best_models/mcn_41/b/1.json"
+
+
+python corpus_retrieval_eval.py $parameters
+
+
+#################################################
+
+
+dataset_dir=data/processed/charades-sta
+
+#SMCN TEF - 4.json
+
+    parameters="--test-list $dataset_dir/test-01.json --h5-path $dataset_dir/resnet152_rgb_max_cl-3.h5 --snapshot ./data/interim/charades-sta/best_models/smcn_42/a/4.json"
+
+#SMCN NO-TEF - 3.json
+
+    parameters="--test-list $dataset_dir/test-01.json --h5-path $dataset_dir/resnet152_rgb_max_cl-3.h5 --snapshot ./data/interim/charades-sta/best_models/smcn_42/b/3.json"
+
+
+#MCN TEF - 4.json
+
+    parameters="--test-list $dataset_dir/test-01.json --h5-path $dataset_dir/resnet152_rgb_max_cl-3.h5 --snapshot ./data/interim/charades-sta/best_models/mcn_42/a/4.json"
+
+
+#MCN NO-TEF - 3.json
+
+    parameters="--test-list $dataset_dir/test-01.json --h5-path $dataset_dir/resnet152_rgb_max_cl-3.h5 --snapshot ./data/interim/charades-sta/best_models/mcn_42/b/3.json"
+
+
+python corpus_retrieval_eval.py $parameters
+
+
+
+
+
+
+

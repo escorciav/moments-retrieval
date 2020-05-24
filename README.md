@@ -91,7 +91,7 @@ parameters="--arch STAL
 --scales 2 3 4 5 6
 --ground-truth-rate 1.0
 --nms-threshold     1.0
---negative-sampling-iou 0.35
+--negative-sampling-iou 0.99
 --proposal-interface DidemoICCV17SS
 --logfile $interim/logfile_name"
 

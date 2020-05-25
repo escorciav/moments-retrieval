@@ -254,9 +254,6 @@ def main(args):
         fid.close()
 
     logging.info('Summarizing results')
-    if len(judge.number_of_reranked_clips_per_query) > 0:
-        avg = np.mean(np.asarray(judge.number_of_reranked_clips_per_query))
-        logging.info(f'Average number of reranked moments per query: {avg}')
     num_instances_retrieved = np.array(num_instances_retrieved)
     logging.info(f'Number of queries: {len(judge.map_query)}')
     logging.info(f'Number of proposals: {engine.num_moments}')

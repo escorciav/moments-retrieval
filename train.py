@@ -577,7 +577,7 @@ def setup_dataset(args):
 
     if args.arch != 'MCN':
         max_clips = max([v['dataset'].get_max_clips()
-                        for k,v in datasets.items() if v is not None])
+                         for k, v in datasets.items() if v is not None])
         for _,v in datasets.items():
             if v is not None:
                 v['dataset'].set_padding_size(max_clips)

@@ -635,6 +635,7 @@ class UntrimmedMCN(UntrimmedBasedMCNStyle):
     def __init__(self, *args, **kwargs):
         super(UntrimmedMCN, self).__init__(*args, **kwargs)
         self.visual_interface = VisualRepresentationMCN(context=self.context)
+        self.set_max_clips()
         self._set_feat_dim()
 
     @property
@@ -688,6 +689,22 @@ class UntrimmedMCN(UntrimmedBasedMCNStyle):
             feature_collection[key] = self.tef_interface(
                 moment_loc, video_duration, clip_length=self.clip_length)
         return feature_collection
+
+    def set_max_clips(self):
+        '''
+        Get maximum duration of moments for specific data split
+        '''
+        times = []
+        for m in self.metadata:
+            times.extend([t for t in m['times']])
+        moments_lenghts = []
+        for t in times:
+            start = int(t[0] // self.clip_length)
+            end = int((t[1]) // self.clip_length)
+            moments_lenghts.append(end - start + 1)
+
+        clips_max_scale = max(self.proposals_interface.scales) * 2
+        self.max_clips = max(max(moments_lenghts), clips_max_scale)
 
 
 class UntrimmedSMCN(UntrimmedBasedMCNStyle):

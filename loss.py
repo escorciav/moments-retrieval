@@ -23,7 +23,7 @@ class IntraInterMarginLoss(nn.Module):
             intra_loss += intra_loss_
             inter_loss += inter_loss_
             loss += (self.w_intra * intra_loss_.mean() +
-                    self.w_inter * inter_loss_.mean())
+                     self.w_inter * inter_loss_.mean())
         return loss, intra_loss, inter_loss
 
 if __name__ == '__main__':

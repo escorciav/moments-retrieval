@@ -87,7 +87,7 @@ def main(args):
     setup_logging(args)
 
     logging.info('Corpus Retrieval Evaluation for CAL/MCN')
-    logging.info(f'Git revision hash: {get_git_revision_hash()}')
+    # logging.info(f'Git revision hash: {get_git_revision_hash()}')
     load_hyperparameters(args)
     logging.info(args)
 

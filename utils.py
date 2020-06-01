@@ -335,8 +335,11 @@ class MutableSampler(Sampler):
 
 def get_git_revision_hash():
     "credits: https://stackoverflow.com/a/21901260"
-    return subprocess.check_output(['git', 'rev-parse', 'HEAD'],
-                                   universal_newlines=True).strip()
+    try:
+        return subprocess.check_output(['git', 'rev-parse', 'HEAD'],
+                                       universal_newlines=True).strip()
+    except:
+        return "Not git hash found, did you clone the repo properly?"
 
 
 def jsons_to_dataframe(wilcard):

@@ -37,13 +37,17 @@ parser.add_argument('--snapshot', type=Path, required=True, nargs='+',
                     help='JSON files of model')
 parser.add_argument('--snapshot-tags', nargs='+',
                     help='Pair model to a given h5-path')
-parser.add_argument('--batch-size-chamfer',  type=int, default=10000,
+parser.add_argument('--batch-size-stal',  type=int, default=10000,
                     help='Batch size to compute chamfer distance')
 parser.add_argument('--gpu-id', type=int, default=-1, help='GPU device')
 # Evaluation parameters
 parser.add_argument('--topk', nargs='+', type=int,
                     default=[1, 10, 100, 1000, 10000],
                     help='top-k values to compute')
+# Oracle
+parser.add_argument('--concepts-oracle', type=int, choices=[0,1,2],
+                    help='Index to select which concepts to compute:\n0-Nouns and Verbs \n1-Nouns \n2-Verbs')
+parser.add_argument('--oracle-map', type=Path, help='JSON that map concepts to videos')
 # Extra
 parser.add_argument('--greedy', type=int, default=0,
                     help='Top-k seed clips for greedy search over clips')
@@ -98,12 +102,16 @@ def main(args):
         args.engine = 'MomentRetrievalFromProposalsTable'
     elif args.arch == 'SMCN':
         args.dataset = 'UntrimmedSMCN'
+        if args.concepts:
+            args.dataset = 'UntrimmedCoceptsSMCN'
+
         args.engine = 'MomentRetrievalFromClipBasedProposalsTable'
         if args.new:
              args.engine = 'MomentRetrievalFromClipBasedProposalsTableNew'
         if args.greedy > 0:
             args.engine = 'GreedyMomentRetrievalFromClipBasedProposalsTable'
             engine_prm['topk'] = args.greedy
+
     elif args.arch == 'STAL':
         eval_flag = False   # needed to get right data in indexing. We want the padded data
         args.dataset = 'UntrimmedSTAL'
@@ -130,7 +138,9 @@ def main(args):
         context=args.context, debug=args.debug, eval=eval_flag,
         no_visual=dataset_novisual,
         proposals_interface=proposals_interface,
-        clip_length=clip_length
+        clip_length=clip_length,
+        oracle=args.concepts_oracle,
+        oracle_map=args.oracle_map
     )
     dataset = dataset_untrimmed.__dict__[args.dataset](**dataset_setup)
     if args.arch == 'SMCN':
@@ -142,11 +152,11 @@ def main(args):
 
     logging.info('Setting up models')
     args.device = device_name = 'cpu'
-    if args.gpu_id >= 0 and torch.cuda.is_available() and args.batch_size_chamfer > 0:
+    if args.gpu_id >= 0 and torch.cuda.is_available() and args.batch_size_stal > 0:
         args.device = torch.device(f'cuda:{args.gpu_id}')
         device_name = torch.cuda.get_device_name(args.gpu_id)
     else:
-        args.batch_size_chamfer = 0
+        args.batch_size_stal = 0
 
     models_dict = {}
     if len(args.snapshot)== 1 and len(args.snapshot_tags) > 1:
@@ -206,11 +216,15 @@ def main(args):
         result_per_query = engine.query(
             description = query_metadata['annotation_id'],
             return_indices=args.dump_per_instance_results,
-            batch_size=args.batch_size_chamfer)
+            batch_size=args.batch_size_stal)
         if args.dump_per_instance_results:
             vid_indices, segments, proposals_ind, scores = result_per_query
         else:
             vid_indices, segments, scores = result_per_query
+
+        if type(args.concepts_oracle) == int:
+            vid_indices, segments = judge.oracle_concept_reranking(query_metadata,
+                                         vid_indices, segments, dataset.reverse_map)
 
         judge.add_single_predicted_moment_info(
             query_metadata, vid_indices, segments, max_rank=engine.num_moments)

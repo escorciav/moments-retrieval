@@ -160,6 +160,25 @@ class CorpusVideoMomentRetrievalEval():
         # Lock query-id and record index for debugging
         self.map_query[query_id] = ind
 
+    def oracle_concept_reranking(self, query_info, vid_indices, pred_segments, map):
+        '''
+        The function rerankes the moments such that we have at the top the moments
+        related to the concepts present in the query
+        '''
+        push_up_indices, other_indices = [], []
+        query_tokens = query_info["concepts"]
+        for i,v_id in enumerate(vid_indices):
+            video_concepts = map[int(v_id)]
+            if any(item in query_tokens for item in video_concepts):
+                push_up_indices.append(i)
+            else:
+                other_indices.append(i)
+        indices = push_up_indices + other_indices
+        # Rerank
+        new_vid_indices   = torch.stack([vid_indices[i] for i in indices])
+        new_pred_segments = torch.stack([pred_segments[i] for i in indices])
+        return new_vid_indices, new_pred_segments
+
     def evaluate(self):
         "Compute MedRank@IOU and R@IOU,k accross the dataset"
         if self.performance is not None:

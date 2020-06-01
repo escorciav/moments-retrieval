@@ -6,6 +6,7 @@ from enum import IntEnum, unique
 import h5py
 import numpy as np
 import spacy
+import en_core_web_sm
 from scipy.signal import convolve
 from torch.utils.data import Dataset
 
@@ -18,6 +19,7 @@ LANGUAGE = ['glove']
 
 import json
 import time as time
+
 
 
 class LanguageRepresentation(object):
@@ -89,6 +91,9 @@ class UntrimmedBase(Dataset):
         self.metadata_per_video = None
         self._video_list = None
         self.clip_length = None
+        self.oracle = None          # Boolean to enable oracle
+        self.oracle_map = None      # From concepts to videos
+        self.reverse_map = None     # From videos to concepts
         self.language_features = {}
         self.objects_detection = {}
         self.map_concepts_to_obj_class = {}
@@ -203,6 +208,11 @@ class UntrimmedBase(Dataset):
             self.metadata_per_video[video_id]['moment_indices'].append(i)
             # `time` field may get deprecated
             self.metadata[i]['time'] = None
+            if type(self.oracle) == int and self.oracle_map:
+                tokens =  self.nlp(self.metadata[i]['description'])
+                self.metadata[i]['concepts'] = [t.lemma_ for t in tokens
+                                    if t.pos_ in WORD_TYPE[self.oracle]]
+                self._update_oracle_map(self.metadata[i])
 
     def _update_metadata_per_video(self):
         """Add keys to items in attribute:metadata_per_video
@@ -226,6 +236,38 @@ class UntrimmedBase(Dataset):
     def _video_num_clips(self, video_id):
         "Return number of clips of a given video"
         return self.metadata_per_video[video_id]['num_clips']
+
+    def _setup_map(self, filename):
+        "Read JSON file with the mapping concept to videos"
+        with open(filename, 'r') as fid:
+            self.oracle_map = json.load(fid)
+
+    def _create_reverse_map(self):
+        concepts = list(self.oracle_map.keys())
+        reverse_map = {v:[] for v in range(len(self.metadata_per_video.keys()))}
+        for k,v_id_list in self.oracle_map.items():
+            for v_id in v_id_list:
+                reverse_map[v_id].append(k)
+        #reverse_map = {k:c for k,c in reverse_map.items() if c} # pruning
+        return reverse_map
+
+    def _update_oracle_map(self, metadata):
+        concepts = metadata['concepts']
+        times = metadata['times']
+        video_index = metadata['video_index']
+        list_of_available_concepts = list(self.oracle_map.keys())
+        for c in concepts:
+            if c in list_of_available_concepts:
+                self.oracle_map[c].append(video_index)
+
+    def _prune_oracle_map(self):
+        '''
+        Remove all concept entries that are not associated with any video in
+        the considered split of the dataset.
+
+        This speeds up the search in the dictionary.
+        '''
+        self.oracle_map = {k:v for k,v in self.oracle_map.items() if v}
 
     def __len__(self):
         return len(self.metadata)
@@ -251,10 +293,17 @@ class UntrimmedBasedMCNStyle(UntrimmedBase):
                  max_words=50, eval=False, context=True,
                  proposals_interface=None, no_visual=False, sampling_iou=0.35,
                  ground_truth_rate=1, prob_nproposal_nextto=-1,
-                 clip_length=None, h5_nis=None, nis_k=None,
-                 debug=False, language_model='glove'):
+                 oracle=None, oracle_map=None, clip_length=None, h5_nis=None,
+                 nis_k=None, debug=False, language_model='glove'):
         super(UntrimmedBasedMCNStyle, self).__init__()
+        self.oracle = oracle
+        if type(oracle) == int:
+            self.nlp = spacy.load('en_core_web_sm')
+            self._setup_map(oracle_map)
         self._setup_list(json_file)
+        if type(oracle) == int and self.oracle_map:
+            self._prune_oracle_map()
+            self.reverse_map = self._create_reverse_map()
         self._load_features(cues)
         self.eval = eval
         self.loc = loc

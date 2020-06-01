@@ -480,7 +480,7 @@ class MomentRetrievalFromProposalsTable(CorpusVideoMomentRetrievalBase):
             num_entries_per_video)
         self.video_indices = torch.from_numpy(video_indices)
 
-    def query(self, description, return_indices=False):
+    def query(self, description, return_indices=False, batch_size=None):
         "Search moments based on a text description given as list of words"
         torch.set_grad_enabled(False)
         lang_feature, len_query = self.preprocess_description(description)

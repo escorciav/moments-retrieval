@@ -11,6 +11,13 @@ def read_data(dir):
     for f in files:
         lines = list(open(f, 'r'))
         info = {}
+        # info['MedRank@0.3']     = ''.join([l.split(': ')[-1] for l in lines if 'MedRank@0.3' in l]).strip()
+        # info['Recall@1,0.3']    = ''.join([l.split(': ')[-1] for l in lines if 'Recall@1,0.3' in l]).strip()
+        # info['Recall@10,0.3']   = ''.join([l.split(': ')[-1] for l in lines if 'Recall@10,0.3' in l]).strip()
+        # info['Recall@100,0.3']  = ''.join([l.split(': ')[-1] for l in lines if 'Recall@100,0.3' in l]).strip()
+        # info['Recall@1000,0.3'] = ''.join([l.split(': ')[-1] for l in lines if 'Recall@1000,0.3' in l]).strip()
+        # info['Recall@10000,0.3']= ''.join([l.split(': ')[-1] for l in lines if 'Recall@10000,0.3' in l]).strip()
+
         info['MedRank@0.5']     = ''.join([l.split(': ')[-1] for l in lines if 'MedRank@0.5' in l]).strip()
         info['Recall@1,0.5']    = ''.join([l.split(': ')[-1] for l in lines if 'Recall@1,0.5' in l]).strip()
         info['Recall@10,0.5']   = ''.join([l.split(': ')[-1] for l in lines if 'Recall@10,0.5' in l]).strip()
@@ -29,6 +36,14 @@ def read_data(dir):
 
         string = []
         string.append(f"{info['FileName']}\t")
+
+        # string.append(f"{info['Recall@1,0.3']}\t")
+        # string.append(f"{info['Recall@10,0.3']}\t")
+        # string.append(f"{info['Recall@100,0.3']}\t")
+        # string.append(f"{info['Recall@1000,0.3']}\t")
+        # string.append(f"{info['Recall@10000,0.3']}\t")
+        # string.append(f"{info['MedRank@0.3']}\t")
+
         string.append(f"{info['Recall@1,0.5']}\t")
         string.append(f"{info['Recall@10,0.5']}\t")
         string.append(f"{info['Recall@100,0.5']}\t")

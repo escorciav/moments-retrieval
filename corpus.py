@@ -696,7 +696,9 @@ class MomentRetrievalFromClipBasedProposalsTableNew(
         score_list, descending_list = [], []
         if  len(self.models) == 1:
             for k, model_k in self.models.items():
-                lang_code = model_k.encode_query([lang_feature.to(self.device)], [len_query])
+                # [0] was added after introducing regularizer for the language, we should code a function to wrap the
+                # operation instead of accessing the parts of the network we want.
+                lang_code = model_k.encode_query([lang_feature.to(self.device)], [len_query])[0]
                 for key in self.moments_tables.keys():
                     if 'mask' not in key:
                         mask_key = '-'.join(['mask',key])

@@ -8,7 +8,6 @@ import copy
 import numpy as np
 MOMENT_RETRIEVAL_MODELS = ['MCN', 'SMCN', 'CALChamfer']
 
-
 class MCN(nn.Module):
     """MCN model
     TODO:
@@ -64,21 +63,31 @@ class MCN(nn.Module):
          v_embedded_neg_inter) = self.encode_visual(
              visual_pos, visual_neg_intra, visual_neg_inter)
 
+        if not isinstance(padded_query, list):
+            padded_query, query_length = [padded_query], [query_length]
+
         l_embedded = self.encode_query(padded_query, query_length)
-        c_pos = {k:self.compare_emdeddings(l_embedded, 
-                                v_embedded_pos[k]) for k in self.keys}
+        num_lang_pos = len(l_embedded[self.keys[0]])
+
+        c_pos = [{k:self.compare_emdeddings(l_embedded[k][idx], v_embedded_pos[k]) 
+                    for k in self.keys} for idx in range(num_lang_pos)]
+
         c_neg_intra, c_neg_inter = None, None
         
         # condition_neg_intra = v_embedded_neg_intra[self.keys[0]]
         if v_embedded_neg_intra is not None:
-            c_neg_intra = {k:self.compare_emdeddings(l_embedded, 
-                            v_embedded_neg_intra[k]) for k in self.keys}
-        
+            c_neg_intra = [{k:self.compare_emdeddings(l_embedded[k][0], eni[k]) 
+                            for k in self.keys} for eni in v_embedded_neg_intra]
+            
         # condition_neg_inter = v_embedded_neg_inter[self.keys[0]]
         if v_embedded_neg_inter is not None:
-            c_neg_inter = {k:self.compare_emdeddings(l_embedded, 
-                            v_embedded_neg_inter[k]) for k in self.keys}
-        return c_pos, c_neg_intra, c_neg_inter
+            c_neg_inter = [{k:self.compare_emdeddings(l_embedded[k][0], eni[k]) 
+                            for k in self.keys} for eni in v_embedded_neg_inter]
+ 
+        output_dict = {'p'               : c_pos,
+                       'n_intra'         : c_neg_intra,
+                       'n_inter'         : c_neg_inter}
+        return output_dict
 
     def encode_visual(self, pos, neg_intra, neg_inter):
         pos, neg_intra, neg_inter = self._unpack_visual(
@@ -90,28 +99,34 @@ class MCN(nn.Module):
             embedded_pos = {k:F.normalize(embedded_pos[k], dim=-1) for k in self.keys}
 
         if neg_intra is not None:
-            embedded_neg_intra = {k:self.visual_encoder[k](neg_intra[k]) for k in self.keys}
+            embedded_neg_intra = [{k:self.visual_encoder[k](ni[k]) for k in self.keys}
+                                    for ni in neg_intra]
             if self.unit_vector:
+                ## Deprecated
                 embedded_neg_intra = {k:F.normalize(embedded_neg_intra[k], dim=-1) for k in self.keys}
                                     
         if neg_inter is not None:
-            embedded_neg_inter = {k:self.visual_encoder[k](neg_inter[k]) for k in self.keys}                     
+            embedded_neg_inter = [{k:self.visual_encoder[k](ni[k]) for k in self.keys}
+                                    for ni in neg_inter]                  
             if self.unit_vector:
+                ##Deprecated
                 embedded_neg_inter = {k:F.normalize(embedded_neg_inter[k], dim=-1) for k in self.keys}  
                                     
         return embedded_pos, embedded_neg_intra, embedded_neg_inter
 
     def encode_query(self, padded_query, query_length):
-        B = len(padded_query)
-        packed_query = pack_padded_sequence(
-            padded_query, query_length, batch_first=True)
-        packed_output, _ = self.sentence_encoder(packed_query)
-        output, _ = pad_packed_sequence(packed_output, batch_first=True,
-                                        total_length=self.max_length)
+        B = len(padded_query[0])
+        packed_query = [pack_padded_sequence(p,l,batch_first=True)
+                            for p,l in zip(padded_query,query_length)]
+        packed_output = {k:[self.sentence_encoder(p) for p in packed_query] for k in self.keys}
+        output = {k:[pad_packed_sequence(p[0], batch_first=True,
+                        total_length=self.max_length)[0] for p in packed_output[k]] for k in self.keys}
         # TODO: try max-pooling
-        last_output = output[range(B), query_length - 1, :]
-        embedded_lang = self.lang_encoder(last_output)
+         # Introduce regularizers on the produced languages
+        last_output = {k:[output[k][i][range(B), ql - 1, :] for i,ql in enumerate(query_length)] for k in self.keys}
+        embedded_lang = {k:[self.lang_encoder(lo) for lo in last_output[k]] for k in self.keys}
         if self.unit_vector:
+            #Deprecated
             embedded_lang = F.normalize(embedded_lang, dim=-1)
         return embedded_lang
 
@@ -177,8 +192,8 @@ class MCN(nn.Module):
 
     def predict(self, *args):
         "Compute distance between visual and sentence"
-        d_pos, *_ = self.forward(*args)
-        d_pos = torch.stack([v for _,v in d_pos.items()]).sum(dim=0)
+        d_pos = self.forward(*args)['p']
+        d_pos = torch.stack([v for _,v in d_pos[0].items()]).sum(dim=0)
         return d_pos, False
 
     def search(self, query, table):
@@ -209,15 +224,23 @@ class SMCN(MCN):
          v_embedded_neg_inter) = self.encode_visual(
              visual_pos, visual_neg_intra, visual_neg_inter)
 
+        if not isinstance(padded_query, list):
+            padded_query, query_length = [padded_query], [query_length]
+
         l_embedded = self.encode_query(padded_query, query_length)
         # transform l_emdedded into a tensor of shape [B, 1, D]
-        l_embedded = l_embedded.unsqueeze(1)
+        l_embedded = {k:[l.unsqueeze(1) for l in l_embedded[k]] for k in self.keys} 
 
         # meta-comparison
         c_pos, c_neg_intra, c_neg_inter = self.compare_emdedded_snippets(
             v_embedded_pos, v_embedded_neg_intra, v_embedded_neg_inter,
             l_embedded, visual_pos, visual_neg_intra, visual_neg_inter)
-        return c_pos, c_neg_intra, c_neg_inter
+        
+        output_dict = {'p'               : c_pos,
+                       'n_intra'         : c_neg_intra,
+                       'n_inter'         : c_neg_inter}
+
+        return output_dict
 
     def encode_visual(self, pos, neg_intra, neg_inter):
         pos, neg_intra, neg_inter = self._unpack_visual(pos, neg_intra, neg_inter)
@@ -225,11 +248,13 @@ class SMCN(MCN):
 
         embedded_pos = {k:self.fwd_visual_snippets(k,pos[k]) for k in self.keys}
                                 
-        if neg_intra['mask'] is not None:
-            embedded_neg_intra = {k:self.fwd_visual_snippets(k,neg_intra[k]) for k in self.keys}
+        if neg_intra[0]['mask'] is not None:
+            embedded_neg_intra = [{k:self.fwd_visual_snippets(k,ni[k]) for k in self.keys}
+                                    for ni in neg_intra]
                                     
-        if neg_inter['mask'] is not None:
-            embedded_neg_inter = {k:self.fwd_visual_snippets(k,neg_inter[k]) for k in self.keys}
+        if neg_inter[0]['mask'] is not None:
+            embedded_neg_inter = [{k:self.fwd_visual_snippets(k,ni[k]) for k in self.keys}
+                                    for ni in neg_inter]
                                     
         return embedded_pos, embedded_neg_intra, embedded_neg_inter
 
@@ -247,23 +272,33 @@ class SMCN(MCN):
         return masked_x.sum(dim=-1) / K
 
     def compare_emdedded_snippets(self, embedded_p, embedded_n_intra,
-                                  embedded_n_inter, embedded_a,
+                                  embedded_n_inter, l_embedded,
                                   pos, neg_intra, neg_inter):
         pos, neg_intra, neg_inter = self._unpack_visual(pos, neg_intra, neg_inter)
-
-        mask_p, mask_n_intra, mask_n_inter = pos['mask'], neg_intra['mask'], neg_inter['mask']
         c_neg_intra, c_neg_inter = None, None
 
-        c_pos = {k:self.pool_compared_snippets(
-                self.compare_emdeddings(embedded_a, embedded_p[k]), mask_p) for k in self.keys}
-                
-        if mask_n_intra is not None:
-            c_neg_intra = {k:self.pool_compared_snippets(
-                self.compare_emdeddings(embedded_a, embedded_n_intra[k]),mask_n_intra) for k in self.keys}
+        # Extract masks
+        mask_p       = {k: pos['mask'] for k in self.keys}
+        mask_n_intra = [{k: ni['mask'] for k in self.keys} for ni in neg_intra]
+        mask_n_inter = [{k: ni['mask'] for k in self.keys} for ni in neg_inter]
+
+        #Compute distances
+        num_lang_pos = len(l_embedded[self.keys[0]])
+        c_pos = [{k:self.pool_compared_snippets(\
+                    self.compare_emdeddings(l_embedded[k][idx], embedded_p[k]), mask_p[k]) \
+                        for k in self.keys} for idx in range(num_lang_pos)]
+    
+        if mask_n_intra[0][self.keys[0]] is not None:
+            c_neg_intra = [{k:self.pool_compared_snippets(\
+                    self.compare_emdeddings(l_embedded[k][0], eni[k]), mni[k]) \
+                        for k in self.keys} for eni, mni in zip(embedded_n_intra,mask_n_intra)]
             
-        if mask_n_inter is not None:
-            c_neg_inter = {k:self.pool_compared_snippets(
-                self.compare_emdeddings(embedded_a, embedded_n_inter[k]),mask_n_inter) for k in self.keys}
+        if mask_n_inter[0][self.keys[0]] is not None:
+            c_neg_inter = [{k:self.pool_compared_snippets(\
+                    self.compare_emdeddings(l_embedded[k][0], eni[k]), mni[k]) \
+                        for k in self.keys} for eni, mni in zip(embedded_n_inter,mask_n_inter)]
+            # c_neg_inter = {k:self.pool_compared_snippets(
+            #     self.compare_emdeddings(l_embedded, embedded_n_inter[k]),mask_n_inter) for k in self.keys}
         return c_pos, c_neg_intra, c_neg_inter
 
     def search(self, query, table, clips_per_segment, clips_per_segment_list):
@@ -294,7 +329,7 @@ class SMCN(MCN):
                 # only works in cpython >= 3.6
                 argout.append(i)
             elif i is None:
-                argout.append({k:None for k in keys})
+                argout.append([{k:None for k in keys}])
             else:
                 argout.append(i)
         return argout
@@ -344,34 +379,47 @@ class CALChamfer(SMCN):
 
     def forward(self, padded_query, query_length, visual_pos,
                 visual_neg_intra=None, visual_neg_inter=None):
+        '''
+            emd reffear to embedded.
+        '''
 
         if not isinstance(padded_query, list):
             padded_query, query_length = [padded_query], [query_length]
 
         # v_v_embedded_* are tensors of shape [B, N, D]
-        (v_embedded_pos, v_embedded_neg_intra,
-         v_embedded_neg_inter) = self.encode_visual(
-             visual_pos, visual_neg_intra, visual_neg_inter)
+        (v_emb_pos, v_emb_neg_intra,v_emb_neg_inter) = self.encode_visual(
+                                    visual_pos, visual_neg_intra, visual_neg_inter)
 
-        l_embedded = self.encode_query(padded_query, query_length)
-        l_mask = self._gen_lan_mask(self.max_length,query_length,device=l_embedded[self.keys[0]][0].device)
+        l_emb, l_regularizer = self.encode_query(padded_query, query_length)
+        l_mask = self._gen_lan_mask(self.max_length,query_length,device=l_emb[self.keys[0]][0].device)
 
         #embedding normalization
         if self.unit_vector:
             raise Exception("Not maintained - A developer must double check this - write to the authors.")
-            l_embedded = {k:F.normalize(l_embedded[k], dim=-1) for k in self.keys}
-            v_embedded_pos = {k:F.normalize(v_embedded_pos[k], dim=-1) for k in self.keys}
-            if v_embedded_neg_intra is not None:
-                v_embedded_neg_intra = {k:F.normalize(v_embedded_neg_intra[k], dim=-1) for k in self.keys}
-            if v_embedded_neg_inter is not None:
+            l_emb = {k:F.normalize(l_emb[k], dim=-1) for k in self.keys}
+            v_emb_pos = {k:F.normalize(v_emb_pos[k], dim=-1) for k in self.keys}
+            if v_emb_neg_intra is not None:
+                v_emb_neg_intra = {k:F.normalize(v_emb_neg_intra[k], dim=-1) for k in self.keys}
+            if v_emb_neg_inter is not None:
                 # v_embedded_neg_inter = {k: F.normalize(v_embedded_neg_inter[k], dim=-1) for k in self.keys}
-                v_embedded_neg_inter = [{k:F.normalize(e[k], dim=-1) for k in self.keys} for e in v_embedded_neg_inter]
+                v_emb_neg_inter = [{k:F.normalize(e[k], dim=-1) for k in self.keys} for e in v_emb_neg_inter]
 
         # meta-comparison
         c_pos, c_neg_intra, c_neg_inter = self.compare_emdedded_snippets(
-            v_embedded_pos, v_embedded_neg_intra, v_embedded_neg_inter,
-            l_embedded, l_mask, visual_pos, visual_neg_intra, visual_neg_inter)
-        return c_pos, c_neg_intra, c_neg_inter
+                                            v_emb_pos, v_emb_neg_intra, v_emb_neg_inter,
+                                            l_emb, l_mask, visual_pos, visual_neg_intra, visual_neg_inter)
+
+        # Compute norm of embedding
+        norms = self.compute_embeddings_norms(v_emb_pos, v_emb_neg_intra, v_emb_neg_inter,
+                                              l_emb, l_mask, visual_pos, visual_neg_intra, visual_neg_inter)
+
+        output_dict = {'p'               : c_pos,
+                       'n_intra'         : c_neg_intra,
+                       'n_inter'         : c_neg_inter,
+                       'lang_regularizer': l_regularizer,
+                       'emb_avg_L2_norm' : norms}
+
+        return output_dict
 
     def encode_query(self, padded_query, query_length):
         B = len(padded_query[0])
@@ -380,28 +428,31 @@ class CALChamfer(SMCN):
 
         packed_output = {k:[self.sentence_encoder[k](p) for p in packed_query] for k in self.keys}
         output = {k:[pad_packed_sequence(p[0], batch_first=True,
-                        total_length=self.max_length) for p in packed_output[k]] for k in self.keys}
+                        total_length=self.max_length)[0] for p in packed_output[k]] for k in self.keys}
+
+        # Introduce regularizers on the produced languages
+        last_output = {k:[output[k][i][range(B), ql - 1, :] for i,ql in enumerate(query_length)] for k in self.keys}
+        embedded_last_layer = {k:[self.state_encoder[k](lo) for lo in last_output[k]] for k in self.keys}
+        l_regularizer = {k:self.compare_embedded_lang(embedded_last_layer[k]) for k in self.keys}
+
+        # l_regularizer = {k:[torch.zeros(B) for _ in range(len(output[k]))] for k in self.keys}
 
         # Pass hidden states though a shared linear layer.
-        embedded_lang = {k:[self.state_encoder[k](o[0]) for o in output[k]] for k in self.keys}
+        embedded_lang = {k:[self.state_encoder[k](o) for o in output[k]] for k in self.keys}
 
-        return embedded_lang
+        return embedded_lang, l_regularizer
 
     def encode_visual(self, pos, neg_intra, neg_inter):
         pos, neg_intra, neg_inter = self._unpack_visual(pos, neg_intra, neg_inter)
         embedded_neg_intra, embedded_neg_inter = None, None
 
-        if type(neg_inter) is dict:
-            neg_inter = [neg_inter]
-
         embedded_pos = {k:self.fwd_visual_snippets(k,pos[k]) for k in self.keys}
 
         mask_key = '-'.join(['mask',self.keys[0]])          
-        if neg_intra[mask_key] is not None:
-            embedded_neg_intra = {k:self.fwd_visual_snippets(k,neg_intra[k]) for k in self.keys}
-                                    
-        # if neg_inter[mask_key] is not None:
-            # embedded_neg_inter = {k:self.fwd_visual_snippets(k,neg_inter[k]) for k in self.keys}
+        if neg_intra[0][mask_key] is not None:
+            embedded_neg_intra = [{k:self.fwd_visual_snippets(k, ni[k]) for k in self.keys}
+                                    for ni in neg_intra]
+
         if neg_inter[0][mask_key] is not None:
             embedded_neg_inter = [{k: self.fwd_visual_snippets(k, ni[k]) for k in self.keys}
                                     for ni in neg_inter]
@@ -412,24 +463,19 @@ class CALChamfer(SMCN):
                                   embedded_a, l_mask, pos, neg_intra, neg_inter):
         pos, neg_intra, neg_inter = self._unpack_visual(pos, neg_intra, neg_inter)
         c_neg_intra, c_neg_inter = None, None
-        mask_p, mask_n_intra, mask_n_inter = {}, {}, []
 
-        if type(neg_inter) is dict:
-            neg_inter = [neg_inter]
-
-        for k in self.keys:
-            mask_key = '-'.join(['mask',k])
-            mask_p[k] = pos[mask_key]
-            mask_n_intra[k] = neg_intra[mask_key]
+        # Refactor masks
+        mask_p       = {k: pos['-'.join(['mask', k])] for k in self.keys}
+        mask_n_intra = [{k: ni['-'.join(['mask', k])] for k in self.keys} for ni in neg_intra]
         mask_n_inter = [{k: ni['-'.join(['mask', k])] for k in self.keys} for ni in neg_inter]
         
         c_pos = [{k:self.compare_emdeddings(embedded_p[k], embedded_a[k][idx], mask_p[k], l_mask[idx])
                   for k in self.keys} for idx in range(len(l_mask))]
 
         # keep only the first tensor from embedded_a[k] and l_mask as it is the one coming from the annotations
-        if mask_n_intra[self.keys[0]] is not None:
-            c_neg_intra = {k:self.compare_emdeddings(embedded_n_intra[k], embedded_a[k][0],mask_n_intra[k], l_mask[0])
-                           for k in self.keys}
+        if mask_n_intra[0][self.keys[0]] is not None:
+            c_neg_intra = [{k: self.compare_emdeddings(eni[k], embedded_a[k][0], mni[k], l_mask[0]) for k in self.keys}
+                           for eni, mni in zip(embedded_n_intra, mask_n_intra)]
 
         if mask_n_inter[0][self.keys[0]] is not None:
             c_neg_inter = [{k:self.compare_emdeddings(eni[k], embedded_a[k][0], mni[k], l_mask[0]) for k in self.keys}
@@ -437,14 +483,53 @@ class CALChamfer(SMCN):
 
         return c_pos, c_neg_intra, c_neg_inter
 
+    def compute_embeddings_norms(self, embedded_p, embedded_n_intra,embedded_n_inter,
+                                  embedded_a, l_mask, pos, neg_intra, neg_inter):
+        pos, neg_intra, neg_inter = self._unpack_visual(pos, neg_intra, neg_inter)
+        norms = {k:[] for k in self.keys}
+
+        # Refactor masks
+        mask_p       = {k: pos['-'.join(['mask', k])] for k in self.keys}
+        mask_n_intra = [{k: ni['-'.join(['mask', k])] for k in self.keys} for ni in neg_intra]
+        mask_n_inter = [{k: ni['-'.join(['mask', k])] for k in self.keys} for ni in neg_inter]
+        
+        if mask_n_inter[0][self.keys[0]] is not None or mask_n_intra[0][self.keys[0]] is not None:
+            for k in self.keys:
+                norms[k].append(self.dict_norm(embedded_p[k], mask_p[k]))
+                norms[k].append(self.dict_norm(embedded_a[k], l_mask))
+                norms[k].append(self.list_norm(embedded_n_intra, mask_n_intra, k))
+                norms[k].append(self.list_norm(embedded_n_inter, mask_n_inter, k))
+                norms[k] = torch.stack(norms[k]).mean(dim=0)
+        return norms
+
+    def dict_norm(self, emb, mask):
+        if type(emb) is list:
+            norm = torch.norm(torch.stack(emb), p=2, dim=-1)
+            mask = [m.sum(dim=-1) for m in mask]
+            tmp  = [torch.stack([norm[i,:,:int(idx)].mean() for idx in m]) for i,m in enumerate(mask)] 
+            stack_ = torch.stack(tmp)
+        else:
+            norm = torch.norm(emb, p=2, dim=-1)
+            mask = mask.sum(dim=-1)
+            stack_ = torch.stack([norm[:,:int(idx)].mean() for idx in mask]) 
+        return stack_[~torch.isnan(stack_)].mean(dim=0)
+
+    def list_norm(self, emb, mask, k ):
+        norm = torch.norm(torch.stack([e[k] for e in emb]), p=2, dim=-1)
+        mask = [m[k].sum(dim=-1) for m in mask]
+        tmp  = [torch.stack([norm[i,:,:int(idx)].mean() for idx in m]) for i,m in enumerate(mask)] 
+        stack_ = torch.stack(tmp)
+        return stack_[~torch.isnan(stack_)].mean(dim=0)
+    
+    def compare_embedded_lang(self, emb):
+        return sum([self.L2Distance(emb[0],e) for e in emb[1:]])
+
     def compare_emdeddings(self, v, l, mv, ml):
         return self.chamfer_distance(v, l, mv, ml)
 
-    def predict(self, *args):
-        "Compute distance between visual and sentence"
-        d_pos, *_ = self.forward(*args)
-        d_pos = torch.stack([v for _,v in d_pos[0].items()]).sum(dim=0)
-        return d_pos, False
+    def L2Distance(self, anchor, x, dim=-1):
+        y = anchor - x
+        return (y * y).sum(dim=dim)
 
     def _gen_lan_mask(self,num_words,query_length, device):
         #TO DO: move this task to dataset_untrimmed
@@ -526,7 +611,7 @@ class CALChamfer(SMCN):
                 # only works in cpython >= 3.6
                 argout.append(i)
             elif i is None:
-                argout.append({k:None for k in keys})
+                argout.append([{k:None for k in keys}])
             else:
                 argout.append(i)
         return argout

@@ -189,10 +189,12 @@ parser.add_argument('--weight-decay', type=float, default=0.0,
                     help='weight decay')
 parser.add_argument('--no-shuffle', action='store_false', dest='shuffle',
                     help='Disable suffle dataset after each epoch')
-parser.add_argument('--n-negatives', type=int, default=1,
-                    help='Number of inter negatives to consider during training')
 parser.add_argument('--n-positives', type=int, default=1,
                     help='Number of positives to consider during training')
+parser.add_argument('--n-negatives-intra', type=int, default=1,
+                    help='Number of intra negatives to consider during training')
+parser.add_argument('--n-negatives-inter', type=int, default=1,
+                    help='Number of inter negatives to consider during training')
 # train/eval callbacks
 parser.add_argument('--patience', type=int, default=-1,
                     help=('stop optimization if there is no improvements '
@@ -235,15 +237,16 @@ args = parser.parse_args()
 
 def main(args):
     setup_logging(args)
-    if load_args_from_snapshot(args):
-        if len(args.snapshot.name) > 0:
-            # Override snapshot config with user argument
-            args = parser.parse_args(namespace=args)
-            logging.info(f'Loaded snapshot config: {args.snapshot}')
-    else:
-        logging.error('Unable to load {args.snapshot}, procedding with args.')
+
+    if args.evaluate:
+        if load_args_from_snapshot(args):
+            if len(args.snapshot.name) > 0:
+                # Override snapshot config with user argument
+                args = parser.parse_args(namespace=args)
+                logging.info(f'Loaded snapshot config: {args.snapshot}')
+        else:
+            logging.error('Unable to load {args.snapshot}, procedding with args.')
     setup_hyperparameters(args)
-    setup_rng(args)
     setup_metrics(args, TOPK, IOU_THRESHOLDS, TOPK_DIDEMO)
 
     args.device = device_name = 'cpu'
@@ -362,17 +365,15 @@ def train_epoch(args, net, criterion, loader, optimizer):
     end = time.time()
     for it, minibatch in enumerate(loader):
         if args.gpu_id >= 0:
-            minibatch_ = minibatch
+            # minibatch_ = minibatch
+
             minibatch = ship_to(minibatch, args.device)
         # measure elapsed time
         data_time = time.time() - end
         end = time.time()
 
         compared_embeddings = net(*minibatch[ind:])
-        loss, _, _ = criterion(*compared_embeddings)
-        if math.isnan(loss):
-            logging.info('Evaluation after training finishedFound NaN value, killing the training')
-            sys.eixt(0)
+        loss = criterion(compared_embeddings)
         optimizer.zero_grad()
         loss.backward()
         if args.clip_grad > 0:
@@ -384,14 +385,23 @@ def train_epoch(args, net, criterion, loader, optimizer):
         loss_it = loss.item()
         running_loss += loss_it
         n_iter = it + args.epochs * len(loader)
+
+        if math.isnan(loss):
+            logging.info('Evaluation after training finishedFound NaN value, killing the training')
+            sys.exit(0)
+
         if args.writer:
             args.writer.add_scalar('train/loss', loss_it, n_iter)
+            args.writer.add_scalar('train/avg_emb_L2_norm_rgb', compared_embeddings['emb_avg_L2_norm']['rgb'], n_iter)
+            args.writer.add_scalar('train/avg_emb_L2_norm_obj', compared_embeddings['emb_avg_L2_norm']['obj'], n_iter)
+
         if (it + 1) % args.n_display == 0:
             logging.info(f'Epoch: [{args.epochs}]'
                          f'[{100 * it / len(loader):.2f}]\t'
                          f'{time_meters.report()}\t'
                          f'Loss {running_loss / args.n_display:.4f}')
             running_loss = 0.0
+
     if args.writer:
         args.writer.add_scalar('train/loss-end', running_loss, args.epochs)
 
@@ -544,7 +554,11 @@ def setup_dataset(args):
         elif 'activitynet-captions' in str(args.train_list) or 'activitynet-captions' in str(args.test_list):
             data_directory = 'activitynet-captions'
         else:
-            raise('Cannot load precomputed language features for unknown dataset.')    
+            raise ValueError('Cannot load precomputed language features for unknown dataset.')
+
+    if not args.augment_lang and args.n_positives > 1:
+        raise ValueError('Use flag --augment-lang if you want to use more than one positive, and provide a dataset '
+                         'json with additional annotations - Email the authors if you are lost!')
 
     if isinstance(args.feat, str):
         args.feat = [args.feat]
@@ -577,7 +591,8 @@ def setup_dataset(args):
          'bert_feat_comb' : args.bert_feat_comb,
          'data_directory': data_directory,
          'augment_lang': args.augment_lang,
-         'n_negatives':args.n_negatives,
+         'n_negatives_intra':args.n_negatives_intra,
+         'n_negatives_inter': args.n_negatives_inter,
          'n_positives':args.n_positives,
          'sampling_probs':args.sampling_probs},
         # Validation or Testing
@@ -628,11 +643,12 @@ def setup_dataset(args):
         datasets[subset] = {'dataset': dataset, 
                             'params' : extras_loader}
     
-    max_clips = max([v['dataset'].get_max_clips() 
-                    for k,v in datasets.items() if v is not None])
-    for _,v in datasets.items():
-        if v is not None:
-            v['dataset'].set_padding_size(max_clips)
+    if args.arch == 'CALChamfer':
+        max_clips = max([v['dataset'].get_max_clips() 
+                        for k,v in datasets.items() if v is not None])
+        for _,v in datasets.items():
+            if v is not None:
+                v['dataset'].set_padding_size(max_clips)
 
     loaders = {k:None for k,_ in datasets.items()}
     for k,v in datasets.items():
@@ -686,24 +702,15 @@ def setup_model(args, train_loader=None, test_loader=None):
         criterion_prm = dict(margin=args.margin, w_inter=args.w_inter,
                              w_intra=args.w_intra)
         if args.clip_loss:
+            raise ValueError('Deprecated')
             criterion_ = 'IntraInterMarginLossPlusClip'
             criterion_prm['c_inter'] = args.c_inter
             criterion_prm['c_intra'] = args.c_intra
 
-        if args.loss == 'MILNCELoss':
-            criterion_ = 'MILNCELoss'
-            criterion_prm = {'B':args.batch_size,
-                             'keys': args.feat,
-                             'device':args.device}
-        criterion = loss.__dict__[criterion_](**criterion_prm)
+        if args.loss == 'MILNCELossOriginal':
+            criterion_ = 'MILNCELossOriginal'
+            criterion_prm = {'keys': args.feat}
 
-        if args.loss == 'MILNCELossCrossentropyWithLogits':
-            criterion_ = 'MILNCELossCrossentropyWithLogits'
-            criterion_prm = {'B':args.batch_size,
-                             'num_pos':args.n_positives,
-                             'num_neg':args.n_negatives,
-                             'keys': args.feat,
-                             'device':args.device}
         criterion = loss.__dict__[criterion_](**criterion_prm)
 
     logging.info('Setting-up model mode')

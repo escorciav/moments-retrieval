@@ -352,13 +352,14 @@ class UntrimmedBasedMCNStyle(UntrimmedBase):
                  sampling_iou=0.35,ground_truth_rate=1, prob_nproposal_nextto=-1,
                  clip_length=None, h5_nis=None, nis_k=None, oracle=None, debug=False, oracle_map=None,
                  obj_detection_path=None, language_model='glove', bert_name=None, bert_feat_comb=None,
-                 data_directory=None, augment_lang=False, n_negatives=1, n_positives=1,
-                 sampling_probs=Path('non-existent')):
+                 data_directory=None, augment_lang=False, n_negatives_intra=1, n_negatives_inter=1,
+                 n_positives=1,sampling_probs=Path('non-existent')):
         super(UntrimmedBasedMCNStyle, self).__init__()
         self.sampling_probs = sampling_probs
         self.convex_per_epoch = 0
         self.oracle = oracle
-        self.n_negatives = n_negatives
+        self.n_negatives_intra = n_negatives_intra
+        self.n_negatives_inter = n_negatives_inter
         self.n_positives = n_positives
         self.augment_lang = augment_lang
         self.data_directory = data_directory
@@ -481,8 +482,7 @@ class UntrimmedBasedMCNStyle(UntrimmedBase):
         gt_segments = moment_i['times']
         video_id = moment_i['video']
 
-        pos_visual_feature, segments = self._compute_visual_feature_eval(
-            video_id)
+        pos_visual_feature, segments = self._compute_visual_feature_eval(video_id)
         neg_intra_visual_feature = None
         neg_inter_visual_feature = None
         words_feature, len_query = self._compute_language_feature(moment_i['annotation_id'])
@@ -529,25 +529,31 @@ class UntrimmedBasedMCNStyle(UntrimmedBase):
         "Sample another moment inside the video"
         moment_i = self.metadata[idx]
         video_id = moment_i['video']
+        # self.n_negatives_intra
         if random.random() <= self._prob_neg_proposal_next_to:
             sampled_loc = self._proposal_next_to_moment(idx, moment_loc)
         elif self.proposals_interface is None:
             video_duration = self._video_duration(video_id)
-            sampled_loc = self._random_proposal_sampling(
-                video_duration, moment_loc)
+            sampled_loc    = [self._random_proposal_sampling(video_duration, moment_loc)
+                              for _ in range(self.n_negatives_intra)]
         else:
-            metadata = self.metadata_per_video[video_id]
+            metadata  = self.metadata_per_video[video_id]
             proposals = self.proposals_interface(video_id, metadata)
             iou_matrix = segment_iou(proposals, moment_loc[None, :])
             indices = (iou_matrix < self.sampling_iou).nonzero()[0]
             if len(indices) > 0:
-                ind = indices[random.randint(0, len(indices) - 1)]
+                if len(indices) >= self.n_negatives_intra:
+                    ind = indices[random.sample(range(0, max(len(indices) - 1,1)), self.n_negatives_intra)]
+                else:
+                    ind = indices * (self.n_negatives_intra // len(indices) +1)
+                    ind = ind[:len(indices)]
                 sampled_loc = proposals[ind, :]
             else:
                 video_duration = self._video_duration(video_id)
-                sampled_loc = self._random_proposal_sampling(
-                    video_duration, moment_loc)
-        return self._compute_visual_feature(video_id, sampled_loc)
+                sampled_loc    = [self._random_proposal_sampling(video_duration, moment_loc)
+                                  for _ in range(self.n_negatives_intra)]
+        features = [self._compute_visual_feature(video_id, s) for s in sampled_loc]
+        return features
 
     def _proposal_next_to_moment(self, idx, moment_loc):
         "Return a proposal next to moment_loc of length <= moment length"
@@ -585,14 +591,17 @@ class UntrimmedBasedMCNStyle(UntrimmedBase):
             prob_videos = self._prob_querytovideo[idx]
             probs_per_epoch = (1 - self.convex_per_epoch) * prob_videos  + \
                                 self.convex_per_epoch  * (1 - prob_videos)
-            neg_video_ind = torch.multinomial(probs_per_epoch, self.n_negatives)
+            neg_video_ind = torch.multinomial(input=probs_per_epoch,
+                                              num_samples=self.n_negatives_inter,
+                                              replacement=False)
         else:
             prob_videos = self._prob_querytovideo[idx, :]
             # tech taming humam: Bug in numpy
             # https://github.com/numpy/numpy/issues/8317
             prob_videos = prob_videos.astype(float, copy=False)
             prob_videos /= prob_videos.sum()
-            neg_video_ind = np.random.choice(a=len(prob_videos), size=self.n_negatives,replace=True, p=prob_videos)
+            neg_video_ind = np.random.choice(a=len(prob_videos), size=self.n_negatives_inter,
+                                             replace=False, p=prob_videos)
 
         other_video = [self.videos[n_ind] for n_ind in neg_video_ind]
         video_id = self.metadata[idx]['video']
@@ -651,8 +660,7 @@ class UntrimmedBasedMCNStyle(UntrimmedBase):
         ind = 2 if self.debug else 0
         instance = self[0]
         if self.eval:
-            instance = ((instance[0 + ind][0, ...],) +
-                        instance[1 + ind:3 + ind])
+            instance = ((np.asarray(instance[0 + ind])[0, ...],) + instance[1 + ind:3 + ind])
             ind = 0
         if isinstance(instance[0 + ind],list):
             self.feat_dim = {'language_size': instance[0 + ind][0].shape[1]}
@@ -991,8 +999,7 @@ class UntrimmedSMCN(UntrimmedBasedMCNStyle):
         ind = 2 if self.debug else 0
         instance = self[0]
         if self.eval:
-            instance = ((instance[0 + ind][0, ...],) +
-                        instance[1 + ind:3 + ind])
+            instance = ((np.asarray(instance[0 + ind])[0, ...],) + instance[1 + ind:3 + ind])
             ind = 0
         if isinstance(instance[0 + ind], list):
             self.feat_dim = {'language_size': instance[0 + ind][0].shape[1]}
@@ -1178,8 +1185,7 @@ class UntrimmedCoceptsSMCN(UntrimmedSMCN):
         ind = 2 if self.debug else 0
         instance = self[0]
         if self.eval:
-            instance = ((instance[0 + ind][0, ...],) +
-                        instance[1 + ind:3 + ind])
+            instance = ((np.asarray(instance[0 + ind])[0, ...],) + instance[1 + ind:3 + ind])
             ind = 0
         if isinstance(instance[0 + ind], list):
             self.feat_dim = {'language_size': instance[0 + ind][0].shape[1]}

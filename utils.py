@@ -45,10 +45,12 @@ def collate_data(batch):
     #     for i in all_tensors[2:])
     dicts_of_tensors = (
         {k: v[idx, ...].requires_grad_() for k, v in i.items()}
-        for i in all_tensors[2:-1])
+        for i in all_tensors[2:-2])
+    intra_negatives = [{k: v[idx, ...].requires_grad_() for k, v in i.items()}
+                       for i in all_tensors[-2]]
     inter_negatives = [{k: v[idx, ...].requires_grad_() for k, v in i.items()}
         for i in all_tensors[-1]]
-    argout = (a_s, al_s) + tuple(dicts_of_tensors) + (inter_negatives,)
+    argout = (a_s, al_s) + tuple(dicts_of_tensors) + (intra_negatives,) + (inter_negatives,)
     if debug_mode:
         return (idxs, source_ids) + argout
     return argout
@@ -184,7 +186,7 @@ def setup_hyperparameters(args):
             args_dview[slack_tied[k]] = 1 - v[0]
 
     # Note: only available in YAML
-    if args.clip_loss and args.only_clip_loss:
+    if args.clip_loss:
         args_dview['w_intra'] = 0.0
         args_dview['w_inter'] = 0.0
 

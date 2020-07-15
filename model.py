@@ -37,7 +37,6 @@ class MCN(nn.Module):
 
         self.visual_encoder = nn.ModuleDict({})
         for key in self.keys:
-            
             visual_encoder = [nn.Linear(visual_size[key], visual_hidden),
                           nn.ReLU(inplace=True)]
             # (optional) add depth to visual encoder (capacity)
@@ -84,9 +83,9 @@ class MCN(nn.Module):
             c_neg_inter = [{k:self.compare_emdeddings(l_embedded[k][0], eni[k]) 
                             for k in self.keys} for eni in v_embedded_neg_inter]
  
-        output_dict = {'p'               : c_pos,
-                       'n_intra'         : c_neg_intra,
-                       'n_inter'         : c_neg_inter}
+        output_dict = {'p'       : c_pos,
+                       'n_intra' : c_neg_intra,
+                       'n_inter' : c_neg_inter}
         return output_dict
 
     def encode_visual(self, pos, neg_intra, neg_inter):
@@ -306,8 +305,9 @@ class SMCN(MCN):
 
         TODO: batch to avoid out of memory?
         """
+        query_tensor = query[self.keys[0]][0]
         clip_distance = self.compare_emdeddings(
-            query, table).split(clips_per_segment_list)
+            query_tensor, table).split(clips_per_segment_list)
         sorted_clips_per_segment, ind = clips_per_segment.sort(
             descending=True)
         # distance >= 0 thus we pad with zeros

@@ -556,8 +556,7 @@ class MomentRetrievalFromClipBasedProposalsTable(
                 # Each proposal S_i spans c_ij clips of the i-th video.
                 # C_i = \sum_{j=1}^{S_i} c_ij := num clips over all S_i
                 # proposals in the i-th video
-                codes[key].append(
-                    self.models[key].visual_encoder(segment_rep_k))
+                codes[key].append(self.models[key].visual_encoder[key](segment_rep_k))
         # Form the C x D matrix
         # M := number of videos, C = \sum_{i=1}^M C_i
         # We have as many tables as visual cues
@@ -576,13 +575,13 @@ class MomentRetrievalFromClipBasedProposalsTable(
         self.clips_per_moment_list = self.clips_per_moment.tolist()
         self.clips_per_moment = self.clips_per_moment.float()
 
-    def query(self, description, return_indices=False):
+    def query(self, description, return_indices=False, batch_size=None):
         "Search moments based on a text description given as list of words"
         torch.set_grad_enabled(False)
         lang_feature, len_query = self.preprocess_description(description)
         score_list, descending_list = [], []
         for key, model_k in self.models.items():
-            lang_code = model_k.encode_query(lang_feature, len_query)
+            lang_code = model_k.encode_query([lang_feature], [len_query])
             scores_k, descending_k = model_k.search(
                 lang_code, self.moments_tables[key], self.clips_per_moment,
                 self.clips_per_moment_list)

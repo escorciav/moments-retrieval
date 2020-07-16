@@ -135,8 +135,7 @@ class ClipRetrieval(CorpusVideoMomentRetrievalBase):
                 # get codes of the clips -> C_i x D matrix
                 # Given a video i with C_i clips, we encode all the clips
                 # through the visual encoder
-                code_k = self.models[key].visual_encoder(
-                    clip_rep_k).squeeze_()
+                code_k = self.models[key].visual_encoder[key](clip_rep_k).squeeze_()
                 codes[key].append(code_k)
         # Form the C x D matrix
         # M := number of videos, C = \sum_{i=1}^M C_i
@@ -154,15 +153,15 @@ class ClipRetrieval(CorpusVideoMomentRetrievalBase):
         self.video_indices = torch.from_numpy(video_indices)
         self.clip2proposal_ind = clip2proposal_ind
 
-    def query(self, description):
+    def query(self, description, batch_size=None):
         "Search clips based on a text description given as list of words"
         descending_k = False
         torch.set_grad_enabled(False)
         lang_feature, len_query = self.preprocess_description(description)
         score_list, descending_list = [], []
         for key, model_k in self.models.items():
-            lang_code = model_k.encode_query(lang_feature, len_query)
-            scores_k = ((lang_code - self.moments_tables[key])**2).sum(dim=-1)
+            lang_code = model_k.encode_query([lang_feature], [len_query])
+            scores_k = ((lang_code[key][0] - self.moments_tables[key])**2).sum(dim=-1)
             score_list.append(scores_k * self.alpha[key])
             descending_list.append(descending_k)
         scores = sum(score_list)
@@ -237,9 +236,9 @@ class LoopOverKBase():
         # assert isinstance(description, list)
         lang_feature_, len_query_ = self.dataset._compute_language_feature(description)
         # torchify
-        lang_feature = torch.from_numpy(lang_feature_)
+        lang_feature = torch.from_numpy(lang_feature_[0])
         lang_feature.unsqueeze_(0)
-        len_query = torch.tensor([len_query_])
+        len_query = torch.tensor(len_query_)
         return lang_feature, len_query
 
     def query(self, description, description_ind):
@@ -287,7 +286,7 @@ class LoopOverKVideos(LoopOverKBase):
         self.repeat_lang = repeat_lang
         super(LoopOverKVideos, self).__init__(*args, **kwargs)
 
-    def query(self, description, description_ind):
+    def query(self, description, description_ind, batch_size=None):
         "Return videos and moments aligned with a text description"
         # TODO (tier-2): remove 2nd-stage results from 1st-stage to make them
         # exhaustive
@@ -347,7 +346,7 @@ class LoopOverKMoments(LoopOverKBase):
         self.moment_based_reranking = False
         super(LoopOverKMoments, self).__init__(*args, **kwargs)
 
-    def query(self, description, description_ind):
+    def query(self, description, description_ind, batch_size=None):
         "Return videos and moments aligned with a text description"
         # TODO (tier-2): remove 2nd-stage results from 1st-stage to make them
         # exhaustive
@@ -480,15 +479,15 @@ class MomentRetrievalFromProposalsTable(CorpusVideoMomentRetrievalBase):
             num_entries_per_video)
         self.video_indices = torch.from_numpy(video_indices)
 
-    def query(self, description, return_indices=False):
+    def query(self, description, return_indices=False, batch_size=None):
         "Search moments based on a text description given as list of words"
         torch.set_grad_enabled(False)
         lang_feature, len_query = self.preprocess_description(description)
         score_list, descending_list = [], []
         for key, model_k in self.models.items():
-            lang_code = model_k.encode_query(lang_feature, len_query)
+            lang_code = model_k.encode_query([lang_feature], [len_query])
             scores_k, descending_k = model_k.search(
-                lang_code, self.moments_tables[key])
+                lang_code[key][0], self.moments_tables[key])
             score_list.append(scores_k * self.alpha[key])
             descending_list.append(descending_k)
         scores = sum(score_list)
@@ -822,7 +821,7 @@ class MomentRetrievalFromClipBasedProposalsTableEarlyFusion(
             num_entries_per_video)
         self.video_indices = torch.from_numpy(video_indices)
 
-    def query(self, description, return_indices=False):
+    def query(self, description, return_indices=False, batch_size=None):
         "Search moments based on a text description given as list of words"
         torch.set_grad_enabled(False)
         lang_feature, len_query = self.preprocess_description(description)
@@ -962,7 +961,7 @@ class GreedyMomentRetrievalFromClipBasedProposalsTable(
             np.arange(0, len(self.dataset.videos)), clips_per_video)
         self.video_indices_clip = torch.from_numpy(video_indices_clip)
 
-    def query(self, description, return_indices=False):
+    def query(self, description, return_indices=False, batch_size=None):
         "Search moments based on a text description given as list of words"
         torch.set_grad_enabled(False)
         lang_feature, len_query = self.preprocess_description(description)
@@ -1106,9 +1105,9 @@ def preprocess_description(dataset, description):
     lang_feature_, len_query_ = dataset._compute_language_feature(description)
 
     # torchify
-    lang_feature = torch.from_numpy(lang_feature_)
+    lang_feature = torch.from_numpy(lang_feature_[0])
     lang_feature.unsqueeze_(0)
-    len_query = torch.tensor([len_query_])
+    len_query = torch.tensor(len_query_)
     return lang_feature, len_query
 
 

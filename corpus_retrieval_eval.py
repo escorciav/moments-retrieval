@@ -207,7 +207,7 @@ def main(args):
         models_dict[key].to(args.device)
         models_dict[key].eval()
     else:
-        #single streams networks - late fusion
+        #single streaworks - late fusion
         for i, key in enumerate(args.snapshot_tags):
             arch_setup = dict(
                 visual_size={key:dataset.visual_size[key]},

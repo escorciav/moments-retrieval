@@ -11,9 +11,7 @@ from tqdm import tqdm
 
 import corpus
 import dataset_untrimmed
-import dataset_untrimmed_old
 import model
-import model_old
 import proposals
 from evaluation import CorpusVideoMomentRetrievalEval
 from utils import setup_logging, get_git_revision_hash
@@ -122,15 +120,16 @@ def main(args):
         
     logging.info('Setting up models')
     arch_setup = dict(
-        visual_size={feat:dataset.visual_size[feat] for feat in args.feat},
-        lang_size=dataset.language_size,
-        max_length=dataset.max_words,
-        embedding_size=args.embedding_size,
-        visual_hidden=args.visual_hidden,
-        lang_hidden=args.lang_hidden,
-        visual_layers=args.visual_layers,
-        bi_lstm=args.bi_lstm,
-        lang_dropout=args.lang_dropout
+        visual_size    = {feat:dataset.visual_size[feat] for feat in args.feat},
+        lang_size      = dataset.language_size,
+        max_length     = dataset.max_words,
+        embedding_size = args.embedding_size,
+        visual_hidden  = args.visual_hidden,
+        lang_hidden    = args.lang_hidden,
+        lang_layers    = args.lang_layers,
+        visual_layers  = args.visual_layers,
+        bi_lstm        = args.bi_lstm,
+        lang_dropout   = args.lang_dropout
     )
 
     net = model.__dict__[args.arch](**arch_setup)
@@ -233,33 +232,40 @@ def setup_engine(args, dataset, net):
             hyper_prm_1ststage = json.load(fid)
         # We use the same visual representation among stages to not complicate
         # things, but it's not a requirement
-        dataset_cues = {
-            hyper_prm_1ststage['feat']: {'file': args.h5_1ststage}
-        }
+        # dataset_cues = {
+        #     hyper_prm_1ststage['feat']: {'file': args.h5_1ststage}
+        # }
+
+        dataset_cues = {k: None for k in hyper_prm_1ststage['feat']}
+        for feat_name,feat_file in zip(hyper_prm_1ststage['feat'],[args.h5_1ststage]):
+            if feat_file.exists():
+                dataset_cues[feat_name] = {'file':feat_file}
+            else:
+                logging.info(f'{feat_file} not found, proceeding without it. Check the file path!!')
 
         dataset_setup = dict(
-            loc=hyper_prm_1ststage['loc'],
-            context=hyper_prm_1ststage['context'],
-            cues=dataset_cues,
-            debug=args.debug,
-            json_file=args.test_list,
+            loc         = hyper_prm_1ststage['loc'],
+            context     = hyper_prm_1ststage['context'],
+            cues        = dataset_cues,
+            debug       = args.debug,
+            json_file   = args.test_list,
             proposals_interface=dataset.proposals_interface
         )
         # Hard-code UntrimmedSMCN and SMCN as they are the only clip-based
         # representation so far :)
-        dataset_1ststage = dataset_untrimmed_old.UntrimmedSMCN(**dataset_setup)
+        dataset_1ststage = dataset_untrimmed.UntrimmedSMCN(**dataset_setup)
         args.feat_1ststage = hyper_prm_1ststage['feat']
         model_setup = dict(
-            visual_size=dataset_1ststage.visual_size[args.feat_1ststage],
-            lang_size=dataset_1ststage.language_size,
-            max_length=dataset_1ststage.max_words,
-            embedding_size=hyper_prm_1ststage['embedding_size'],
-            visual_hidden=hyper_prm_1ststage['visual_hidden'],
-            lang_hidden=hyper_prm_1ststage['lang_hidden'],
-            visual_layers=hyper_prm_1ststage['visual_layers'],
-            dropout=hyper_prm_1ststage['dropout']
+            visual_size     = {feat:dataset_1ststage.visual_size[feat] for feat in ['rgb']},
+            lang_size       = dataset_1ststage.language_size,
+            max_length      = dataset_1ststage.max_words,
+            embedding_size  = hyper_prm_1ststage['embedding_size'],
+            visual_hidden   = hyper_prm_1ststage['visual_hidden'],
+            lang_hidden     = hyper_prm_1ststage['lang_hidden'],
+            visual_layers   = hyper_prm_1ststage['visual_layers'],
+            dropout         = hyper_prm_1ststage['dropout']
         )
-        model_1ststage = model_old.SMCN(**model_setup)
+        model_1ststage = model.SMCN(**model_setup)
         snapshot = torch.load(args.snapshot_1ststage.with_suffix('.pth.tar'),
                               map_location=lambda storage, loc: storage)
         model_1ststage.load_state_dict(snapshot['state_dict'])

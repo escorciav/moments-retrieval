@@ -128,12 +128,16 @@ def main(args):
         if args.greedy > 0:
             args.engine = 'GreedyMomentRetrievalFromClipBasedProposalsTable'
             engine_prm['topk'] = args.greedy
-
-
     elif args.arch == 'CALChamfer':
         eval_flag = False   # needed to get right data in indexing. We want the padded data
         args.dataset = 'UntrimmedCALChamfer'
         args.engine = 'MomentRetrievalFromClipBasedProposalsTableNew'
+    
+    elif args.arch == 'CALChamferV2':
+        eval_flag = False   # needed to get right data in indexing. We want the padded data
+        args.dataset = 'UntrimmedCALChamfer'
+        args.engine = 'MomentRetrievalFromClipBasedProposalsTableNew'
+
     elif args.arch == 'EarlyFusion':
         eval_flag = False   # needed to get right data in indexing. We want the padded data
         args.dataset = 'UntrimmedCALChamfer'
@@ -142,6 +146,12 @@ def main(args):
         ValueError('Unknown/unsupported architecture')
     if args.greedy > 0 and args.arch != 'SMCN':
         logging.warning('Ignore greedy search. Unsupported model')
+
+    if  len(args.snapshot) == 2 and len(args.snapshot_tags) == 2:
+        args.arch = 'CALChamfer'
+        eval_flag = False   # needed to get right data in indexing. We want the padded data
+        args.dataset = 'UntrimmedCALChamfer'
+        args.engine = 'MomentRetrievalFromClipBasedProposalsTableLateFusion'
 
     logging.info('Loading dataset')
     dataset_novisual = True
@@ -169,7 +179,7 @@ def main(args):
     if args.arch == 'SMCN':
         logging.info('Set padding on UntrimmedSMCN dataset')
         dataset.set_padding(False)
-    elif args.arch == 'CALChamfer':
+    elif args.arch in ['CALChamfer','EarlyFusion','LateFusion','CALChamferV2']:
         max_clips = dataset.get_max_clips() 
         dataset.set_padding_size(max_clips)
 
@@ -207,17 +217,20 @@ def main(args):
         models_dict[key].to(args.device)
         models_dict[key].eval()
     else:
-        #single streaworks - late fusion
+        #single streams or late fusion
         for i, key in enumerate(args.snapshot_tags):
             arch_setup = dict(
                 visual_size={key:dataset.visual_size[key]},
+                embedding_size=args.embedding_size,
+                alpha = args.alpha,
+                # Visual info
+                visual_hidden=args.visual_hidden,
+                visual_layers=args.visual_layers,
+                #Language
                 lang_size=dataset.language_size,
                 max_length=dataset.max_words,
-                embedding_size=args.embedding_size,
-                visual_hidden=args.visual_hidden,
                 lang_hidden=args.lang_hidden,
-                visual_layers=args.visual_layers,
-                alpha=args.alpha
+                lang_layers=args.lang_layers
             )
             models_dict[key] = model.__dict__[args.arch](**arch_setup)
             filename = args.snapshot[i].with_suffix('.pth.tar')
@@ -374,8 +387,8 @@ def load_hyperparameters(args):
 
     logging.info('Parsing multiple JSON files with hyper-parameters')
     args.tags = dict.fromkeys(args.tags)
-    if not args.new:
-        assert len(args.h5_path) == len(args.tags)
+    # if not args.new:
+    #     assert len(args.h5_path) == len(args.tags)
     for i, filename in enumerate(args.snapshot):
         with open(filename, 'r') as fid:
             hyper_prm = json.load(fid)

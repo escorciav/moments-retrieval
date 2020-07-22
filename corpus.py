@@ -755,8 +755,6 @@ class MomentRetrievalFromClipBasedProposalsTableEarlyFusion(
         "Create database of moments in videos"
         torch.set_grad_enabled(False)
         num_entries_per_video = []
-        # clips_per_moment = []
-        # obj_per_moment = []
         list_of_keys = []
         stream_keys = [k for k in self.models] 
         if len(stream_keys) == 1:
@@ -827,10 +825,57 @@ class MomentRetrievalFromClipBasedProposalsTableEarlyFusion(
         lang_feature, len_query = self.preprocess_description(description)
         score_list, descending_list = [], []
         for k, model_k in self.models.items():
-            lang_code = model_k.encode_query(lang_feature, len_query)
+            lang_code = model_k.encode_query([lang_feature], [len_query])
             scores_k, descending_k = model_k.search(lang_code, len_query, self.moments_tables)
             score_list.append(scores_k)
             descending_list.append(descending_k)
+            
+        scores = sum(score_list)
+        # assert np.unique(descending_list).shape[0] == 1
+        scores, ind = scores.sort(descending=descending_k)
+        # TODO (tier-1): enable bell and whistles
+        if return_indices:
+            return self.video_indices[ind], self.proposals[ind, :], ind, scores
+        return self.video_indices[ind], self.proposals[ind, :], scores
+
+
+class MomentRetrievalFromClipBasedProposalsTableLateFusion(
+        MomentRetrievalFromClipBasedProposalsTableEarlyFusion):
+    """Retrieve Moments using a clip based model
+
+    This abstraction suits SMCN kind of models that the representation of the
+    video clips into a common visual-text embedding space.
+
+    Note:
+        - Make sure to setup the dataset in a way that retrieves a 2D
+          `numpy:ndarray` with the representation of all the proposals and a
+          1D `numpy:ndarray` with the number of clips per segment as `mask`.
+        - currently this implementation deals with the more general case of
+          non-decomposable models. Note that decomposable models would admit
+          smaller tables.
+    """
+
+    def __init__(self, *args, **kwargs):
+        super(MomentRetrievalFromClipBasedProposalsTableLateFusion, self).__init__(
+            *args, **kwargs)
+
+    def query(self, description, return_indices=False, batch_size=None):
+        "Search moments based on a text description given as list of words"
+        torch.set_grad_enabled(False)
+        lang_feature, len_query = self.preprocess_description(description)
+        score_list, descending_list = [], []
+        for key, model_k in self.models.items():
+            lang_code = model_k.encode_query([lang_feature], [len_query])[0]
+            if 'mask' not in key:
+                mask_key = '-'.join(['mask',key])
+                scores_k, descending_k = model_k.search(
+                                lang_code[key], len_query, 
+                                self.moments_tables[key], 
+                                self.moments_tables[mask_key],
+                                batch_size)
+
+                score_list.append(scores_k * self.alpha[key])
+                descending_list.append(descending_k)
             
         scores = sum(score_list)
         # assert np.unique(descending_list).shape[0] == 1

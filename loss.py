@@ -23,25 +23,38 @@ PROPOSAL_FUNCTIONS = ['IntraInterMarginLoss',
 class IntraInterMarginLoss(nn.Module):
     "Intra-Inter Margin Loss (distance based)"
 
-    def __init__(self, w_intra=0.5, w_inter=0.2, margin=0.1):
+    def __init__(self, keys, B, w_intra=0.5, w_inter=0.2, margin=0.1):
         super(IntraInterMarginLoss, self).__init__()
         self.margin = margin
         self.w_intra = w_intra
         self.w_inter = w_inter
+        self.keys = keys
+        self.B = B
+        self.zeros = torch.zeros(self.B)
+
+    def _compute_triplet_loss(self, k, pos, neg):
+        if neg is None:
+            return self.zeros
+        return sum([F.relu(self.margin + (pos - n[k])) for n in neg])
 
     def forward(self, scores, iw_intra=None, iw_inter=None):
-        p = scores['p'][0]      
+        p = None
+        if isinstance(scores['p'],list):
+            p = scores['p'][0]      
+        else:
+            p = scores['p']
         n_intra = scores['n_intra']
         n_inter = scores['n_inter']
-        stream_keys = p.keys()
         loss, intra_loss, inter_loss = 0, 0, 0
-        for k in stream_keys:
-            intra_loss_ = sum([F.relu(self.margin + (p[k] - n[k])) for n in n_intra])
-            inter_loss_ = sum([F.relu(self.margin + (p[k] - n[k])) for n in n_inter])
+        for k in self.keys:
+            intra_loss_ =  self._compute_triplet_loss(k,p[k],n_intra)
+            inter_loss_ =  self._compute_triplet_loss(k,p[k],n_inter)
+
             if iw_intra is not None:
                 intra_loss_ = intra_loss_ * iw_intra
             if iw_inter is not None:
                 inter_loss_ = inter_loss_ * iw_inter
+            
             intra_loss += intra_loss_
             inter_loss += inter_loss_
             loss += (self.w_intra * intra_loss_.mean() +
@@ -53,26 +66,31 @@ class MILNCELossOriginal(nn.Module):
     """https://arxiv.org/abs/1912.06430"""
     """ Input: scores"""
 
-    def __init__(self, keys):
+    def __init__(self, keys, B):
         super(MILNCELossOriginal, self).__init__()
         self.keys = keys
 
-    def _unpack(self, distances, key):
-        return torch.stack(tuple([-1 * d[key] for d in distances]), dim=1)
+    def _unpack(self, distances, key,B, device):
+        if distances is None:
+            return torch.zeros(B,1, device=device)
+        else:
+            return torch.stack(tuple([-1 * d[key] for d in distances]), dim=1)
+    
+    def get_info(self,p):
+        return p.shape[0],p.device
 
     def forward(self, scores): # scores = {p:p, n_intra:n_intra, n_inter:n_inter}
         # `positive` is <f(x), g(y)> and `negative` is <f(x'), g(y')>
         # from the paper where <x, y> is the dot product of x and y
         loss = 0
         scores['p'] = [scores['p'][0]]
+        B, device = self.get_info(scores['p'][0][self.keys[0]])
         for k in self.keys:
-            pos_score     = self._unpack(scores['p'], k)
-            n_intra_score = self._unpack(scores['n_intra'], k)
-            n_inter_score = self._unpack(scores['n_inter'], k)
-            # torch.logsumexp(input, dim, keepdim=False, out=None) TRY TO USE THIS
+            pos_score     = self._unpack(scores['p'], k, B, device)
+            n_intra_score = self._unpack(scores['n_intra'], k, B, device)
+            n_inter_score = self._unpack(scores['n_inter'], k, B, device)
             x = torch.cat((pos_score, n_intra_score, n_inter_score), dim=1)
             x = x.softmax(1)[:, :len(scores['p'])].sum(1).log()
-            # loss += 1 * max(0, scores['emb_avg_L2_norm'][k]-10) - x.mean()
             loss -= x.mean()
         return loss
 

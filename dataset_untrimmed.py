@@ -355,6 +355,7 @@ class UntrimmedBasedMCNStyle(UntrimmedBase):
                  data_directory=None, augment_lang=False, n_negatives_intra=1, n_negatives_inter=1,
                  n_positives=1,sampling_probs=Path('non-existent')):
         super(UntrimmedBasedMCNStyle, self).__init__()
+        self.keys = list(cues.keys())
         self.sampling_probs = sampling_probs
         self.convex_per_epoch = 0
         self.oracle = oracle
@@ -487,8 +488,6 @@ class UntrimmedBasedMCNStyle(UntrimmedBase):
         neg_inter_visual_feature = None
         words_feature, len_query = self._compute_language_feature(moment_i['annotation_id'])
         num_segments = len(segments)
-        # len_query = [len_query] * num_segments
-        # words_feature = np.tile(words_feature, (num_segments, 1, 1))
         len_query = len_query * num_segments
         words_feature = words_feature * num_segments
 
@@ -527,6 +526,8 @@ class UntrimmedBasedMCNStyle(UntrimmedBase):
 
     def _negative_intra_sampling(self, idx, moment_loc):
         "Sample another moment inside the video"
+        if self.n_negatives_intra == 0:
+            return torch.empty(1)
         moment_i = self.metadata[idx]
         video_id = moment_i['video']
         # self.n_negatives_intra
@@ -543,10 +544,11 @@ class UntrimmedBasedMCNStyle(UntrimmedBase):
             indices = (iou_matrix < self.sampling_iou).nonzero()[0]
             if len(indices) > 0:
                 if len(indices) >= self.n_negatives_intra:
-                    ind = indices[random.sample(range(0, max(len(indices) - 1,1)), self.n_negatives_intra)]
+                    positions = range(0, max(len(indices) - 1,1))
+                    ind = indices[random.sample(positions, self.n_negatives_intra)]
                 else:
-                    ind = indices * (self.n_negatives_intra // len(indices) +1)
-                    ind = ind[:len(indices)]
+                    ind = list(indices) * (self.n_negatives_intra // len(indices) +1)
+                    ind = ind[:self.n_negatives_intra]
                 sampled_loc = proposals[ind, :]
             else:
                 video_duration = self._video_duration(video_id)
@@ -587,6 +589,9 @@ class UntrimmedBasedMCNStyle(UntrimmedBase):
 
     def _negative_inter_sampling(self, idx, moment_loc):
         "Sample another moment from other video as in original MCN paper"
+        if self.n_negatives_inter == 0:
+            return torch.empty(1)
+
         if self.sampling_probs.exists():
             prob_videos = self._prob_querytovideo[idx]
             probs_per_epoch = (1 - self.convex_per_epoch) * prob_videos  + \
@@ -756,6 +761,7 @@ class UntrimmedBasedMCNStyle(UntrimmedBase):
         "Return anchor, positive, negatives"
         moment_i = self.metadata[idx]
         video_id = moment_i['video']
+        video_index = moment_i['video_index']
         # Sample a positive annotations if there are multiple
         t_start_end = moment_i['times'][0, :]
         if len(moment_i['times']) > 1:
@@ -770,7 +776,7 @@ class UntrimmedBasedMCNStyle(UntrimmedBase):
         words_feature, len_query = self._compute_language_feature(moment_i['annotation_id'])
 
         argout = (words_feature, len_query, pos_visual_feature,
-                  neg_intra_visual_feature, neg_inter_visual_feature)
+                  neg_intra_visual_feature, neg_inter_visual_feature, video_index)
         if self.debug:
             # TODO: deprecate source_id
             source_id = moment_i.get('source', float('nan'))
@@ -896,8 +902,10 @@ class UntrimmedSMCN(UntrimmedBasedMCNStyle):
         for key, feat_db in self.features.items():
             feature_video = feat_db[video_id]
             moment_feat_k, _ = self.visual_interface(
-                feature_video, [0, video_duration], self.clip_length,
-                num_clips, key=key)
+                features=feature_video, 
+                moment_loc=[0, video_duration], 
+                clip_length=self.clip_length,
+                key=key, num_clips=num_clips )
             feature_collection[key] = moment_feat_k.astype(
                 np.float32, copy=False)
         return feature_collection
@@ -1210,8 +1218,11 @@ class UntrimmedCALChamfer(UntrimmedBasedMCNStyle):
         self.padding = padding
         self.clip_mask = clip_mask
         if not self.eval:
-            self.max_clips   = self.get_max_clips()
-            self.max_objects = self.max_obj_per_clip()
+            self.max_clips, self.max_objects = None, None
+            if 'rgb' in self.keys:
+                self.max_clips   = self.get_max_clips()
+            if 'obj' in self.keys:
+                self.max_objects = self.max_obj_per_clip()
         self.visual_interface = VisualRepresentationCALChamfer(
                                 context=self.context, max_clips=max_clips, 
                                 max_objects=max_objects, w_size=w_size)
@@ -1364,8 +1375,9 @@ class UntrimmedCALChamfer(UntrimmedBasedMCNStyle):
         Set the new padding for rgb and obj stream
         '''
         self.visual_interface.max_clips   = max_clips
-        max_obj_per_clip = self.max_obj_per_clip()
-        self.visual_interface.max_objects = max_clips * max_obj_per_clip
+        if 'obj' in self.keys:
+            max_obj_per_clip = self.max_obj_per_clip()
+            self.visual_interface.max_objects = max_clips * max_obj_per_clip
 
     def _set_feat_dim(self):
         "Set visual and language size"
@@ -1380,6 +1392,44 @@ class UntrimmedCALChamfer(UntrimmedBasedMCNStyle):
             self.feat_dim = {'language_size': instance[0 + ind].shape[1]}
         for key in self.features:
             self.feat_dim.update({f'visual_size_{key}': instance[2 + ind][key].shape[-1]})
+
+
+class UntrimmedCALChamferV2(UntrimmedCALChamfer):
+    """Data feeder for SMCN
+
+    Attributes
+        padding (bool): if True the representation is padded with zeros.
+    """
+
+    def __init__(self, *args, max_clips=None, max_objects=None, padding=True, w_size=None,
+                 clip_mask=False, **kwargs):
+        super(UntrimmedCALChamferV2, self).__init__(*args, **kwargs)
+
+    def _train_item(self, idx):
+        "Return anchor, positive, negatives"
+        moment_i = self.metadata[idx]
+        video_id = moment_i['video']
+        video_index = moment_i['video_index']
+        # Sample a positive annotations if there are multiple
+        t_start_end = moment_i['times'][0, :]
+        if len(moment_i['times']) > 1:
+            ind_t = random.randint(0, len(moment_i['times']) - 1)
+            t_start_end = moment_i['times'][ind_t, :]
+
+        t_start_end = self._proposal_augmentation(t_start_end, video_id)
+        pos_visual_feature = self._compute_visual_feature(video_id, t_start_end)
+        # Sample negatives
+        neg_intra_visual_feature = self._negative_intra_sampling(idx, t_start_end)
+        neg_inter_visual_feature = torch.empty(1)   # placeholder, it is going to be removed while collating the batch
+        words_feature, len_query = self._compute_language_feature(moment_i['annotation_id'])
+
+        argout = (words_feature, len_query, pos_visual_feature,
+                  neg_intra_visual_feature, neg_inter_visual_feature, video_index)
+        if self.debug:
+            # TODO: deprecate source_id
+            source_id = moment_i.get('source', float('nan'))
+            return (idx, source_id) + argout
+        return argout
 
 
 class TemporalEndpointFeature():

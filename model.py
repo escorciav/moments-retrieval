@@ -4,9 +4,9 @@ import torch.nn.functional as F
 from torch.nn.utils.rnn import pack_padded_sequence, pad_packed_sequence
 from torch.nn.utils.rnn import pad_sequence
 from chamfer import DoubleMaskedChamferDistance
-import copy
+from random import sample, shuffle
 import numpy as np
-MOMENT_RETRIEVAL_MODELS = ['MCN', 'SMCN', 'CALChamfer']
+MOMENT_RETRIEVAL_MODELS = ['MCN', 'SMCN', 'CALChamfer', 'EarlyFusion', 'LateFusion', 'CALChamferV2']
 
 class MCN(nn.Module):
     """MCN model
@@ -18,7 +18,8 @@ class MCN(nn.Module):
     def __init__(self, visual_size={'rgb':4096}, lang_size=300, embedding_size=100,
                  dropout=0.3, max_length=None, visual_hidden=500,
                  lang_hidden=1000, visual_layers=1, lang_layers=2, unit_vector=False,
-                 bi_lstm=False, lang_dropout=0.0, alpha=0.0):
+                 bi_lstm=False, lang_dropout=0.0, alpha=0.0, n_negatives_inter=1,
+                 inter_negatives_mode=0):
         super(MCN, self).__init__()
         self.embedding_size = embedding_size
         self.max_length = max_length
@@ -29,6 +30,8 @@ class MCN(nn.Module):
         self.lang_size = lang_size
         self.bi_lstm = bi_lstm
         self.lang_dropout = lang_dropout
+        self.n_negatives_inter = n_negatives_inter
+        self.inter_negatives_mode = inter_negatives_mode
         bi_norm = 1
         if self.bi_lstm:
             bi_norm = 2
@@ -56,7 +59,7 @@ class MCN(nn.Module):
         self.init_parameters()
 
     def forward(self, padded_query, query_length, visual_pos,
-                visual_neg_intra=None, visual_neg_inter=None):
+                visual_neg_intra=None, visual_neg_inter=None, video_indices=None):
         # v_v_embedded_* are tensors of shape [B, D]
         (v_embedded_pos, v_embedded_neg_intra,
          v_embedded_neg_inter) = self.encode_visual(
@@ -217,7 +220,7 @@ class SMCN(MCN):
         super(SMCN, self).__init__(*args, **kwargs)
 
     def forward(self, padded_query, query_length, visual_pos,
-                visual_neg_intra=None, visual_neg_inter=None):
+                visual_neg_intra=None, visual_neg_inter=None, video_indices=None):
         # v_v_embedded_* are tensors of shape [B, N, D]
         (v_embedded_pos, v_embedded_neg_intra,
          v_embedded_neg_inter) = self.encode_visual(
@@ -378,7 +381,7 @@ class CALChamfer(SMCN):
         self.init_parameters()
 
     def forward(self, padded_query, query_length, visual_pos,
-                visual_neg_intra=None, visual_neg_inter=None):
+                visual_neg_intra=None, visual_neg_inter=None, video_indices=None):
         '''
             emd reffear to embedded.
         '''
@@ -393,31 +396,15 @@ class CALChamfer(SMCN):
         l_emb, l_regularizer = self.encode_query(padded_query, query_length)
         l_mask = self._gen_lan_mask(self.max_length,query_length,device=l_emb[self.keys[0]][0].device)
 
-        #embedding normalization
-        if self.unit_vector:
-            raise Exception("Not maintained - A developer must double check this - write to the authors.")
-            l_emb = {k:F.normalize(l_emb[k], dim=-1) for k in self.keys}
-            v_emb_pos = {k:F.normalize(v_emb_pos[k], dim=-1) for k in self.keys}
-            if v_emb_neg_intra is not None:
-                v_emb_neg_intra = {k:F.normalize(v_emb_neg_intra[k], dim=-1) for k in self.keys}
-            if v_emb_neg_inter is not None:
-                # v_embedded_neg_inter = {k: F.normalize(v_embedded_neg_inter[k], dim=-1) for k in self.keys}
-                v_emb_neg_inter = [{k:F.normalize(e[k], dim=-1) for k in self.keys} for e in v_emb_neg_inter]
-
         # meta-comparison
         c_pos, c_neg_intra, c_neg_inter = self.compare_emdedded_snippets(
                                             v_emb_pos, v_emb_neg_intra, v_emb_neg_inter,
                                             l_emb, l_mask, visual_pos, visual_neg_intra, visual_neg_inter)
 
-        # Compute norm of embedding
-        norms = self.compute_embeddings_norms(v_emb_pos, v_emb_neg_intra, v_emb_neg_inter,
-                                              l_emb, l_mask, visual_pos, visual_neg_intra, visual_neg_inter)
-
         output_dict = {'p'               : c_pos,
                        'n_intra'         : c_neg_intra,
                        'n_inter'         : c_neg_inter,
-                       'lang_regularizer': l_regularizer,
-                       'emb_avg_L2_norm' : norms}
+                       'lang_regularizer': l_regularizer}
 
         return output_dict
 
@@ -615,6 +602,358 @@ class CALChamfer(SMCN):
             else:
                 argout.append(i)
         return argout
+
+
+class CALChamferV2(CALChamfer):
+    '''CALChamfer
+
+    Extends CALChamfer by removing inter video data and using intra video negatives as inter video ones within the batch
+    '''
+
+    def __init__(self, *args, **kwargs):
+        super(CALChamferV2, self).__init__(*args, **kwargs)
+
+    def forward(self, padded_query, query_length, visual_pos,
+                visual_neg_intra=None, visual_neg_inter=None, video_indices=None):
+        '''
+            emd reffear to embedded.
+        '''
+
+        if not isinstance(padded_query, list):
+            padded_query, query_length = [padded_query], [query_length]
+
+        # v_v_embedded_* are tensors of shape [B, N, D]
+        (v_emb_pos, v_emb_neg_intra,v_emb_neg_inter) = self.encode_visual(
+                                    visual_pos, visual_neg_intra, visual_neg_inter)
+
+        l_emb, l_regularizer = self.encode_query(padded_query, query_length)
+        l_mask = self._gen_lan_mask(self.max_length,query_length,device=l_emb[self.keys[0]][0].device)
+
+        # meta-comparison
+        c_pos, c_neg_intra, _ = self.compare_emdedded_snippets(
+                    v_emb_pos, v_emb_neg_intra, v_emb_neg_inter,
+                    l_emb, l_mask, visual_pos, visual_neg_intra, visual_neg_inter)
+
+        # Compute c_neg_inter using intra negatives within the batch
+        c_neg_inter = None
+        if v_emb_neg_intra is not None:
+            c_neg_inter = self.compare_emdedded_snippets_inter_negatives(
+                        v_emb_pos, v_emb_neg_intra,l_emb, l_mask, visual_pos,
+                        visual_neg_intra, visual_neg_inter, video_indices)
+
+        output_dict = {'p'       : c_pos,
+                       'n_intra' : c_neg_intra,
+                       'n_inter' : c_neg_inter}
+
+        return output_dict
+
+    def compare_emdedded_snippets_inter_negatives(self, emb_p, emb_n_intra,
+                                  emb_a, l_mask, pos, neg_intra, neg_inter, v_idx):
+        pos, neg_intra = self._unpack_visual(pos, neg_intra)
+        c_neg_inter =  []
+
+        # preprocess on data to remove useless dimensions. (Only support one intra negative)
+        neg_intra = neg_intra[0]
+        emb_n_intra = emb_n_intra[0]
+        emb_a = {k:v[0] for k,v in emb_a.items()}
+
+        # Refactor masks
+        mask_p       = {k: pos['-'.join(['mask', k])] for k in self.keys}
+        mask_n_intra = {k: neg_intra['-'.join(['mask', k])] for k in self.keys} 
+
+        # Determine valid inter negatives (must come from a different video)
+        valid_idx_per_video = self.filter_invalid_negatives(v_idx)
+        devices = {k:emb_n_intra[k].device for k in self.keys}
+
+        # Loop over all examples (batch size - number of samples from the same video)
+        for i,v_k in enumerate(v_idx):
+            # for each positive in the batch determine the inter samples within the batch and get the valid_idx
+            idx = valid_idx_per_video[int(v_k)]
+            
+            # Select the visual embedding related to those samples
+            if self.inter_negatives_mode == 0:
+                emb_n  = {k:emb_n_intra[k][idx] for k in self.keys}
+                mask_n = {k:mask_n_intra[k][idx] for k in self.keys}
+
+            elif self.inter_negatives_mode == 1:
+                emb_n  = {k:emb_p[k][idx] for k in self.keys}
+                mask_n = {k:mask_p[k][idx] for k in self.keys}
+
+            elif self.inter_negatives_mode == 2:    
+                l = len(idx)//2
+                idx = idx[torch.randperm(len(idx))]
+                emb_n  = {k:torch.cat((emb_p[k][idx[:l]],
+                                       emb_n_intra[k][idx[l:]])) for k in self.keys}
+                mask_n = {k:torch.cat((mask_p[k][idx[:l]], 
+                                       mask_n_intra[k][idx[l:]])) for k in self.keys}
+
+            elif self.inter_negatives_mode == 3:    
+                emb_n  = {k:torch.cat((emb_p[k][idx], 
+                                       emb_n_intra[k][idx])) for k in self.keys}
+                mask_n = {k:torch.cat((mask_p[k][idx], 
+                                       mask_n_intra[k][idx])) for k in self.keys}
+            else:
+                raise ValueError('Unsuported inter negative mode selection:' + \
+                             '0-from intra neg, 1-from pos, 2-from both, 3-concat')
+            
+            # Expand the positive query to match the size of the inter negatives
+            d0,d1,d2 = emb_n['rgb'].shape[0], self.max_length, self.embedding_size
+            emb_a_tmp = {k:emb_a[k][i].expand(d0, d1, d2) for k in self.keys}
+            # Expand query mask
+            mask_a = l_mask[0][i].expand(d0, d1)
+            # Compare pos language with negative inter visual embeddings
+            c_neg_inter.append({k:self.compare_emdeddings(emb_n[k], emb_a_tmp[k], 
+                                        mask_n[k], mask_a) for k in self.keys})
+
+        return self.fix_sizes(c_neg_inter)
+
+    def filter_invalid_negatives(self, v_idx):
+        v_idx    = v_idx.tolist()
+        list_idx = torch.arange(0, len(v_idx))
+        max_neg  = min(self.n_negatives_inter,len(v_idx)-1)
+        
+        dict_ = {}
+        if len(v_idx) == len(set(v_idx)):
+            dict_ = {k:list_idx[list_idx!=i] for i,k in enumerate(v_idx)}
+        else:
+            for i, k in enumerate(v_idx):
+                if v_idx.count(k)==1:
+                    dict_[k] = list_idx[list_idx!=i]
+                else:
+                    indices = [ind for ind, x in enumerate(v_idx) if x == k]
+                    tmp = list_idx
+                    for ind in indices:
+                        tmp = tmp[tmp!=ind]
+                    tmp = tmp.tolist()
+                    tmp.extend(sample(tmp, max(0,max_neg - len(tmp))))
+                    dict_[k] = torch.tensor(tmp, dtype=torch.long)
+        
+        # TODO: Cut down to max number of negatives
+        dict_ = {k:v[torch.multinomial(torch.ones(v.shape[0])/v.shape[0], 
+                    max_neg, replacement=False).sort().values] for k,v in dict_.items()}
+
+        return dict_
+
+    def fix_sizes(self, scores):
+        num_neg  = len(scores[0][self.keys[0]])
+        scores_prime = [{k:None for k in self.keys} for _ in range(num_neg)]
+        for k in self.keys:
+            stack_ = torch.stack([s[k] for s in scores])
+            for i in range(stack_.shape[1]):
+                scores_prime[i][k] = stack_[:,i] 
+        return scores_prime
+
+
+class EarlyFusion(CALChamfer):
+    '''CALChamfer
+    Extends SMCN by adding the chamfer distance as metric for computing the
+    distance between two sets of embeddings. The description is encoded
+    through an LSTM layer of which every hidden state is mapped to the
+    embedding state and constitute the set of language embeddings.
+    Chamfer distance is applied to all brances Lang-rgb / Lang-obj (if presents)
+    '''
+
+    def __init__(self, *args, **kwargs):
+        super(EarlyFusion, self).__init__(*args, **kwargs)
+
+        bi_norm = 1
+
+        # Language branch
+        self.sentence_encoder = nn.ModuleDict({})
+        for key in ['shared']:
+            self.sentence_encoder[key] = nn.LSTM(
+                            self.lang_size, self.lang_hidden, 
+                            batch_first=True, bidirectional=self.bi_lstm, 
+                            num_layers=1)
+
+        self.state_encoder = nn.ModuleDict({})
+        for key in ['shared']:
+            state_encoder = []
+            for _ in range(self.lang_layers - 2):
+                state_encoder += [nn.Linear(bi_norm * self.lang_hidden, self.lang_hidden),
+                                nn.ReLU(inplace=True)]
+            state_encoder += [nn.Linear(bi_norm * self.lang_hidden, int(self.lang_hidden/2)),
+                                nn.ReLU(inplace=True)]
+            self.state_encoder[key] = nn.Sequential(
+                *state_encoder,
+                nn.Linear(int(self.lang_hidden/2), self.embedding_size),
+                nn.Dropout(self.lang_dropout)
+            )
+
+    def forward(self, padded_query, query_length, visual_pos,
+                visual_neg_intra=None, visual_neg_inter=None, video_indices=None):
+        '''
+            emd reffear to embedded.
+        '''
+
+        if not isinstance(padded_query, list):
+            padded_query, query_length = [padded_query], [query_length]
+
+        # v_v_embedded_* are tensors of shape [B, N, D]
+        (v_emb_pos, v_emb_neg_intra,v_emb_neg_inter) = self.encode_visual(
+                                    visual_pos, visual_neg_intra, visual_neg_inter)
+
+        l_emb = self.encode_query(padded_query, query_length)
+        l_mask = self._gen_lan_mask(self.max_length,query_length,device=l_emb['shared'][0].device)
+
+        # meta-comparison
+        c_pos, c_neg_intra, c_neg_inter = self.compare_emdedded_snippets(
+                                            v_emb_pos, v_emb_neg_intra, v_emb_neg_inter,
+                                            l_emb, l_mask, visual_pos, visual_neg_intra, visual_neg_inter)
+
+        output_dict = {'p'               : c_pos,
+                       'n_intra'         : c_neg_intra,
+                       'n_inter'         : c_neg_inter}
+
+        return output_dict
+
+    def encode_query(self, padded_query, query_length):
+        B = len(padded_query[0])
+        packed_query = [pack_padded_sequence(p,l,batch_first=True)
+                                    for p,l in zip(padded_query,query_length)]
+
+        packed_output = {k:[self.sentence_encoder[k](p) for p in packed_query] for k in ['shared']}
+        output = {k:[pad_packed_sequence(p[0], batch_first=True,
+                        total_length=self.max_length)[0] for p in packed_output[k]] for k in ['shared']}
+
+        # Pass hidden states though a shared linear layer.
+        embedded_lang = {k:[self.state_encoder[k](o) for o in output[k]] for k in ['shared']}
+
+        return embedded_lang
+
+    def compare_emdedded_snippets(self, embedded_p, embedded_n_intra,
+                                  embedded_n_inter, embedded_a, l_mask,
+                                  pos, neg_intra, neg_inter):
+        pos, neg_intra, neg_inter = self._unpack_visual(pos, neg_intra, neg_inter)
+        c_neg_intra, c_neg_inter = None, None
+        mask_p, mask_n_intra, mask_n_inter = {}, {}, {}
+
+        assert len(neg_intra)==1, 'Ealy fusion only support 1 intra negative'
+        assert len(neg_inter)==1, 'Ealy fusion only support 1 inter negative'
+        
+        for k in self.keys:
+            mask_key = '-'.join(['mask',k])
+            mask_p[k] = pos[mask_key]
+            mask_n_intra[k] = neg_intra[0][mask_key]
+            mask_n_inter[k] = neg_inter[0][mask_key]
+        
+        # merge two stream based on mask. 
+        embedded_p,embedded_n_intra,embedded_n_inter,mask_p,mask_n_intra,mask_n_inter  = \
+            self.merge_features(embedded_p,embedded_n_intra,embedded_n_inter,mask_p,mask_n_intra,mask_n_inter)
+        
+        c_pos = {k:self.compare_emdeddings(embedded_p, embedded_a[k][0], 
+                        mask_p, l_mask[0]) for k in ['shared']}
+
+        if mask_n_inter is not None:
+            c_neg_intra = {k:self.compare_emdeddings(embedded_n_intra, embedded_a[k][0], 
+                                            mask_n_intra, l_mask[0]) for k in ['shared']}
+        if mask_n_inter is not None:
+            c_neg_inter = {k:self.compare_emdeddings(embedded_n_inter, embedded_a[k][0], 
+                                            mask_n_inter, l_mask[0]) for k in ['shared']}
+
+
+        # Convert scores into list - Depends on the implementation of the loss function. 
+        c_pos       = [c_pos]
+        c_neg_intra = [c_neg_intra]
+        c_neg_inter = [c_neg_inter]
+
+        return c_pos, c_neg_intra, c_neg_inter
+
+    def merge_features(self, embedded_p,embedded_n_intra,embedded_n_inter,
+                                        mask_p,mask_n_intra,mask_n_inter):
+
+        new_embedded_p,new_embedded_n_intra,new_embedded_n_inter = None,None,None
+        new_mask_p,new_mask_n_intra,new_mask_n_inter = None,None,None
+
+        intra_flag = mask_n_intra[self.keys[0]] is not None
+        inter_flag = mask_n_inter[self.keys[0]] is not None
+
+        B = embedded_p['rgb'].shape[0]
+        F = embedded_p['rgb'].shape[2]
+        n1 = int(max(mask_p['rgb'].sum(dim=1)+mask_p['obj'].sum(dim=1)))
+        n2 = 0
+        if intra_flag:
+            n2 = int(max(mask_n_intra['rgb'].sum(dim=1)+mask_n_intra['obj'].sum(dim=1)))
+        n3 = 0
+        if inter_flag:
+            n3 = int(max(mask_n_inter['rgb'].sum(dim=1)+mask_n_inter['obj'].sum(dim=1)))
+        T = max(n1,n2,n3)  
+
+        device = embedded_p['rgb'].device
+        new_embedded_p = torch.zeros(B,T,F).to(device)
+        new_mask_p     = torch.zeros(B,T).to(device)
+        elem_rgb_p     = mask_p['rgb'].sum(dim=1)
+        elem_obj_p     = mask_p['obj'].sum(dim=1)
+
+        if intra_flag:
+            new_embedded_n_intra = torch.zeros(B,T,F).to(device)
+            new_mask_n_intra     = torch.zeros(B,T).to(device)
+            elem_rgb_n_intra     = mask_n_intra['rgb'].sum(dim=1)
+            elem_obj_n_intra     = mask_n_intra['obj'].sum(dim=1)
+
+        if inter_flag:
+            new_embedded_n_inter = torch.zeros(B,T,F).to(device)
+            new_mask_n_inter     = torch.zeros(B,T).to(device)
+            elem_rgb_n_inter     = mask_n_inter['rgb'].sum(dim=1)
+            elem_obj_n_inter     = mask_n_inter['obj'].sum(dim=1)
+            
+        for i in range(B):
+            idx1,idx2 = int(elem_rgb_p[i]), int(elem_obj_p[i])
+            new_embedded_p[i,:idx1]          = embedded_p['rgb'][i,:idx1]
+            new_embedded_p[i,idx1:idx1+idx2] = embedded_p['obj'][i,:idx2]
+            new_mask_p[i,:idx1+idx2]         = 1
+
+            if intra_flag:
+                idx1,idx2 = int(elem_rgb_n_intra[i]), int(elem_obj_n_intra[i])
+                new_embedded_n_intra[i,:idx1]          = embedded_n_intra[0]['rgb'][i,:idx1]
+                new_embedded_n_intra[i,idx1:idx1+idx2] = embedded_n_intra[0]['obj'][i,:idx2]
+                new_mask_n_intra[i,:idx1+idx2]         = 1
+            
+            if inter_flag:
+                idx1,idx2 = int(elem_rgb_n_inter[i]), int(elem_obj_n_inter[i])
+                new_embedded_n_inter[i,:idx1]          = embedded_n_inter[0]['rgb'][i,:idx1]
+                new_embedded_n_inter[i,idx1:idx1+idx2] = embedded_n_inter[0]['obj'][i,:idx2]
+                new_mask_n_inter[i,:idx1+idx2]         = 1
+
+        return new_embedded_p,new_embedded_n_intra,new_embedded_n_inter,new_mask_p,new_mask_n_intra,new_mask_n_inter
+
+    def merge_features_corpus(self, embedded_p, mask_p):
+ 
+        B = embedded_p['rgb'].shape[0]
+        F = embedded_p['rgb'].shape[2]
+        T = int(max(mask_p['rgb'].sum(dim=1)+mask_p['obj'].sum(dim=1)))
+    
+        new_embedded_p = torch.zeros(B,T,F)
+        new_mask_p     = torch.zeros(B,T)
+        elem_rgb_p     = mask_p['rgb'].sum(dim=1)
+        elem_obj_p     = mask_p['obj'].sum(dim=1)
+            
+        for i in range(B):
+            idx1,idx2 = int(elem_rgb_p[i]), int(elem_obj_p[i])
+            new_embedded_p[i,:idx1]          = embedded_p['rgb'][i,:idx1]
+            new_embedded_p[i,idx1:idx1+idx2] = embedded_p['obj'][i,:idx2]
+            new_mask_p[i,:idx1+idx2]         = 1
+        
+        return new_embedded_p, new_mask_p
+
+    def search(self, query, query_length, moments):
+        """Exhaustive search of query in table
+        TODO: batch to avoid out of memory?
+        """
+        B = moments['rgb'].shape[0]
+        query = query['shared'][0]
+        _, d1, d2 = query.size()
+        query  = query.expand(B, d1, d2)
+        l_mask = self._gen_lan_mask_corpus(self.max_length,query_length)
+        l_mask = l_mask.expand(B, l_mask.size()[1])
+
+        embeddings  = {k:v for  k,v in moments.items() if 'mask' not in k}
+        masks       = {k.split('-')[-1]:v for  k,v in moments.items() if 'mask' in k}
+        feats,v_mask= self.merge_features_corpus(embeddings, masks)
+
+        chamfer_distance = self.compare_emdeddings(feats, query, v_mask, l_mask)
+     
+        return chamfer_distance, False
 
 
 if __name__ == '__main__':

@@ -161,6 +161,7 @@ parser.add_argument('--stride', type=float, default=0.5,
                     help=('Relative stride for sliding windows [0, 1]. '
                           'Check SlidingWindowMSRSS details'))
 parser.add_argument('--nms-threshold', type=float, default=0.5)
+parser.add_argument('--inter-negatives-mode', type=int, default=0, choices=[0,1,2,3])
 # Device specific
 parser.add_argument('--batch-size', type=int, default=128, help='batch size')
 parser.add_argument('--gpu-id', type=int, default=-1, help='GPU device')
@@ -313,7 +314,10 @@ def main(args):
 
         if args.sampling_probs.exists():
             train_loader.dataset._set_convex_per_epoch(value=(epoch - 1)/total_epochs)
+
+        torch.cuda.reset_max_memory_allocated(args.device)
         train_epoch(args, net, ranking_loss, train_loader, optimizer)
+        logging.info(f'max mem for this epoch {torch.cuda.max_memory_allocated(args.device) / 1024**3} GB') 
     
         lr_schedule.step()
         if args.enable_tb:
@@ -366,7 +370,6 @@ def train_epoch(args, net, criterion, loader, optimizer):
     for it, minibatch in enumerate(loader):
         if args.gpu_id >= 0:
             # minibatch_ = minibatch
-
             minibatch = ship_to(minibatch, args.device)
         # measure elapsed time
         data_time = time.time() - end
@@ -392,9 +395,7 @@ def train_epoch(args, net, criterion, loader, optimizer):
 
         if args.writer:
             args.writer.add_scalar('train/loss', loss_it, n_iter)
-            args.writer.add_scalar('train/avg_emb_L2_norm_rgb', compared_embeddings['emb_avg_L2_norm']['rgb'], n_iter)
-            args.writer.add_scalar('train/avg_emb_L2_norm_obj', compared_embeddings['emb_avg_L2_norm']['obj'], n_iter)
-
+            
         if (it + 1) % args.n_display == 0:
             logging.info(f'Epoch: [{args.epochs}]'
                          f'[{100 * it / len(loader):.2f}]\t'
@@ -522,6 +523,8 @@ def setup_dataset(args):
         dataset_name = 'UntrimmedSMCN'
     elif args.arch == 'CALChamfer':
         dataset_name = 'UntrimmedCALChamfer'
+    elif args.arch == 'CALChamferV2':
+        dataset_name = 'UntrimmedCALChamferV2'
     elif args.arch == 'EarlyFusion':
         dataset_name = 'UntrimmedCALChamfer'
     else:
@@ -562,6 +565,8 @@ def setup_dataset(args):
 
     if isinstance(args.feat, str):
         args.feat = [args.feat]
+    if not isinstance(args.h5_path, list):
+        args.h5_path = [args.h5_path]
     if len(args.feat) != len(args.h5_path):
         raise('Number of features name and features files mismatch, check your parameters!')
     cues, no_visual = {k: None for k in args.feat}, True
@@ -571,7 +576,8 @@ def setup_dataset(args):
             cues[feat_name] = {'file':feat_file}
         else:
             logging.info(f'{feat_file} not found, proceeding without it. Check the file path!!')
-    cues = { k:v for k,v in cues.items() if v is not None }
+    if not no_visual:
+        cues = { k:v for k,v in cues.items() if v is not None }
     if no_visual and args.clip_length is None:
         raise ValueError('clip-length is required without visual features')
     proposal_generator = proposals.__dict__[args.proposal_interface](
@@ -643,7 +649,7 @@ def setup_dataset(args):
         datasets[subset] = {'dataset': dataset, 
                             'params' : extras_loader}
     
-    if args.arch == 'CALChamfer':
+    if args.arch == 'CALChamfer' or args.arch == 'CALChamferV2' or args.arch == 'EarlyFusion':
         max_clips = max([v['dataset'].get_max_clips() 
                         for k,v in datasets.items() if v is not None])
         for _,v in datasets.items():
@@ -669,11 +675,15 @@ def setup_model(args, train_loader=None, test_loader=None):
     else:
         raise ValueError('Either train or test list must exists')
     logging.info('Setting-up model')
+
+
     arch_setup = dict(
         visual_size={feat:dataset.visual_size[feat] for feat in args.feat},
         embedding_size=args.embedding_size,
         unit_vector=args.unit_vector,
         alpha=args.alpha,
+        n_negatives_inter=args.n_negatives_inter,
+        inter_negatives_mode=args.inter_negatives_mode,
         #Language
         lang_size=dataset.language_size,
         max_length=dataset.max_words,
@@ -699,8 +709,13 @@ def setup_model(args, train_loader=None, test_loader=None):
         )
 
         criterion_ = 'IntraInterMarginLoss'
-        criterion_prm = dict(margin=args.margin, w_inter=args.w_inter,
-                             w_intra=args.w_intra)
+        criterion_prm = dict(
+            keys= args.feat,
+            B = args.batch_size,
+            margin=args.margin, 
+            w_inter=args.w_inter,
+            w_intra=args.w_intra
+            )
         if args.clip_loss:
             raise ValueError('Deprecated')
             criterion_ = 'IntraInterMarginLossPlusClip'
@@ -709,7 +724,7 @@ def setup_model(args, train_loader=None, test_loader=None):
 
         if args.loss == 'MILNCELossOriginal':
             criterion_ = 'MILNCELossOriginal'
-            criterion_prm = {'keys': args.feat}
+            criterion_prm = {'keys': args.feat, 'B' : args.batch_size}
 
         criterion = loss.__dict__[criterion_](**criterion_prm)
 

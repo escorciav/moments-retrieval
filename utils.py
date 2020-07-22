@@ -17,7 +17,6 @@ from torch.utils.data.dataloader import default_collate
 
 PATH_VARS = {'h5_path_nis', 'test_list', 'val_list', 'train_list'}
 
-
 def collate_data(batch):
     """torchify data during training
 
@@ -25,7 +24,7 @@ def collate_data(batch):
     """
     debug_mode = False
     all_tensors = default_collate(batch)
-    if len(all_tensors) == 7:
+    if len(all_tensors) == 8:
         debug_mode = True
         idxs, source_ids, *all_tensors = all_tensors
     al_s, a_s = [],[]
@@ -40,21 +39,23 @@ def collate_data(batch):
         al_s, idx = all_tensors[1].sort(descending=True)
         a_s = all_tensors[0][idx, ...]
         a_s.requires_grad_()
-    # dicts_of_tensors = (
-    #     {k: v[idx, ...].requires_grad_() for k, v in i.items()}
-    #     for i in all_tensors[2:])
+ 
     dicts_of_tensors = (
         {k: v[idx, ...].requires_grad_() for k, v in i.items()}
-        for i in all_tensors[2:-2])
-    intra_negatives = [{k: v[idx, ...].requires_grad_() for k, v in i.items()}
-                       for i in all_tensors[-2]]
-    inter_negatives = [{k: v[idx, ...].requires_grad_() for k, v in i.items()}
-        for i in all_tensors[-1]]
-    argout = (a_s, al_s) + tuple(dicts_of_tensors) + (intra_negatives,) + (inter_negatives,)
+        for i in all_tensors[2:-3])
+
+    intra_negatives, inter_negatives = None, None
+    if isinstance(all_tensors[-3],list):
+        intra_negatives = [{k: v[idx, ...].requires_grad_() for k, v in i.items()}
+                        for i in all_tensors[-3]]
+    if isinstance(all_tensors[-2],list):
+        inter_negatives = [{k: v[idx, ...].requires_grad_() for k, v in i.items()}
+            for i in all_tensors[-2]]
+    video_indices = all_tensors[-1]
+    argout = (a_s, al_s) + tuple(dicts_of_tensors) + (intra_negatives,) + (inter_negatives,) + (video_indices,) 
     if debug_mode:
         return (idxs, source_ids) + argout
     return argout
-
 
 def collate_data_eval(batch):
     """torchify data during eval

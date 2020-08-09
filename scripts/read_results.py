@@ -5,7 +5,7 @@ import glob
 def read_data(dir):
     files = sorted(glob.glob(dir+"/*.log"))
     files = [f for f in files if "corpus" not in f]
-    output = []
+    output,empty = [],[]
     for f in files:
         lines = list(open(f, 'r'))
         x = [print_results(l.strip(),f) for l in lines if "INFO:Batch" in l]
@@ -13,6 +13,7 @@ def read_data(dir):
         if len(x) == 0:
             title = f.split('/')[-1]
             output.append(f"{title}\n")
+            empty.append(title.split('_')[-1].split('.')[0])
 
     time = datetime.now()
     filename = f'./scripts/data/single_video_{time}.txt'
@@ -22,6 +23,7 @@ def read_data(dir):
             f.write(s)
         for s in output[1::2]:
             f.write(s)
+        f.write(f'Re-do val: {empty}\n')
    
 def print_results(line,filename):
     splits = line[line.rfind("r@1,0.5:"):].split(" ")

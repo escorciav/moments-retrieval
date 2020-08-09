@@ -410,6 +410,8 @@ class UntrimmedBasedMCNStyle(UntrimmedBase):
                     'property grabbed from the HDF5. Missing in this case.')
             self.clip_length = clip_length
         self._setup_neg_importance_sampling()
+        self.max_number_of_clips()
+        
 
     @property
     def decomposable(self):
